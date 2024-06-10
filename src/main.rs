@@ -5,17 +5,19 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::{env, io};
 use tokio::signal;
-use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration};
+use tokio::sync::{mpsc, watch};
+use tokio::time::{sleep, timeout, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
     let (tx, mut rx) = mpsc::channel(1);
+    let (cancel_tx, cancel_rx) = watch::channel(false);
 
     tokio::spawn(async move {
         if signal::ctrl_c().await.is_err() {
             eprintln!("Failed to listen for ctrl-c");
         }
+        let _ = cancel_tx.send(true);
         let _ = tx.send(()).await;
     });
 
@@ -77,7 +79,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     send_summary(&topic_articles, &slack_webhook_url).await;
                     return Ok(());
                 },
-                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles) => {}
+                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles, &cancel_rx) => {}
             }
         }
     }
@@ -93,30 +95,46 @@ async fn process_item<'a>(
     ollama: &'a Ollama,
     model: &'a str,
     topic_articles: &mut HashMap<&'a str, Vec<String>>,
+    cancel_rx: &watch::Receiver<bool>,
 ) {
     println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
     let article_url = item.link.clone().unwrap_or_default();
     let mut article_text = String::new();
-    let mut retry_count = 0;
     let max_retries = 3;
 
-    while retry_count < max_retries {
-        match extractor::scrape(&article_url) {
-            Ok(product) => {
+    for retry_count in 0..max_retries {
+        if *cancel_rx.borrow() {
+            println!("Cancellation received, stopping retries.");
+            return;
+        }
+
+        let scrape_future = async { extractor::scrape(&article_url) };
+        match timeout(Duration::from_secs(5), scrape_future).await {
+            Ok(Ok(product)) => {
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
                 break;
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 println!("Error extracting page: {}", e);
-                retry_count += 1;
-                if retry_count < max_retries {
-                    sleep(Duration::from_secs(2)).await;
-                    println!("Retrying... ({}/{})", retry_count, max_retries);
+                if retry_count < max_retries - 1 {
+                    println!("Retrying... ({}/{})", retry_count + 1, max_retries);
                 } else {
                     println!("Failed to extract article after {} retries", max_retries);
                 }
             }
+            Err(_) => {
+                println!("Operation timed out");
+                if retry_count < max_retries - 1 {
+                    println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                } else {
+                    println!("Failed to extract article after {} retries", max_retries);
+                }
+            }
+        }
+
+        if retry_count < max_retries - 1 {
+            sleep(Duration::from_secs(2)).await;
         }
     }
 
