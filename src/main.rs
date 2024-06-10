@@ -110,7 +110,7 @@ async fn process_item<'a>(
         }
 
         let scrape_future = async { extractor::scrape(&article_url) };
-        match timeout(Duration::from_secs(5), scrape_future).await {
+        match timeout(Duration::from_secs(60), scrape_future).await {
             Ok(Ok(product)) => {
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
                 break;
@@ -158,7 +158,7 @@ async fn process_item<'a>(
             }
 
             match timeout(
-                Duration::from_secs(10),
+                Duration::from_secs(60),
                 ollama.generate(GenerationRequest::new(model.to_string(), prompt.clone())),
             )
             .await
