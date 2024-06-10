@@ -1,7 +1,7 @@
 use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use readability::extractor;
 use rss::Channel;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::{env, io};
 use tokio::signal;
@@ -231,27 +231,35 @@ async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook
     for (topic, articles) in topic_articles {
         let header_block = json!({
             "type": "header",
-            "text": json!({
+            "text": {
                 "type": "plain_text",
                 "text": topic,
-                "emoji": true,
-            }),
+                "emoji": true
+            }
         });
         blocks.push(header_block);
 
         for article in articles {
-            let article_block: serde_json::Value = match serde_json::from_str(article) {
+            let article_block: Value = match serde_json::from_str(article) {
                 Ok(block) => block,
                 Err(e) => {
                     eprintln!("Error parsing block: {}", e);
                     continue;
                 }
             };
-            blocks.push(article_block);
+            if let Some(text) = article_block
+                .get("text")
+                .and_then(|t| t.get("text"))
+                .and_then(|t| t.as_str())
+            {
+                if !text.trim().is_empty() {
+                    blocks.push(article_block);
+                }
+            }
         }
 
         let divider_block = json!({
-            "type": "divider",
+            "type": "divider"
         });
         blocks.push(divider_block);
     }
@@ -262,9 +270,7 @@ async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook
     }
 
     let client = reqwest::Client::new();
-    let payload = json!({
-        "blocks": blocks,
-    });
+    let payload = json!({ "blocks": blocks });
 
     let res = client
         .post(slack_webhook_url)
