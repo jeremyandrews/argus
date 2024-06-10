@@ -190,7 +190,13 @@ async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook
         blocks.push(header_block);
 
         for article in articles {
-            let article_block: serde_json::Value = serde_json::from_str(article).unwrap();
+            let article_block: serde_json::Value = match serde_json::from_str(article) {
+                Ok(block) => block,
+                Err(e) => {
+                    eprintln!("Error parsing block: {}", e);
+                    continue;
+                }
+            };
             blocks.push(article_block);
         }
 
@@ -198,6 +204,11 @@ async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook
             "type": "divider",
         });
         blocks.push(divider_block);
+    }
+
+    if blocks.is_empty() {
+        println!("No articles matched, nothing to send to Slack.");
+        return;
     }
 
     let client = reqwest::Client::new();
@@ -217,10 +228,9 @@ async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook
             if response.status().is_success() {
                 println!("Slack notification sent successfully");
             } else {
-                eprintln!(
-                    "Error sending Slack notification: {}",
-                    response.text().await.unwrap_or_default()
-                );
+                let error_text = response.text().await.unwrap_or_default();
+                eprintln!("Error sending Slack notification: {}", error_text);
+                eprintln!("Payload: {}", payload);
             }
         }
         Err(err) => {
