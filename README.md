@@ -1,6 +1,6 @@
 # Argus
 
-Argus is a Rust-based program designed to read RSS feeds, summarize articles based on specified topics, and post these summaries to a Slack channel via webhook.
+Argus is a Rust-based program designed to read RSS feeds, summarize articles based on specified topics, and post these summaries to a Slack channel via webhook. The name "Argus" is inspired by Argus Panoptes, the all-seeing giant in Greek mythology, reflecting the program's ability to monitor and analyze numerous information sources.
 
 ## Features
 
