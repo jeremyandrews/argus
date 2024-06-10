@@ -147,16 +147,48 @@ async fn process_item<'a>(
             continue;
         }
 
-        let prompt: String = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply 'No', without any further analysis or explanation.", item, article_text, topic);
+        let prompt: String = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", item, article_text, topic);
 
-        let response = ollama
-            .generate(GenerationRequest::new(model.to_string(), prompt))
-            .await;
+        let mut response_text = String::new();
 
-        let response_text = response.map(|r| r.response).unwrap_or_else(|err| {
-            eprintln!("Error generating response: {}", err);
-            "Error generating response".to_string()
-        });
+        for retry_count in 0..max_retries {
+            if *cancel_rx.borrow() {
+                println!("Cancellation received, stopping retries.");
+                return;
+            }
+
+            match timeout(
+                Duration::from_secs(10),
+                ollama.generate(GenerationRequest::new(model.to_string(), prompt.clone())),
+            )
+            .await
+            {
+                Ok(Ok(response)) => {
+                    response_text = response.response;
+                    break;
+                }
+                Ok(Err(e)) => {
+                    println!("Error generating response: {}", e);
+                    if retry_count < max_retries - 1 {
+                        println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                    } else {
+                        println!("Failed to generate response after {} retries", max_retries);
+                    }
+                }
+                Err(_) => {
+                    println!("Operation timed out");
+                    if retry_count < max_retries - 1 {
+                        println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                    } else {
+                        println!("Failed to generate response after {} retries", max_retries);
+                    }
+                }
+            }
+
+            if retry_count < max_retries - 1 {
+                sleep(Duration::from_secs(2)).await;
+            }
+        }
 
         if response_text.trim() != "No" {
             let formatted_article = format!(
