@@ -1,76 +1,74 @@
 # Argus
 
-This Rust program reads RSS feeds, extracts and summarizes articles based on specified topics, and posts the summarized content to a Slack channel using a webhook. It utilizes several crates for RSS parsing, readability extraction, and integration with the Ollama language model for text generation.
+Argus is a Rust-based program designed to read RSS feeds, summarize articles based on specified topics, and post these summaries to a Slack channel via webhook.
 
 ## Features
 
 - **RSS Feed Parsing:** Reads articles from specified RSS feed URLs.
 - **Content Extraction:** Extracts readable content from article URLs.
-- **Topic Matching:** Uses a language model to determine if an article matches specified topics.
+- **Topic Matching:** Uses a language model to match articles with specified topics.
 - **Summary and Analysis:** Generates concise summaries and analyses of matching articles.
-- **Slack Integration:** Posts summaries and analyses to a Slack channel using a webhook.
+- **Slack Integration:** Posts summaries to a Slack channel using a webhook.
 
 ## Environment Variables
 
-The program relies on several environment variables for configuration:
-
-- `URLS`: A semicolon-separated list of RSS feed URLs.
-- `OLLAMA_HOST`: The hostname for the Ollama service (default: `localhost`).
-- `OLLAMA_PORT`: The port for the Ollama service (default: `11434`).
-- `OLLAMA_MODEL`: The model name for the Ollama language model (default: `llama2`).
-- `TOPICS`: A semicolon-separated list of topics to match against the articles.
-- `SLACK_WEBHOOK_URL`: The webhook URL for posting messages to Slack.
+Configure the program using environment variables. Copy `env.template` to `.env` and edit it as necessary.
 
 ## Installation
 
-1. **Clone the repository:**
+1. Clone the repository:
     ```sh
     git clone <repository_url>
     cd <repository_directory>
     ```
-
-2. **Set up environment variables:**
-    Create a `.env` file in the root directory and add the necessary environment variables:
+2. Set up environment variables:
     ```sh
-    URLS="https://example.com/rss1;https://example.com/rss2"
-    OLLAMA_HOST="localhost"
-    OLLAMA_PORT="11434"
-    OLLAMA_MODEL="llama2"
-    TOPICS="topic1;topic2"
-    SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+    cp env.template .env
     ```
-
-3. **Run the program:**
+3. Build and run the program:
     ```sh
+    cargo build --release
     cargo run --release
     ```
 
 ## Usage
 
-Upon running, the program will:
+When run, the program will:
 
-1. Parse the RSS feeds from the specified URLs.
-2. Extract and summarize the content of each article.
-3. Match the article content against the specified topics.
-4. Post the summaries and analyses of matching articles to Slack.
+1. Parse RSS feeds from specified URLs.
+2. Extract and summarize article content.
+3. Match content against specified topics.
+4. Post summaries and analyses to Slack.
 
 ## Dependencies
 
-- `ollama_rs`: For integrating with the Ollama language model.
-- `readability`: For extracting readable content from web pages.
-- `rss`: For parsing RSS feeds.
-- `serde_json`: For handling JSON data.
-- `reqwest`: For making HTTP requests.
+- `ollama_rs` for integrating with the Ollama language model.
+- `readability` for extracting readable content.
+- `rss` for parsing RSS feeds.
+- `serde_json` for handling JSON data.
+- `reqwest` for making HTTP requests.
+
+## Example
+
+To run the program:
+
+1. Set up environment variables in the `.env` file.
+2. Execute the program:
+    ```sh
+    cargo run --release
+    ```
+
+You will see output indicating the progress of loading RSS feeds, extracting articles, matching topics, and posting to Slack.
 
 ## Troubleshooting
 
-- **RSS Feed Errors:** Ensure the RSS feed URLs are correct and accessible.
-- **Ollama Service Connection:** Check that the Ollama service is running and accessible at the specified host and port.
-- **Slack Webhook Errors:** Verify that the Slack webhook URL is correct and that your Slack app has the necessary permissions.
+- **RSS Feed Errors:** Ensure RSS feed URLs are correct and accessible.
+- **Ollama Service Connection:** Confirm the Ollama service is running and accessible at the specified host and port.
+- **Slack Webhook Errors:** Verify the Slack webhook URL is correct and your Slack app has the necessary permissions.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request on GitHub.
+Contributions are welcome! Open an issue or submit a pull request on GitHub.
 
 ## License
 
