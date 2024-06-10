@@ -4,6 +4,7 @@ use rss::Channel;
 use serde_json::json;
 use std::collections::HashMap;
 use std::{env, io};
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
@@ -16,9 +17,10 @@ async fn main() -> Result<(), reqwest::Error> {
     let ollama_host = env::var("OLLAMA_HOST").unwrap_or("localhost".to_string());
     let ollama_port = env::var("OLLAMA_PORT").unwrap_or("11434".to_string());
     let ollama_port: u16 = ollama_port.parse().unwrap_or(11434);
-    println!("Connecting to Ollama at {}:{}", ollama_host, ollama_port);
-    let ollama = Ollama::new(ollama_host, ollama_port);
 
+    println!("Connecting to Ollama at {}:{}", ollama_host, ollama_port);
+
+    let ollama = Ollama::new(ollama_host, ollama_port);
     let model = env::var("OLLAMA_MODEL").unwrap_or("llama2".to_string());
 
     let topics: Vec<String> = env::var("TOPICS")
@@ -36,8 +38,10 @@ async fn main() -> Result<(), reqwest::Error> {
         if url.trim() == "" {
             continue;
         }
+
         println!("Loading RSS feed from {}", url);
-        let res = reqwest::get(url).await?;
+
+        let res = reqwest::get(&url).await?;
         if !res.status().is_success() {
             println!(
                 "Error: Status {} - Headers: {:#?}",
@@ -48,33 +52,54 @@ async fn main() -> Result<(), reqwest::Error> {
         }
 
         let body = res.text().await?;
-
         let reader = io::Cursor::new(body);
         let channel = Channel::read_from(reader).unwrap();
+
         println!("Parsed RSS channel with {} items", channel.items().len());
 
         for item in channel.items() {
             println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
-            // Download the article
             let article_url = item.link.clone().unwrap_or_default();
-            let article_text = match extractor::scrape(&article_url) {
-                Ok(product) => format!("Title: {}\nBody: {}\n", product.title, product.text),
-                Err(e) => {
-                    println!("Error extracting page: {}", e);
-                    "".to_string()
+            let mut article_text = String::new();
+            let mut retry_count = 0;
+            let max_retries = 3;
+
+            while retry_count < max_retries {
+                match extractor::scrape(&article_url) {
+                    Ok(product) => {
+                        article_text =
+                            format!("Title: {}\nBody: {}\n", product.title, product.text);
+                        break;
+                    }
+                    Err(e) => {
+                        println!("Error extracting page: {}", e);
+                        retry_count += 1;
+                        if retry_count < max_retries {
+                            sleep(Duration::from_secs(2)).await;
+                            println!("Retrying... ({}/{})", retry_count, max_retries);
+                        } else {
+                            println!("Failed to extract article after {} retries", max_retries);
+                        }
+                    }
                 }
-            };
+            }
+
+            if article_text.is_empty() {
+                continue;
+            }
 
             for topic in &topics {
                 if topic.trim() == "" {
                     continue;
                 }
+
                 let prompt: String = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply 'No', without any further analysis or explanation.", item, article_text, topic);
 
                 let response = ollama
                     .generate(GenerationRequest::new(model.to_string(), prompt))
                     .await;
+
                 let response_text = response.map(|r| r.response).unwrap_or_else(|err| {
                     eprintln!("Error generating response: {}", err);
                     "Error generating response".to_string()
@@ -108,6 +133,7 @@ async fn main() -> Result<(), reqwest::Error> {
                         })
                         .to_string(),
                     );
+
                     println!(" ++ matched {}.", topic);
                     break; // log to the first matching topic and break
                 }
@@ -116,6 +142,7 @@ async fn main() -> Result<(), reqwest::Error> {
     }
 
     let mut blocks = vec![];
+
     for (topic, articles) in &topic_articles {
         let header_block = json!({
             "type": "header",
@@ -142,8 +169,9 @@ async fn main() -> Result<(), reqwest::Error> {
     let payload = json!({
         "blocks": blocks,
     });
+
     let res = client
-        .post(slack_webhook_url)
+        .post(&slack_webhook_url)
         .header("Content-Type", "application/json")
         .body(payload.to_string())
         .send()
