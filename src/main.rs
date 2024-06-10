@@ -13,7 +13,7 @@ async fn main() -> Result<(), reqwest::Error> {
     let (tx, mut rx) = mpsc::channel(1);
 
     tokio::spawn(async move {
-        if let Err(_) = signal::ctrl_c().await {
+        if signal::ctrl_c().await.is_err() {
             eprintln!("Failed to listen for ctrl-c");
         }
         let _ = tx.send(()).await;
@@ -45,8 +45,8 @@ async fn main() -> Result<(), reqwest::Error> {
 
     let mut topic_articles: HashMap<&str, Vec<String>> = HashMap::new();
 
-    'outer: for url in urls {
-        if url.trim() == "" {
+    for url in urls {
+        if url.trim().is_empty() {
             continue;
         }
 
@@ -68,99 +68,117 @@ async fn main() -> Result<(), reqwest::Error> {
 
         println!("Parsed RSS channel with {} items", channel.items().len());
 
-        for item in channel.items() {
-            // Check if a Ctrl-C signal has been received
-            if let Ok(_) = rx.try_recv() {
-                println!("Ctrl-C received, stopping article processing.");
-                break 'outer;
+        let items: Vec<rss::Item> = channel.items().to_vec();
+
+        for item in items {
+            tokio::select! {
+                _ = rx.recv() => {
+                    println!("Ctrl-C received, stopping article processing.");
+                    send_summary(&topic_articles, &slack_webhook_url).await;
+                    return Ok(());
+                },
+                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles) => {}
             }
+        }
+    }
 
-            println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
+    send_summary(&topic_articles, &slack_webhook_url).await;
 
-            let article_url = item.link.clone().unwrap_or_default();
-            let mut article_text = String::new();
-            let mut retry_count = 0;
-            let max_retries = 3;
+    Ok(())
+}
 
-            while retry_count < max_retries {
-                match extractor::scrape(&article_url) {
-                    Ok(product) => {
-                        article_text =
-                            format!("Title: {}\nBody: {}\n", product.title, product.text);
-                        break;
-                    }
-                    Err(e) => {
-                        println!("Error extracting page: {}", e);
-                        retry_count += 1;
-                        if retry_count < max_retries {
-                            sleep(Duration::from_secs(2)).await;
-                            println!("Retrying... ({}/{})", retry_count, max_retries);
-                        } else {
-                            println!("Failed to extract article after {} retries", max_retries);
-                        }
-                    }
-                }
+async fn process_item<'a>(
+    item: rss::Item,
+    topics: &'a [String],
+    ollama: &'a Ollama,
+    model: &'a str,
+    topic_articles: &mut HashMap<&'a str, Vec<String>>,
+) {
+    println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
+
+    let article_url = item.link.clone().unwrap_or_default();
+    let mut article_text = String::new();
+    let mut retry_count = 0;
+    let max_retries = 3;
+
+    while retry_count < max_retries {
+        match extractor::scrape(&article_url) {
+            Ok(product) => {
+                article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
+                break;
             }
-
-            if article_text.is_empty() {
-                continue;
-            }
-
-            for topic in &topics {
-                if topic.trim() == "" {
-                    continue;
-                }
-
-                let prompt: String = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply 'No', without any further analysis or explanation.", item, article_text, topic);
-
-                let response = ollama
-                    .generate(GenerationRequest::new(model.to_string(), prompt))
-                    .await;
-
-                let response_text = response.map(|r| r.response).unwrap_or_else(|err| {
-                    eprintln!("Error generating response: {}", err);
-                    "Error generating response".to_string()
-                });
-
-                if response_text.trim() != "No" {
-                    let formatted_article = format!(
-                        "*<{}|{}>*",
-                        article_url,
-                        item.title.clone().unwrap_or_default()
-                    );
-                    let formatted_response = response_text;
-
-                    topic_articles.entry(topic).or_default().push(
-                        json!({
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": formatted_article
-                            }
-                        })
-                        .to_string(),
-                    );
-                    topic_articles.entry(topic).or_default().push(
-                        json!({
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": formatted_response
-                            }
-                        })
-                        .to_string(),
-                    );
-
-                    println!(" ++ matched {}.", topic);
-                    break; // log to the first matching topic and break
+            Err(e) => {
+                println!("Error extracting page: {}", e);
+                retry_count += 1;
+                if retry_count < max_retries {
+                    sleep(Duration::from_secs(2)).await;
+                    println!("Retrying... ({}/{})", retry_count, max_retries);
+                } else {
+                    println!("Failed to extract article after {} retries", max_retries);
                 }
             }
         }
     }
 
+    if article_text.is_empty() {
+        return;
+    }
+
+    for topic in topics {
+        if topic.trim().is_empty() {
+            continue;
+        }
+
+        let prompt: String = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply 'No', without any further analysis or explanation.", item, article_text, topic);
+
+        let response = ollama
+            .generate(GenerationRequest::new(model.to_string(), prompt))
+            .await;
+
+        let response_text = response.map(|r| r.response).unwrap_or_else(|err| {
+            eprintln!("Error generating response: {}", err);
+            "Error generating response".to_string()
+        });
+
+        if response_text.trim() != "No" {
+            let formatted_article = format!(
+                "*<{}|{}>*",
+                article_url,
+                item.title.clone().unwrap_or_default()
+            );
+            let formatted_response = response_text;
+
+            topic_articles.entry(topic).or_default().push(
+                json!({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": formatted_article
+                    }
+                })
+                .to_string(),
+            );
+            topic_articles.entry(topic).or_default().push(
+                json!({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": formatted_response
+                    }
+                })
+                .to_string(),
+            );
+
+            println!(" ++ matched {}.", topic);
+            break; // log to the first matching topic and break
+        }
+    }
+}
+
+async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook_url: &str) {
     let mut blocks = vec![];
 
-    for (topic, articles) in &topic_articles {
+    for (topic, articles) in topic_articles {
         let header_block = json!({
             "type": "header",
             "text": json!({
@@ -188,7 +206,7 @@ async fn main() -> Result<(), reqwest::Error> {
     });
 
     let res = client
-        .post(&slack_webhook_url)
+        .post(slack_webhook_url)
         .header("Content-Type", "application/json")
         .body(payload.to_string())
         .send()
@@ -209,6 +227,4 @@ async fn main() -> Result<(), reqwest::Error> {
             eprintln!("Error sending Slack notification: {:?}", err);
         }
     }
-
-    Ok(())
 }
