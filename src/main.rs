@@ -112,7 +112,6 @@ async fn main() -> Result<(), reqwest::Error> {
                     break; // log to the first matching topic and break
                 }
             }
-            break;
         }
     }
 
