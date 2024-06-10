@@ -4,10 +4,21 @@ use rss::Channel;
 use serde_json::json;
 use std::collections::HashMap;
 use std::{env, io};
+use tokio::signal;
+use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
+    let (tx, mut rx) = mpsc::channel(1);
+
+    tokio::spawn(async move {
+        if let Err(_) = signal::ctrl_c().await {
+            eprintln!("Failed to listen for ctrl-c");
+        }
+        let _ = tx.send(()).await;
+    });
+
     let urls: Vec<String> = env::var("URLS")
         .unwrap_or_default()
         .split(';')
@@ -34,7 +45,7 @@ async fn main() -> Result<(), reqwest::Error> {
 
     let mut topic_articles: HashMap<&str, Vec<String>> = HashMap::new();
 
-    for url in urls {
+    'outer: for url in urls {
         if url.trim() == "" {
             continue;
         }
@@ -58,6 +69,12 @@ async fn main() -> Result<(), reqwest::Error> {
         println!("Parsed RSS channel with {} items", channel.items().len());
 
         for item in channel.items() {
+            // Check if a Ctrl-C signal has been received
+            if let Ok(_) = rx.try_recv() {
+                println!("Ctrl-C received, stopping article processing.");
+                break 'outer;
+            }
+
             println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
             let article_url = item.link.clone().unwrap_or_default();
