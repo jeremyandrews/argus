@@ -92,7 +92,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     send_summary(&topic_articles, &slack_webhook_url).await;
                     return Ok(());
                 },
-                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles, &cancel_rx, &db) => {}
+                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles, &cancel_rx, &db, &slack_webhook_url) => {}
             }
         }
     }
@@ -110,6 +110,7 @@ async fn process_item<'a>(
     topic_articles: &mut HashMap<&'a str, Vec<String>>,
     cancel_rx: &watch::Receiver<bool>,
     db: &Database,
+    slack_webhook_url: &str,
 ) {
     println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
@@ -235,6 +236,9 @@ async fn process_item<'a>(
 
             println!(" ++ matched {}.", topic);
 
+            // Send to Slack instantly
+            send_to_slack(&formatted_article, &formatted_response, slack_webhook_url).await;
+
             // Add the URL to the database as relevant with analysis
             db.add_article(&article_url, true, Some(topic), Some(&response_text))
                 .expect("Failed to add article to database");
@@ -293,6 +297,53 @@ async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook
 
     let client = reqwest::Client::new();
     let payload = json!({ "blocks": blocks });
+
+    let res = client
+        .post(slack_webhook_url)
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
+        .send()
+        .await;
+
+    match res {
+        Ok(response) => {
+            if response.status().is_success() {
+                println!("Slack notification sent successfully");
+            } else {
+                let error_text = response.text().await.unwrap_or_default();
+                eprintln!("Error sending Slack notification: {}", error_text);
+                eprintln!("Payload: {}", payload);
+            }
+        }
+        Err(err) => {
+            eprintln!("Error sending Slack notification: {:?}", err);
+        }
+    }
+}
+
+async fn send_to_slack(article: &str, response: &str, slack_webhook_url: &str) {
+    let client = reqwest::Client::new();
+    let payload = json!({
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": article
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": response
+                }
+            }
+        ],
+        // Disable URL unfurling
+        "unfurl_links": false,
+        "unfurl_media": false,
+    });
 
     let res = client
         .post(slack_webhook_url)
