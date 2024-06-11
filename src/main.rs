@@ -12,6 +12,17 @@ mod db;
 
 use db::Database;
 
+// All the parameters necessary to process news feed items.
+struct ProcessItemParams<'a> {
+    topics: &'a [String],
+    ollama: &'a Ollama,
+    model: &'a str,
+    temperature: f32,
+    cancel_rx: &'a watch::Receiver<bool>,
+    db: &'a Database,
+    slack_webhook_url: &'a str,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
     let (tx, mut rx) = mpsc::channel(1);
@@ -58,6 +69,16 @@ async fn main() -> Result<(), reqwest::Error> {
         .parse()
         .unwrap_or(0.0);
 
+    let params = ProcessItemParams {
+        topics: &topics,
+        ollama: &ollama,
+        model: &model,
+        temperature,
+        cancel_rx: &cancel_rx,
+        db: &db,
+        slack_webhook_url: &slack_webhook_url,
+    };
+
     for url in urls {
         if url.trim().is_empty() {
             continue;
@@ -95,7 +116,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     println!("Ctrl-C received, stopping article processing.");
                     return Ok(());
                 },
-                _ = process_item(item, &topics, &ollama, &model, temperature, &cancel_rx, &db, &slack_webhook_url) => {}
+                _ = process_item(item, &params) => {}
             }
         }
     }
@@ -103,16 +124,7 @@ async fn main() -> Result<(), reqwest::Error> {
     Ok(())
 }
 
-async fn process_item<'a>(
-    item: rss::Item,
-    topics: &'a [String],
-    ollama: &'a Ollama,
-    model: &'a str,
-    temperature: f32,
-    cancel_rx: &watch::Receiver<bool>,
-    db: &Database,
-    slack_webhook_url: &str,
-) {
+async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
     println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
     let article_url = item.link.clone().unwrap_or_default();
@@ -120,7 +132,7 @@ async fn process_item<'a>(
     let max_retries = 3;
 
     for retry_count in 0..max_retries {
-        if *cancel_rx.borrow() {
+        if *params.cancel_rx.borrow() {
             println!("Cancellation received, stopping retries.");
             return;
         }
@@ -158,7 +170,7 @@ async fn process_item<'a>(
         return;
     }
 
-    for topic in topics {
+    for topic in params.topics {
         if topic.trim().is_empty() {
             continue;
         }
@@ -168,15 +180,15 @@ async fn process_item<'a>(
         let mut response_text = String::new();
 
         for retry_count in 0..max_retries {
-            if *cancel_rx.borrow() {
+            if *params.cancel_rx.borrow() {
                 println!("Cancellation received, stopping retries.");
                 return;
             }
 
-            let mut request = GenerationRequest::new(model.to_string(), prompt.clone());
-            request.options = Some(GenerationOptions::default().temperature(temperature)); // Set the temperature to 0.0
+            let mut request = GenerationRequest::new(params.model.to_string(), prompt.clone());
+            request.options = Some(GenerationOptions::default().temperature(params.temperature)); // Set the temperature to 0.0
 
-            match timeout(Duration::from_secs(60), ollama.generate(request)).await {
+            match timeout(Duration::from_secs(60), params.ollama.generate(request)).await {
                 Ok(Ok(response)) => {
                     response_text = response.response;
                     break;
@@ -215,17 +227,26 @@ async fn process_item<'a>(
             println!(" ++ matched {}.", topic);
 
             // Send to Slack instantly
-            send_to_slack(&formatted_article, &formatted_response, slack_webhook_url).await;
+            send_to_slack(
+                &formatted_article,
+                &formatted_response,
+                params.slack_webhook_url,
+            )
+            .await;
 
             // Add the URL to the database as relevant with analysis
-            db.add_article(&article_url, true, Some(topic), Some(&response_text))
+            params
+                .db
+                .add_article(&article_url, true, Some(topic), Some(&response_text))
                 .expect("Failed to add article to database");
             break; // log to the first matching topic and break
         }
     }
 
     // If no topic matched, add the URL to the database as not relevant without analysis
-    db.add_article(&article_url, false, None, None)
+    params
+        .db
+        .add_article(&article_url, false, None, None)
         .expect("Failed to add article to database");
 }
 
