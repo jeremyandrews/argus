@@ -1,5 +1,5 @@
-use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use ollama_rs::generation::options::GenerationOptions;
+use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use readability::extractor;
 use rss::Channel;
 use serde_json::json;
@@ -52,6 +52,12 @@ async fn main() -> Result<(), reqwest::Error> {
     let db_path = env::var("DATABASE_PATH").unwrap_or("argus.db".to_string());
     let db = Database::new(&db_path).expect("Failed to initialize database");
 
+    // Read temperature from the environment variable, default to 0.0
+    let temperature: f32 = env::var("LLM_TEMPERATURE")
+        .unwrap_or("0.0".to_string())
+        .parse()
+        .unwrap_or(0.0);
+
     for url in urls {
         if url.trim().is_empty() {
             continue;
@@ -89,7 +95,7 @@ async fn main() -> Result<(), reqwest::Error> {
                     println!("Ctrl-C received, stopping article processing.");
                     return Ok(());
                 },
-                _ = process_item(item, &topics, &ollama, &model, &cancel_rx, &db, &slack_webhook_url) => {}
+                _ = process_item(item, &topics, &ollama, &model, temperature, &cancel_rx, &db, &slack_webhook_url) => {}
             }
         }
     }
@@ -102,6 +108,7 @@ async fn process_item<'a>(
     topics: &'a [String],
     ollama: &'a Ollama,
     model: &'a str,
+    temperature: f32,
     cancel_rx: &watch::Receiver<bool>,
     db: &Database,
     slack_webhook_url: &str,
@@ -167,7 +174,7 @@ async fn process_item<'a>(
             }
 
             let mut request = GenerationRequest::new(model.to_string(), prompt.clone());
-            request.options = Some(GenerationOptions::default().temperature(0.0)); // Set the temperature to 0.0
+            request.options = Some(GenerationOptions::default().temperature(temperature)); // Set the temperature to 0.0
 
             match timeout(Duration::from_secs(60), ollama.generate(request)).await {
                 Ok(Ok(response)) => {
