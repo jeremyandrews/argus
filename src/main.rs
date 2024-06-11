@@ -217,28 +217,88 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
         }
 
         if response_text.trim() != "No" {
-            let formatted_article = format!(
-                "*<{}|{}>*",
-                article_url,
-                item.title.clone().unwrap_or_default()
-            );
-            let formatted_response = response_text.clone(); // Clone here
+            // Add a new step to ask if the article should be posted to Slack
+            let post_prompt: String = format!("Should the following article be posted to Slack?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.", article_text, response_text);
 
-            println!(" ++ matched {}.", topic);
+            let mut post_response = String::new();
 
-            // Send to Slack instantly
-            send_to_slack(
-                &formatted_article,
-                &formatted_response,
-                params.slack_webhook_url,
-            )
-            .await;
+            for retry_count in 0..max_retries {
+                if *params.cancel_rx.borrow() {
+                    println!("Cancellation received, stopping retries.");
+                    return;
+                }
 
-            // Add the URL to the database as relevant with analysis
-            params
-                .db
-                .add_article(&article_url, true, Some(topic), Some(&response_text))
-                .expect("Failed to add article to database");
+                let mut post_request =
+                    GenerationRequest::new(params.model.to_string(), post_prompt.clone());
+                post_request.options =
+                    Some(GenerationOptions::default().temperature(params.temperature));
+
+                match timeout(
+                    Duration::from_secs(60),
+                    params.ollama.generate(post_request),
+                )
+                .await
+                {
+                    Ok(Ok(response)) => {
+                        post_response = response.response;
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        println!("Error generating post response: {}", e);
+                        if retry_count < max_retries - 1 {
+                            println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                        } else {
+                            println!(
+                                "Failed to generate post response after {} retries",
+                                max_retries
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        println!("Operation timed out");
+                        if retry_count < max_retries - 1 {
+                            println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                        } else {
+                            println!(
+                                "Failed to generate post response after {} retries",
+                                max_retries
+                            );
+                        }
+                    }
+                }
+
+                if retry_count < max_retries - 1 {
+                    sleep(Duration::from_secs(2)).await;
+                }
+            }
+
+            if post_response.trim() == "Yes" {
+                let formatted_article = format!(
+                    "*<{}|{}>*",
+                    article_url,
+                    item.title.clone().unwrap_or_default()
+                );
+                let formatted_response = response_text.clone();
+
+                println!(" ++ matched {}.", topic);
+
+                // Send to Slack instantly
+                send_to_slack(
+                    &formatted_article,
+                    &formatted_response,
+                    params.slack_webhook_url,
+                )
+                .await;
+
+                // Add the URL to the database as relevant with analysis
+                params
+                    .db
+                    .add_article(&article_url, true, Some(topic), Some(&response_text))
+                    .expect("Failed to add article to database");
+            } else {
+                println!("Article not posted to Slack as per LLM decision.");
+            }
+
             break; // log to the first matching topic and break
         }
     }
