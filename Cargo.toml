@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
@@ -10,5 +10,6 @@ ollama-rs = "0.1.9"
 readability = "0.3"
 reqwest = "0.12"
 rss = "2.0"
+rusqlite = "0.26"
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }

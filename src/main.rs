@@ -8,6 +8,10 @@ use tokio::signal;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, timeout, Duration};
 
+mod db;
+
+use db::Database;
+
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
     let (tx, mut rx) = mpsc::channel(1);
@@ -45,6 +49,9 @@ async fn main() -> Result<(), reqwest::Error> {
     let slack_webhook_url =
         env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL environment variable required");
 
+    let db_path = env::var("DATABASE_PATH").unwrap_or("argus.db".to_string());
+    let db = Database::new(&db_path).expect("Failed to initialize database");
+
     let mut topic_articles: HashMap<&str, Vec<String>> = HashMap::new();
 
     for url in urls {
@@ -73,13 +80,19 @@ async fn main() -> Result<(), reqwest::Error> {
         let items: Vec<rss::Item> = channel.items().to_vec();
 
         for item in items {
+            let article_url = item.link.clone().unwrap_or_default();
+            if db.has_seen(&article_url).expect("Failed to check database") {
+                println!("Skipping already seen article: {}", article_url);
+                continue;
+            }
+
             tokio::select! {
                 _ = rx.recv() => {
                     println!("Ctrl-C received, stopping article processing.");
                     send_summary(&topic_articles, &slack_webhook_url).await;
                     return Ok(());
                 },
-                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles, &cancel_rx) => {}
+                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles, &cancel_rx, &db) => {}
             }
         }
     }
@@ -96,6 +109,7 @@ async fn process_item<'a>(
     model: &'a str,
     topic_articles: &mut HashMap<&'a str, Vec<String>>,
     cancel_rx: &watch::Receiver<bool>,
+    db: &Database,
 ) {
     println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
@@ -220,9 +234,17 @@ async fn process_item<'a>(
             );
 
             println!(" ++ matched {}.", topic);
+
+            // Add the URL to the database as relevant
+            db.add_article(&article_url, true, Some(topic))
+                .expect("Failed to add article to database");
             break; // log to the first matching topic and break
         }
     }
+
+    // If no topic matched, add the URL to the database as not relevant
+    db.add_article(&article_url, false, None)
+        .expect("Failed to add article to database");
 }
 
 async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook_url: &str) {
