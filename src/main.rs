@@ -210,7 +210,7 @@ async fn process_item<'a>(
                 article_url,
                 item.title.clone().unwrap_or_default()
             );
-            let formatted_response = response_text;
+            let formatted_response = response_text.clone(); // Clone here
 
             topic_articles.entry(topic).or_default().push(
                 json!({
@@ -235,15 +235,15 @@ async fn process_item<'a>(
 
             println!(" ++ matched {}.", topic);
 
-            // Add the URL to the database as relevant
-            db.add_article(&article_url, true, Some(topic))
+            // Add the URL to the database as relevant with analysis
+            db.add_article(&article_url, true, Some(topic), Some(&response_text))
                 .expect("Failed to add article to database");
             break; // log to the first matching topic and break
         }
     }
 
-    // If no topic matched, add the URL to the database as not relevant
-    db.add_article(&article_url, false, None)
+    // If no topic matched, add the URL to the database as not relevant without analysis
+    db.add_article(&article_url, false, None, None)
         .expect("Failed to add article to database");
 }
 

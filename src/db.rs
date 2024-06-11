@@ -16,7 +16,8 @@ impl Database {
                 url TEXT NOT NULL UNIQUE,
                 seen_at TEXT NOT NULL,
                 is_relevant BOOLEAN NOT NULL,
-                category TEXT
+                category TEXT,
+                analysis TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
             "#,
@@ -26,7 +27,13 @@ impl Database {
         Ok(Database { conn })
     }
 
-    pub fn add_article(&self, url: &str, is_relevant: bool, category: Option<&str>) -> Result<()> {
+    pub fn add_article(
+        &self,
+        url: &str,
+        is_relevant: bool,
+        category: Option<&str>,
+        analysis: Option<&str>,
+    ) -> Result<()> {
         let seen_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time travel)")
@@ -35,11 +42,11 @@ impl Database {
 
         self.conn.execute(
             r#"
-            INSERT INTO articles (url, seen_at, is_relevant, category)
-            VALUES (?1, ?2, ?3, ?4)
-            ON CONFLICT(url) DO UPDATE SET seen_at = excluded.seen_at, is_relevant = excluded.is_relevant, category = excluded.category
+            INSERT INTO articles (url, seen_at, is_relevant, category, analysis)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(url) DO UPDATE SET seen_at = excluded.seen_at, is_relevant = excluded.is_relevant, category = excluded.category, analysis = excluded.analysis
             "#,
-            params![url, seen_at, is_relevant, category],
+            params![url, seen_at, is_relevant, category, analysis],
         )?;
         Ok(())
     }
