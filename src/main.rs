@@ -296,7 +296,7 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
                     .add_article(&article_url, true, Some(topic), Some(&response_text))
                     .expect("Failed to add article to database");
             } else {
-                println!("Article not posted to Slack as per LLM decision.");
+                println!("Article not posted to Slack as per LLM decision: {}", post_response.trim());
             }
 
             break; // log to the first matching topic and break
