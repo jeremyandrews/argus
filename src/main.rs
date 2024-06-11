@@ -1,4 +1,5 @@
 use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
+use ollama_rs::generation::options::GenerationOptions;
 use readability::extractor;
 use rss::Channel;
 use serde_json::json;
@@ -165,12 +166,10 @@ async fn process_item<'a>(
                 return;
             }
 
-            match timeout(
-                Duration::from_secs(60),
-                ollama.generate(GenerationRequest::new(model.to_string(), prompt.clone())),
-            )
-            .await
-            {
+            let mut request = GenerationRequest::new(model.to_string(), prompt.clone());
+            request.options = Some(GenerationOptions::default().temperature(0.0)); // Set the temperature to 0.0
+
+            match timeout(Duration::from_secs(60), ollama.generate(request)).await {
                 Ok(Ok(response)) => {
                     response_text = response.response;
                     break;
