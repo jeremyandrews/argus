@@ -107,7 +107,7 @@ async fn main() -> Result<(), reqwest::Error> {
         for item in items {
             let article_url = item.link.clone().unwrap_or_default();
             if db.has_seen(&article_url).expect("Failed to check database") {
-                println!("Skipping already seen article: {}", article_url);
+                println!(" o Skipping already seen article: {}", article_url);
                 continue;
             }
 
@@ -350,15 +350,15 @@ async fn send_to_slack(article: &str, response: &str, slack_webhook_url: &str) {
     match res {
         Ok(response) => {
             if response.status().is_success() {
-                println!("Slack notification sent successfully");
+                println!(" ** Slack notification sent successfully");
             } else {
                 let error_text = response.text().await.unwrap_or_default();
-                eprintln!("Error sending Slack notification: {}", error_text);
-                eprintln!("Payload: {}", payload);
+                eprintln!(" !! Error sending Slack notification: {}", error_text);
+                eprintln!(" !! Payload: {}", payload);
             }
         }
         Err(err) => {
-            eprintln!("Error sending Slack notification: {:?}", err);
+            eprintln!(" !! Error sending Slack notification: {:?}", err);
         }
     }
 }
