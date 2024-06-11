@@ -12,7 +12,17 @@ Argus is a Rust-based program designed to read RSS feeds, summarize articles bas
 
 ## Environment Variables
 
-Configure the program using environment variables. Copy `env.template` to `.env` and edit it as necessary.
+Configure the program using environment variables. Copy `env.template` to `.env` and edit it as necessary. You will need to source the `.env` file to make the variables available to your shell. On Linux, you can do this with `. .env`, and on macOS, you can use `source .env`.
+
+### Environment Variables in `env.template`:
+
+- `SLACK_WEBHOOK_URL`: The complete URL of the Slack Webhook to send news notifications to.
+- `URLS`: A list of RSS URLs to scrape. Use feeds without access restrictions.
+- `TOPICS`: A list of topics to search for and report on.
+- `OLLAMA_PORT`: Optionally specify a custom port for the Ollama API.
+- `OLLAMA_HOST`: Optionally specify a custom hostname for the Ollama API.
+- `OLLAMA_MODEL`: Optionally specify an Ollama model to use.
+- `DATABASE_PATH`: Optionally specify a custom path to the SQLite database file. Default is `argus.db`.
 
 ## Installation
 
@@ -25,7 +35,16 @@ Configure the program using environment variables. Copy `env.template` to `.env`
     ```sh
     cp env.template .env
     ```
-3. Build and run the program:
+3. Source the environment variables:
+    - On Linux:
+      ```sh
+      . .env
+      ```
+    - On macOS:
+      ```sh
+      source .env
+      ```
+4. Build and run the program:
     ```sh
     cargo build --release
     cargo run --release
