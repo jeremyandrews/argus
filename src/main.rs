@@ -1,8 +1,7 @@
 use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use readability::extractor;
 use rss::Channel;
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::json;
 use std::{env, io};
 use tokio::signal;
 use tokio::sync::{mpsc, watch};
@@ -52,8 +51,6 @@ async fn main() -> Result<(), reqwest::Error> {
     let db_path = env::var("DATABASE_PATH").unwrap_or("argus.db".to_string());
     let db = Database::new(&db_path).expect("Failed to initialize database");
 
-    let mut topic_articles: HashMap<&str, Vec<String>> = HashMap::new();
-
     for url in urls {
         if url.trim().is_empty() {
             continue;
@@ -89,15 +86,12 @@ async fn main() -> Result<(), reqwest::Error> {
             tokio::select! {
                 _ = rx.recv() => {
                     println!("Ctrl-C received, stopping article processing.");
-                    send_summary(&topic_articles, &slack_webhook_url).await;
                     return Ok(());
                 },
-                _ = process_item(item, &topics, &ollama, &model, &mut topic_articles, &cancel_rx, &db, &slack_webhook_url) => {}
+                _ = process_item(item, &topics, &ollama, &model, &cancel_rx, &db, &slack_webhook_url) => {}
             }
         }
     }
-
-    send_summary(&topic_articles, &slack_webhook_url).await;
 
     Ok(())
 }
@@ -107,7 +101,6 @@ async fn process_item<'a>(
     topics: &'a [String],
     ollama: &'a Ollama,
     model: &'a str,
-    topic_articles: &mut HashMap<&'a str, Vec<String>>,
     cancel_rx: &watch::Receiver<bool>,
     db: &Database,
     slack_webhook_url: &str,
@@ -213,27 +206,6 @@ async fn process_item<'a>(
             );
             let formatted_response = response_text.clone(); // Clone here
 
-            topic_articles.entry(topic).or_default().push(
-                json!({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": formatted_article
-                    }
-                })
-                .to_string(),
-            );
-            topic_articles.entry(topic).or_default().push(
-                json!({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": formatted_response
-                    }
-                })
-                .to_string(),
-            );
-
             println!(" ++ matched {}.", topic);
 
             // Send to Slack instantly
@@ -249,76 +221,6 @@ async fn process_item<'a>(
     // If no topic matched, add the URL to the database as not relevant without analysis
     db.add_article(&article_url, false, None, None)
         .expect("Failed to add article to database");
-}
-
-async fn send_summary(topic_articles: &HashMap<&str, Vec<String>>, slack_webhook_url: &str) {
-    let mut blocks = vec![];
-
-    for (topic, articles) in topic_articles {
-        let header_block = json!({
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": topic,
-                "emoji": true
-            }
-        });
-        blocks.push(header_block);
-
-        for article in articles {
-            let article_block: Value = match serde_json::from_str(article) {
-                Ok(block) => block,
-                Err(e) => {
-                    eprintln!("Error parsing block: {}", e);
-                    continue;
-                }
-            };
-            if let Some(text) = article_block
-                .get("text")
-                .and_then(|t| t.get("text"))
-                .and_then(|t| t.as_str())
-            {
-                if !text.trim().is_empty() {
-                    blocks.push(article_block);
-                }
-            }
-        }
-
-        let divider_block = json!({
-            "type": "divider"
-        });
-        blocks.push(divider_block);
-    }
-
-    if blocks.is_empty() {
-        println!("No articles matched, nothing to send to Slack.");
-        return;
-    }
-
-    let client = reqwest::Client::new();
-    let payload = json!({ "blocks": blocks });
-
-    let res = client
-        .post(slack_webhook_url)
-        .header("Content-Type", "application/json")
-        .body(payload.to_string())
-        .send()
-        .await;
-
-    match res {
-        Ok(response) => {
-            if response.status().is_success() {
-                println!("Slack notification sent successfully");
-            } else {
-                let error_text = response.text().await.unwrap_or_default();
-                eprintln!("Error sending Slack notification: {}", error_text);
-                eprintln!("Payload: {}", payload);
-            }
-        }
-        Err(err) => {
-            eprintln!("Error sending Slack notification: {:?}", err);
-        }
-    }
 }
 
 async fn send_to_slack(article: &str, response: &str, slack_webhook_url: &str) {
