@@ -2,7 +2,7 @@
 
 Argus is a Rust-based program designed to read RSS feeds, summarize articles based on specified topics, and post these summaries to a Slack channel via webhook.
 
-<img src="https://github.com/jeremyandrews/argus/blob/main/logo.png" alt="Argus Logo" width="200"/>
+<img src="https://github.com/jeremyandrews/argus/blob/main/assets/logo.png" alt="Argus Logo" width="200"/>
 
 The name "Argus" is inspired by Argus Panoptes, the all-seeing giant in Greek mythology, reflecting the program's ability to monitor and analyze numerous information sources.
 
