@@ -20,6 +20,8 @@ Configure the program using environment variables. Copy `env.template` to `.env`
 
 ### Environment Variables in `env.template`:
 
+- `SLACK_TOKEN`: The OAuth token of the Slack App to send news notifications.
+- `SLACK_CHANNEL`: The Slack channel ID to send the notifications to.
 - `SLACK_WEBHOOK_URL`: The complete URL of the Slack Webhook to send news notifications to.
 - `URLS`: A list of RSS URLs to scrape. Use feeds without access restrictions.
 - `TOPICS`: A list of topics to search for and report on.

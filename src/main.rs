@@ -20,7 +20,8 @@ struct ProcessItemParams<'a> {
     temperature: f32,
     cancel_rx: &'a watch::Receiver<bool>,
     db: &'a Database,
-    slack_webhook_url: &'a str,
+    slack_token: &'a str,
+    slack_channel: &'a str,
 }
 
 #[tokio::main]
@@ -57,8 +58,9 @@ async fn main() -> Result<(), reqwest::Error> {
         .map(|topic| topic.trim().to_string())
         .collect();
 
-    let slack_webhook_url =
-        env::var("SLACK_WEBHOOK_URL").expect("SLACK_WEBHOOK_URL environment variable required");
+    let slack_token = env::var("SLACK_TOKEN").expect("SLACK_TOKEN environment variable required");
+    let slack_channel =
+        env::var("SLACK_CHANNEL").expect("SLACK_CHANNEL environment variable required");
 
     let db_path = env::var("DATABASE_PATH").unwrap_or("argus.db".to_string());
     let db = Database::new(&db_path).expect("Failed to initialize database");
@@ -76,7 +78,8 @@ async fn main() -> Result<(), reqwest::Error> {
         temperature,
         cancel_rx: &cancel_rx,
         db: &db,
-        slack_webhook_url: &slack_webhook_url,
+        slack_token: &slack_token,
+        slack_channel: &slack_channel,
     };
 
     for url in urls {
@@ -285,11 +288,12 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
 
                 println!(" ++ matched {}.", topic);
 
-                // Send to Slack instantly
+                // Send to Slack using Slack API
                 send_to_slack(
                     &formatted_article,
                     &formatted_response,
-                    params.slack_webhook_url,
+                    params.slack_token,
+                    params.slack_channel,
                 )
                 .await;
 
@@ -316,9 +320,10 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
         .expect("Failed to add article to database");
 }
 
-async fn send_to_slack(article: &str, response: &str, slack_webhook_url: &str) {
+async fn send_to_slack(article: &str, response: &str, slack_token: &str, slack_channel: &str) {
     let client = reqwest::Client::new();
     let payload = json!({
+        "channel": slack_channel,
         "blocks": [
             {
                 "type": "section",
@@ -341,8 +346,9 @@ async fn send_to_slack(article: &str, response: &str, slack_webhook_url: &str) {
     });
 
     let res = client
-        .post(slack_webhook_url)
+        .post("https://slack.com/api/chat.postMessage")
         .header("Content-Type", "application/json")
+        .bearer_auth(slack_token)
         .body(payload.to_string())
         .send()
         .await;
