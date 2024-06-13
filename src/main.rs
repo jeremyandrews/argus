@@ -145,16 +145,14 @@ async fn process_urls(
                     } else {
                         error!("Failed to parse RSS channel");
                     }
+                } else if response.status() == reqwest::StatusCode::FORBIDDEN {
+                    params
+                        .db
+                        .add_article(&url, false, None, None)
+                        .expect("Failed to add URL to database as access denied");
+                    warn!(target: TARGET_WEB_REQUEST, "Access denied to {} - added to database to prevent retries", url);
                 } else {
-                    if response.status() == reqwest::StatusCode::FORBIDDEN {
-                        params
-                            .db
-                            .add_article(&url, false, None, None)
-                            .expect("Failed to add URL to database as access denied");
-                        warn!(target: TARGET_WEB_REQUEST, "Access denied to {} - added to database to prevent retries", url);
-                    } else {
-                        warn!(target: TARGET_WEB_REQUEST, "Error: Status {} - Headers: {:#?}", response.status(), response.headers());
-                    }
+                    warn!(target: TARGET_WEB_REQUEST, "Error: Status {} - Headers: {:#?}", response.status(), response.headers());
                 }
             }
             Err(err) => {
@@ -246,6 +244,10 @@ async fn extract_article_text(url: &str) -> String {
         info!(target: TARGET_WEB_REQUEST, "Requesting extraction for URL: {}", url);
         match timeout(Duration::from_secs(60), scrape_future).await {
             Ok(Ok(product)) => {
+                if product.text.is_empty() {
+                    warn!(target: TARGET_WEB_REQUEST, "Extracted article is empty for URL: {}", url);
+                    break;
+                }
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
                 info!(target: TARGET_WEB_REQUEST, "Extraction succeeded for URL: {}", url);
                 break;
@@ -272,6 +274,11 @@ async fn extract_article_text(url: &str) -> String {
             sleep(Duration::from_secs(2)).await;
         }
     }
+
+    if article_text.is_empty() {
+        warn!(target: TARGET_WEB_REQUEST, "Article text extraction failed for URL: {}", url);
+    }
+
     article_text
 }
 
