@@ -165,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
-    info!(" - reviewing => {}", item.title.clone().unwrap_or_default());
+    info!(" - reviewing => {} ({})", item.title.clone().unwrap_or_default(), item.link.clone().unwrap_or_default());
 
     let article_url = item.link.clone().unwrap_or_default();
     let mut article_text = String::new();
