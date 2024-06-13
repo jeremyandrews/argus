@@ -303,13 +303,14 @@ async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
 async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>) -> Option<String> {
     let max_retries = 3;
     let mut response_text = String::new();
+    let mut backoff = 2;
 
     for retry_count in 0..max_retries {
         let mut request = GenerationRequest::new(params.model.to_string(), prompt.to_string());
         request.options = Some(GenerationOptions::default().temperature(params.temperature));
 
         info!(target: TARGET_LLM_REQUEST, "Sending LLM request with prompt: {}", prompt);
-        match timeout(Duration::from_secs(60), params.ollama.generate(request)).await {
+        match timeout(Duration::from_secs(120), params.ollama.generate(request)).await {
             Ok(Ok(response)) => {
                 response_text = response.response;
                 info!(target: TARGET_LLM_REQUEST, "LLM response: {}", response_text);
@@ -334,7 +335,8 @@ async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>) -> 
         }
 
         if retry_count < max_retries - 1 {
-            sleep(Duration::from_secs(2)).await;
+            sleep(Duration::from_secs(backoff)).await;
+            backoff *= 2; // Exponential backoff
         }
     }
 
