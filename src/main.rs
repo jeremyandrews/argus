@@ -163,83 +163,16 @@ async fn process_urls(
     Ok(())
 }
 
-/// Processes a single RSS item by extracting the article text, generating a response, and potentially sending it to Slack.
-///
-/// # Arguments
-/// - `item`: The RSS item to process.
-/// - `params`: Parameters for processing items.
-async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
-    info!(
-        " - reviewing => {} ({})",
-        item.title.clone().unwrap_or_default(),
-        item.link.clone().unwrap_or_default()
-    );
-    let article_url = item.link.clone().unwrap_or_default();
-    let article_text = extract_article_text(&article_url).await;
-    if article_text.is_none() {
-        return;
-    }
-
-    for topic in params.topics {
-        if topic.trim().is_empty() {
-            continue;
-        }
-
-        let prompt = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", item, article_text.as_ref().unwrap(), topic);
-        if let Some(response_text) = generate_llm_response(&prompt, params).await {
-            if response_text.trim() != "No" {
-                let post_prompt = format!(
-                    "Is the article about {}?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.",
-                    topic,
-                    article_text.as_ref().unwrap(),
-                    response_text
-                );
-                if let Some(post_response) = generate_llm_response(&post_prompt, params).await {
-                    if post_response.trim() == "Yes" {
-                        let formatted_article = format!(
-                            "*<{}|{}>*",
-                            article_url,
-                            item.title.clone().unwrap_or_default()
-                        );
-                        send_to_slack(
-                            &formatted_article,
-                            &response_text,
-                            params.slack_token,
-                            params.slack_channel,
-                        )
-                        .await;
-                        params
-                            .db
-                            .add_article(&article_url, true, Some(topic), Some(&response_text))
-                            .expect("Failed to add article to database");
-                    } else {
-                        info!(
-                            "Article not posted to Slack as per LLM decision: {}",
-                            post_response.trim()
-                        );
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    params
-        .db
-        .add_article(&article_url, false, None, None)
-        .expect("Failed to add article to database");
-}
-
 /// Extracts the text of an article from a given URL with retries.
 ///
 /// # Arguments
 /// - `url`: The URL of the article to extract.
 ///
 /// # Returns
-/// - `Option<String>`: The extracted article text, or `None` if extraction failed.
-async fn extract_article_text(url: &str) -> Option<String> {
+/// - `Result<String, bool>`: The extracted article text, or an error indicating failure. The bool indicates if the failure was due to access denial.
+async fn extract_article_text(url: &str) -> Result<String, bool> {
     let max_retries = 3;
-    let mut article_text = None;
+    let article_text: String;
 
     for retry_count in 0..max_retries {
         let scrape_future = async { extractor::scrape(url) };
@@ -250,12 +183,9 @@ async fn extract_article_text(url: &str) -> Option<String> {
                     warn!(target: TARGET_WEB_REQUEST, "Extracted article is empty for URL: {}", url);
                     break;
                 }
-                article_text = Some(format!(
-                    "Title: {}\nBody: {}\n",
-                    product.title, product.text
-                ));
+                article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
                 info!(target: TARGET_WEB_REQUEST, "Extraction succeeded for URL: {}", url);
-                break;
+                return Ok(article_text);
             }
             Ok(Err(e)) => {
                 warn!(target: TARGET_WEB_REQUEST, "Error extracting page: {:?}", e);
@@ -263,6 +193,9 @@ async fn extract_article_text(url: &str) -> Option<String> {
                     info!(target: TARGET_WEB_REQUEST, "Retrying... ({}/{})", retry_count + 1, max_retries);
                 } else {
                     error!(target: TARGET_WEB_REQUEST, "Failed to extract article after {} retries", max_retries);
+                }
+                if e.to_string().contains("Access Denied") || e.to_string().contains("Unexpected") {
+                    return Err(true);
                 }
             }
             Err(_) => {
@@ -280,11 +213,83 @@ async fn extract_article_text(url: &str) -> Option<String> {
         }
     }
 
-    if article_text.is_none() {
-        warn!(target: TARGET_WEB_REQUEST, "Article text extraction failed for URL: {}", url);
-    }
+    warn!(target: TARGET_WEB_REQUEST, "Article text extraction failed for URL: {}", url);
+    Err(false)
+}
 
-    article_text
+/// Processes a single RSS item by extracting the article text, generating a response, and potentially sending it to Slack.
+///
+/// # Arguments
+/// - `item`: The RSS item to process.
+/// - `params`: Parameters for processing items.
+async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
+    info!(
+        " - reviewing => {} ({})",
+        item.title.clone().unwrap_or_default(),
+        item.link.clone().unwrap_or_default()
+    );
+    let article_url = item.link.clone().unwrap_or_default();
+    match extract_article_text(&article_url).await {
+        Ok(article_text) => {
+            for topic in params.topics {
+                if topic.trim().is_empty() {
+                    continue;
+                }
+
+                let prompt = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", item, article_text, topic);
+                if let Some(response_text) = generate_llm_response(&prompt, params).await {
+                    if response_text.trim() != "No" {
+                        let post_prompt = format!(
+                            "Is the article about {}?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.",
+                            topic, article_text, response_text
+                        );
+                        if let Some(post_response) =
+                            generate_llm_response(&post_prompt, params).await
+                        {
+                            if post_response.trim() == "Yes" {
+                                let formatted_article = format!(
+                                    "*<{}|{}>*",
+                                    article_url,
+                                    item.title.clone().unwrap_or_default()
+                                );
+                                send_to_slack(
+                                    &formatted_article,
+                                    &response_text,
+                                    params.slack_token,
+                                    params.slack_channel,
+                                )
+                                .await;
+                                params
+                                    .db
+                                    .add_article(
+                                        &article_url,
+                                        true,
+                                        Some(topic),
+                                        Some(&response_text),
+                                    )
+                                    .expect("Failed to add article to database");
+                            } else {
+                                info!(
+                                    "Article not posted to Slack as per LLM decision: {}",
+                                    post_response.trim()
+                                );
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        Err(access_denied) => {
+            if access_denied {
+                params
+                    .db
+                    .add_article(&article_url, false, None, None)
+                    .expect("Failed to add URL to database as access denied");
+                warn!(target: TARGET_WEB_REQUEST, "Access denied for URL: {}", article_url);
+            }
+        }
+    }
 }
 
 /// Generates a response from the LLM based on a given prompt with retries.
