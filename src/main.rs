@@ -176,7 +176,7 @@ async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
     );
     let article_url = item.link.clone().unwrap_or_default();
     let article_text = extract_article_text(&article_url).await;
-    if article_text.is_empty() {
+    if article_text.is_none() {
         return;
     }
 
@@ -185,12 +185,14 @@ async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
             continue;
         }
 
-        let prompt = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", item, article_text, topic);
+        let prompt = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", item, article_text.as_ref().unwrap(), topic);
         if let Some(response_text) = generate_llm_response(&prompt, params).await {
             if response_text.trim() != "No" {
                 let post_prompt = format!(
                     "Is the article about {}?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.",
-                    topic, article_text, response_text
+                    topic,
+                    article_text.as_ref().unwrap(),
+                    response_text
                 );
                 if let Some(post_response) = generate_llm_response(&post_prompt, params).await {
                     if post_response.trim() == "Yes" {
@@ -234,10 +236,10 @@ async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
 /// - `url`: The URL of the article to extract.
 ///
 /// # Returns
-/// - `String`
-async fn extract_article_text(url: &str) -> String {
+/// - `Option<String>`: The extracted article text, or `None` if extraction failed.
+async fn extract_article_text(url: &str) -> Option<String> {
     let max_retries = 3;
-    let mut article_text = String::new();
+    let mut article_text = None;
 
     for retry_count in 0..max_retries {
         let scrape_future = async { extractor::scrape(url) };
@@ -248,12 +250,15 @@ async fn extract_article_text(url: &str) -> String {
                     warn!(target: TARGET_WEB_REQUEST, "Extracted article is empty for URL: {}", url);
                     break;
                 }
-                article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
+                article_text = Some(format!(
+                    "Title: {}\nBody: {}\n",
+                    product.title, product.text
+                ));
                 info!(target: TARGET_WEB_REQUEST, "Extraction succeeded for URL: {}", url);
                 break;
             }
             Ok(Err(e)) => {
-                warn!(target: TARGET_WEB_REQUEST, "Error extracting page: {}", e);
+                warn!(target: TARGET_WEB_REQUEST, "Error extracting page: {:?}", e);
                 if retry_count < max_retries - 1 {
                     info!(target: TARGET_WEB_REQUEST, "Retrying... ({}/{})", retry_count + 1, max_retries);
                 } else {
@@ -275,7 +280,7 @@ async fn extract_article_text(url: &str) -> String {
         }
     }
 
-    if article_text.is_empty() {
+    if article_text.is_none() {
         warn!(target: TARGET_WEB_REQUEST, "Article text extraction failed for URL: {}", url);
     }
 
