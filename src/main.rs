@@ -31,7 +31,7 @@ struct ProcessItemParams<'a> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), reqwest::Error> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configure the stdout log layer to filter logs at the info level and above, excluding debug logs for `llm_request`
     let stdout_log = fmt::layer()
         .with_writer(io::stdout)
@@ -65,14 +65,16 @@ async fn main() -> Result<(), reqwest::Error> {
         .map(|url| url.trim().to_string())
         .collect();
 
-    let ollama_host = env::var("OLLAMA_HOST").unwrap_or("localhost".to_string());
-    let ollama_port = env::var("OLLAMA_PORT").unwrap_or("11434".to_string());
-    let ollama_port: u16 = ollama_port.parse().unwrap_or(11434);
+    let ollama_host = env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let ollama_port: u16 = env::var("OLLAMA_PORT")
+        .unwrap_or_else(|_| "11434".to_string())
+        .parse()
+        .unwrap_or(11434);
 
     info!("Connecting to Ollama at {}:{}", ollama_host, ollama_port);
 
     let ollama = Ollama::new(ollama_host, ollama_port);
-    let model = env::var("OLLAMA_MODEL").unwrap_or("llama2".to_string());
+    let model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama2".to_string());
 
     let topics: Vec<String> = env::var("TOPICS")
         .unwrap_or_default()
@@ -84,11 +86,11 @@ async fn main() -> Result<(), reqwest::Error> {
     let slack_channel =
         env::var("SLACK_CHANNEL").expect("SLACK_CHANNEL environment variable required");
 
-    let db_path = env::var("DATABASE_PATH").unwrap_or("argus.db".to_string());
+    let db_path = env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
     let db = Database::new(&db_path).expect("Failed to initialize database");
 
     let temperature: f32 = env::var("LLM_TEMPERATURE")
-        .unwrap_or("0.0".to_string())
+        .unwrap_or_else(|_| "0.0".to_string())
         .parse()
         .unwrap_or(0.0);
 
@@ -126,25 +128,30 @@ async fn main() -> Result<(), reqwest::Error> {
 
                 let body = response.text().await?;
                 let reader = io::Cursor::new(body);
-                let channel = Channel::read_from(reader).unwrap();
+                match Channel::read_from(reader) {
+                    Ok(channel) => {
+                        info!("Parsed RSS channel with {} items", channel.items().len());
+                        let items: Vec<rss::Item> = channel.items().to_vec();
 
-                info!("Parsed RSS channel with {} items", channel.items().len());
+                        for item in items {
+                            let article_url = item.link.clone().unwrap_or_default();
+                            if db.has_seen(&article_url).expect("Failed to check database") {
+                                info!(" o Skipping already seen article: {}", article_url);
+                                continue;
+                            }
 
-                let items: Vec<rss::Item> = channel.items().to_vec();
-
-                for item in items {
-                    let article_url = item.link.clone().unwrap_or_default();
-                    if db.has_seen(&article_url).expect("Failed to check database") {
-                        info!(" o Skipping already seen article: {}", article_url);
-                        continue;
+                            tokio::select! {
+                                _ = rx.recv() => {
+                                    info!("Ctrl-C received, stopping article processing.");
+                                    return Ok(());
+                                },
+                                _ = process_item(item, &params) => {}
+                            }
+                        }
                     }
-
-                    tokio::select! {
-                        _ = rx.recv() => {
-                            info!("Ctrl-C received, stopping article processing.");
-                            return Ok(());
-                        },
-                        _ = process_item(item, &params) => {}
+                    Err(e) => {
+                        error!("Failed to parse RSS channel: {:?}", e);
+                        continue;
                     }
                 }
             }
