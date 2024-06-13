@@ -60,6 +60,34 @@ When run, the program will:
 3. Match content against specified topics.
 4. Post summaries and analyses to Slack.
 
+## Logging
+
+Argus uses the `tracing` crate for logging with two log layers: one for stdout and one for log files.
+
+- **Stdout Log Layer:**
+  - Logs at the `info` level and above.
+  - Excludes `llm_request` debug logs.
+
+- **File Log Layer:**
+  - Logs at the `debug` level for `llm_request`.
+  - Logs at the `info` level for other logs.
+  - Logs are stored in `logs/app.log`.
+
+### Example Logging Configuration in `main.rs`
+
+```rust
+let stdout_log = fmt::layer()
+    .with_writer(io::stdout)
+    .with_filter(EnvFilter::new("info,llm_request=off"));
+
+let file_appender = rolling::daily("logs", "app.log");
+let file_log = fmt::layer()
+    .with_writer(file_appender)
+    .with_filter(EnvFilter::new("web_request=info,llm_request=debug,info"));
+
+Registry::default().with(stdout_log).with(file_log).init();
+```
+
 ## Dependencies
 
 - `ollama_rs` for integrating with the Ollama language model.
