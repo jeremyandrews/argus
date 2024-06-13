@@ -22,7 +22,6 @@ Configure the program using environment variables. Copy `env.template` to `.env`
 
 - `SLACK_TOKEN`: The OAuth token of the Slack App to send news notifications.
 - `SLACK_CHANNEL`: The Slack channel ID to send the notifications to.
-- `SLACK_WEBHOOK_URL`: The complete URL of the Slack Webhook to send news notifications to.
 - `URLS`: A list of RSS URLs to scrape. Use feeds without access restrictions.
 - `TOPICS`: A list of topics to search for and report on.
 - `OLLAMA_PORT`: Optionally specify a custom port for the Ollama API.
@@ -30,6 +29,7 @@ Configure the program using environment variables. Copy `env.template` to `.env`
 - `OLLAMA_MODEL`: Optionally specify an Ollama model to use.
 - `DATABASE_PATH`: Optionally specify a custom path to the SQLite database file. Default is `argus.db`.
 - `LLM_TEMPERATURE`: Optionally specify a temperature for the language model. Default is `0.0`.
+- `RUST_LOG`: Logging level for the application. Possible values are: `trace`, `debug`, `info`, `warn`, `error`. Default is `info`.
 
 ## Installation
 
@@ -67,6 +67,8 @@ When run, the program will:
 - `rss` for parsing RSS feeds.
 - `serde_json` for handling JSON data.
 - `reqwest` for making HTTP requests.
+- `tracing` for logging.
+- `tracing-subscriber` for initializing logging.
 
 ## Example
 
@@ -85,6 +87,7 @@ You will see output indicating the progress of loading RSS feeds, extracting art
 - **RSS Feed Errors:** Ensure RSS feed URLs are correct and accessible.
 - **Ollama Service Connection:** Confirm the Ollama service is running and accessible at the specified host and port.
 - **Slack Webhook Errors:** Verify the Slack webhook URL is correct and your Slack app has the necessary permissions.
+- **Logging Level:** Adjust the `RUST_LOG` environment variable to control the verbosity of logs (`trace`, `debug`, `info`, `warn`, `error`).
 
 ## Contributing
 

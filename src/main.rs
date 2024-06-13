@@ -1,4 +1,3 @@
-use log::{error, info, warn};
 use ollama_rs::generation::options::GenerationOptions;
 use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use readability::extractor;
@@ -8,6 +7,7 @@ use std::{env, io};
 use tokio::signal;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, timeout, Duration};
+use tracing::{error, info, warn};
 
 mod db;
 
@@ -27,7 +27,8 @@ struct ProcessItemParams<'a> {
 
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
-    env_logger::init();
+    // Initialize tracing subscriber
+    tracing_subscriber::fmt::init();
 
     let (tx, mut rx) = mpsc::channel(1);
     let (cancel_tx, cancel_rx) = watch::channel(false);
