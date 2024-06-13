@@ -1,3 +1,4 @@
+use log::{error, info, warn};
 use ollama_rs::generation::options::GenerationOptions;
 use ollama_rs::{generation::completion::request::GenerationRequest, Ollama};
 use readability::extractor;
@@ -26,12 +27,14 @@ struct ProcessItemParams<'a> {
 
 #[tokio::main]
 async fn main() -> Result<(), reqwest::Error> {
+    env_logger::init();
+
     let (tx, mut rx) = mpsc::channel(1);
     let (cancel_tx, cancel_rx) = watch::channel(false);
 
     tokio::spawn(async move {
         if signal::ctrl_c().await.is_err() {
-            eprintln!("Failed to listen for ctrl-c");
+            error!("Failed to listen for ctrl-c");
         }
         let _ = cancel_tx.send(true);
         let _ = tx.send(()).await;
@@ -47,7 +50,7 @@ async fn main() -> Result<(), reqwest::Error> {
     let ollama_port = env::var("OLLAMA_PORT").unwrap_or("11434".to_string());
     let ollama_port: u16 = ollama_port.parse().unwrap_or(11434);
 
-    println!("Connecting to Ollama at {}:{}", ollama_host, ollama_port);
+    info!("Connecting to Ollama at {}:{}", ollama_host, ollama_port);
 
     let ollama = Ollama::new(ollama_host, ollama_port);
     let model = env::var("OLLAMA_MODEL").unwrap_or("llama2".to_string());
@@ -87,11 +90,11 @@ async fn main() -> Result<(), reqwest::Error> {
             continue;
         }
 
-        println!("Loading RSS feed from {}", url);
+        info!("Loading RSS feed from {}", url);
 
         let res = reqwest::get(&url).await?;
         if !res.status().is_success() {
-            println!(
+            warn!(
                 "Error: Status {} - Headers: {:#?}",
                 res.status(),
                 res.headers()
@@ -103,20 +106,20 @@ async fn main() -> Result<(), reqwest::Error> {
         let reader = io::Cursor::new(body);
         let channel = Channel::read_from(reader).unwrap();
 
-        println!("Parsed RSS channel with {} items", channel.items().len());
+        info!("Parsed RSS channel with {} items", channel.items().len());
 
         let items: Vec<rss::Item> = channel.items().to_vec();
 
         for item in items {
             let article_url = item.link.clone().unwrap_or_default();
             if db.has_seen(&article_url).expect("Failed to check database") {
-                println!(" o Skipping already seen article: {}", article_url);
+                info!(" o Skipping already seen article: {}", article_url);
                 continue;
             }
 
             tokio::select! {
                 _ = rx.recv() => {
-                    println!("Ctrl-C received, stopping article processing.");
+                    info!("Ctrl-C received, stopping article processing.");
                     return Ok(());
                 },
                 _ = process_item(item, &params) => {}
@@ -128,7 +131,7 @@ async fn main() -> Result<(), reqwest::Error> {
 }
 
 async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
-    println!(" - reviewing => {}", item.title.clone().unwrap_or_default());
+    info!(" - reviewing => {}", item.title.clone().unwrap_or_default());
 
     let article_url = item.link.clone().unwrap_or_default();
     let mut article_text = String::new();
@@ -136,7 +139,7 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
 
     for retry_count in 0..max_retries {
         if *params.cancel_rx.borrow() {
-            println!("Cancellation received, stopping retries.");
+            info!("Cancellation received, stopping retries.");
             return;
         }
 
@@ -147,19 +150,19 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
                 break;
             }
             Ok(Err(e)) => {
-                println!("Error extracting page: {}", e);
+                warn!("Error extracting page: {}", e);
                 if retry_count < max_retries - 1 {
-                    println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                    info!("Retrying... ({}/{})", retry_count + 1, max_retries);
                 } else {
-                    println!("Failed to extract article after {} retries", max_retries);
+                    error!("Failed to extract article after {} retries", max_retries);
                 }
             }
             Err(_) => {
-                println!("Operation timed out");
+                warn!("Operation timed out");
                 if retry_count < max_retries - 1 {
-                    println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                    info!("Retrying... ({}/{})", retry_count + 1, max_retries);
                 } else {
-                    println!("Failed to extract article after {} retries", max_retries);
+                    error!("Failed to extract article after {} retries", max_retries);
                 }
             }
         }
@@ -184,7 +187,7 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
 
         for retry_count in 0..max_retries {
             if *params.cancel_rx.borrow() {
-                println!("Cancellation received, stopping retries.");
+                info!("Cancellation received, stopping retries.");
                 return;
             }
 
@@ -197,19 +200,19 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
                     break;
                 }
                 Ok(Err(e)) => {
-                    println!("Error generating response: {}", e);
+                    warn!("Error generating response: {}", e);
                     if retry_count < max_retries - 1 {
-                        println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                        info!("Retrying... ({}/{})", retry_count + 1, max_retries);
                     } else {
-                        println!("Failed to generate response after {} retries", max_retries);
+                        error!("Failed to generate response after {} retries", max_retries);
                     }
                 }
                 Err(_) => {
-                    println!("Operation timed out");
+                    warn!("Operation timed out");
                     if retry_count < max_retries - 1 {
-                        println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                        info!("Retrying... ({}/{})", retry_count + 1, max_retries);
                     } else {
-                        println!("Failed to generate response after {} retries", max_retries);
+                        error!("Failed to generate response after {} retries", max_retries);
                     }
                 }
             }
@@ -230,7 +233,7 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
 
             for retry_count in 0..max_retries {
                 if *params.cancel_rx.borrow() {
-                    println!("Cancellation received, stopping retries.");
+                    info!("Cancellation received, stopping retries.");
                     return;
                 }
 
@@ -250,22 +253,22 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
                         break;
                     }
                     Ok(Err(e)) => {
-                        println!("Error generating post response: {}", e);
+                        warn!("Error generating post response: {}", e);
                         if retry_count < max_retries - 1 {
-                            println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                            info!("Retrying... ({}/{})", retry_count + 1, max_retries);
                         } else {
-                            println!(
+                            error!(
                                 "Failed to generate post response after {} retries",
                                 max_retries
                             );
                         }
                     }
                     Err(_) => {
-                        println!("Operation timed out");
+                        warn!("Operation timed out");
                         if retry_count < max_retries - 1 {
-                            println!("Retrying... ({}/{})", retry_count + 1, max_retries);
+                            info!("Retrying... ({}/{})", retry_count + 1, max_retries);
                         } else {
-                            println!(
+                            error!(
                                 "Failed to generate post response after {} retries",
                                 max_retries
                             );
@@ -286,7 +289,7 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
                 );
                 let formatted_response = response_text.clone();
 
-                println!(" ++ matched {}.", topic);
+                info!(" ++ matched {}.", topic);
 
                 // Send to Slack using Slack API
                 send_to_slack(
@@ -303,7 +306,7 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
                     .add_article(&article_url, true, Some(topic), Some(&response_text))
                     .expect("Failed to add article to database");
             } else {
-                println!(
+                info!(
                     "Article not posted to Slack as per LLM decision: {}",
                     post_response.trim()
                 );
@@ -356,15 +359,15 @@ async fn send_to_slack(article: &str, response: &str, slack_token: &str, slack_c
     match res {
         Ok(response) => {
             if response.status().is_success() {
-                println!(" ** Slack notification sent successfully");
+                info!(" ** Slack notification sent successfully");
             } else {
                 let error_text = response.text().await.unwrap_or_default();
-                eprintln!(" !! Error sending Slack notification: {}", error_text);
-                eprintln!(" !! Payload: {}", payload);
+                error!(" !! Error sending Slack notification: {}", error_text);
+                error!(" !! Payload: {}", payload);
             }
         }
         Err(err) => {
-            eprintln!(" !! Error sending Slack notification: {:?}", err);
+            error!(" !! Error sending Slack notification: {:?}", err);
         }
     }
 }
