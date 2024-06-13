@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configure the stdout log layer to filter logs at the info level and above, excluding debug logs for `llm_request`
     let stdout_log = fmt::layer()
         .with_writer(io::stdout)
-        .with_filter(EnvFilter::new("info,llm_request=off"));
+        .with_filter(EnvFilter::new("info,llm_request=warn,web_request=warn"));
 
     // Configure the file log layer to filter logs at the debug level for `llm_request` and info level for others
     let file_appender = rolling::daily("logs", "app.log");
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .unwrap_or(11434);
 
-    info!("Connecting to Ollama at {}:{}", ollama_host, ollama_port);
+    info!(target: TARGET_LLM_REQUEST, "Connecting to Ollama at {}:{}", ollama_host, ollama_port);
 
     let ollama = Ollama::new(ollama_host, ollama_port);
     let model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama2".to_string());
@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        info!("Loading RSS feed from {}", url);
+        info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", url);
 
         let res = reqwest::get(&url).await;
         match res {
@@ -130,13 +130,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let reader = io::Cursor::new(body);
                 match Channel::read_from(reader) {
                     Ok(channel) => {
-                        info!("Parsed RSS channel with {} items", channel.items().len());
+                        info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
                         let items: Vec<rss::Item> = channel.items().to_vec();
 
                         for item in items {
                             let article_url = item.link.clone().unwrap_or_default();
                             if db.has_seen(&article_url).expect("Failed to check database") {
-                                info!(" o Skipping already seen article: {}", article_url);
+                                info!(target: TARGET_WEB_REQUEST, " o Skipping already seen article: {}", article_url);
                                 continue;
                             }
 
