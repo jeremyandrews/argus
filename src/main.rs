@@ -4,8 +4,6 @@ use readability::extractor;
 use rss::Channel;
 use serde_json::json;
 use std::{env, io};
-use tokio::signal;
-use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{error, info, warn};
 use tracing_appender::rolling;
@@ -24,7 +22,6 @@ struct ProcessItemParams<'a> {
     ollama: &'a Ollama,
     model: &'a str,
     temperature: f32,
-    cancel_rx: &'a watch::Receiver<bool>,
     db: &'a Database,
     slack_token: &'a str,
     slack_channel: &'a str,
@@ -47,17 +44,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Registry::default().with(stdout_log).with(file_log).init();
 
     // Rest of the main function...
-
-    let (tx, mut rx) = mpsc::channel(1);
-    let (cancel_tx, cancel_rx) = watch::channel(false);
-
-    tokio::spawn(async move {
-        if signal::ctrl_c().await.is_err() {
-            error!("Failed to listen for ctrl-c");
-        }
-        let _ = cancel_tx.send(true);
-        let _ = tx.send(()).await;
-    });
 
     let urls: Vec<String> = env::var("URLS")
         .unwrap_or_default()
@@ -99,7 +85,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ollama: &ollama,
         model: &model,
         temperature,
-        cancel_rx: &cancel_rx,
         db: &db,
         slack_token: &slack_token,
         slack_channel: &slack_channel,
@@ -140,13 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
 
-                            tokio::select! {
-                                _ = rx.recv() => {
-                                    info!("Ctrl-C received, stopping article processing.");
-                                    return Ok(());
-                                },
-                                _ = process_item(item, &params) => {}
-                            }
+                            process_item(item, &params).await;
                         }
                     }
                     Err(e) => {
@@ -165,18 +144,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
-    info!(" - reviewing => {} ({})", item.title.clone().unwrap_or_default(), item.link.clone().unwrap_or_default());
+    info!(
+        " - reviewing => {} ({})",
+        item.title.clone().unwrap_or_default(),
+        item.link.clone().unwrap_or_default()
+    );
 
     let article_url = item.link.clone().unwrap_or_default();
     let mut article_text = String::new();
     let max_retries = 3;
 
     for retry_count in 0..max_retries {
-        if *params.cancel_rx.borrow() {
-            info!("Cancellation received, stopping retries.");
-            return;
-        }
-
         let scrape_future = async { extractor::scrape(&article_url) };
         info!(target: TARGET_WEB_REQUEST, "Requesting extraction for URL: {}", article_url);
         match timeout(Duration::from_secs(60), scrape_future).await {
@@ -222,11 +200,6 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
         let mut response_text = String::new();
 
         for retry_count in 0..max_retries {
-            if *params.cancel_rx.borrow() {
-                info!("Cancellation received, stopping retries.");
-                return;
-            }
-
             let mut request = GenerationRequest::new(params.model.to_string(), prompt.clone());
             request.options = Some(GenerationOptions::default().temperature(params.temperature));
 
@@ -269,11 +242,6 @@ async fn process_item<'a>(item: rss::Item, params: &ProcessItemParams<'a>) {
             let mut post_response = String::new();
 
             for retry_count in 0..max_retries {
-                if *params.cancel_rx.borrow() {
-                    info!("Cancellation received, stopping retries.");
-                    return;
-                }
-
                 let mut post_request =
                     GenerationRequest::new(params.model.to_string(), post_prompt.clone());
                 post_request.options =
