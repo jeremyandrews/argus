@@ -4,3 +4,4 @@
 /.github
 /.pre-commit-config.yaml
 /logs/
+/.DS_Store
