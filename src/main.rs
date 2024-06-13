@@ -121,34 +121,45 @@ async fn process_urls(
 
         info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", url);
 
-        if let Ok(response) = reqwest::get(&url).await {
-            info!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", url, response.status());
-            if response.status().is_success() {
-                let body = response.text().await?;
-                let reader = io::Cursor::new(body);
-                if let Ok(channel) = Channel::read_from(reader) {
-                    info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
-                    for item in channel.items() {
-                        if let Some(article_url) = item.link.clone() {
-                            if params
-                                .db
-                                .has_seen(&article_url)
-                                .expect("Failed to check database")
-                            {
-                                info!(target: TARGET_WEB_REQUEST, "Skipping already seen article: {}", article_url);
-                                continue;
+        match reqwest::get(&url).await {
+            Ok(response) => {
+                info!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", url, response.status());
+                if response.status().is_success() {
+                    let body = response.text().await?;
+                    let reader = io::Cursor::new(body);
+                    if let Ok(channel) = Channel::read_from(reader) {
+                        info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
+                        for item in channel.items() {
+                            if let Some(article_url) = item.link.clone() {
+                                if params
+                                    .db
+                                    .has_seen(&article_url)
+                                    .expect("Failed to check database")
+                                {
+                                    info!(target: TARGET_WEB_REQUEST, "Skipping already seen article: {}", article_url);
+                                    continue;
+                                }
+                                process_item(item.clone(), params).await;
                             }
-                            process_item(item.clone(), params).await;
                         }
+                    } else {
+                        error!("Failed to parse RSS channel");
                     }
                 } else {
-                    error!("Failed to parse RSS channel");
+                    if response.status() == reqwest::StatusCode::FORBIDDEN {
+                        params
+                            .db
+                            .add_article(&url, false, None, None)
+                            .expect("Failed to add URL to database as access denied");
+                        warn!(target: TARGET_WEB_REQUEST, "Access denied to {} - added to database to prevent retries", url);
+                    } else {
+                        warn!(target: TARGET_WEB_REQUEST, "Error: Status {} - Headers: {:#?}", response.status(), response.headers());
+                    }
                 }
-            } else {
-                warn!(target: TARGET_WEB_REQUEST, "Error: Status {} - Headers: {:#?}", response.status(), response.headers());
             }
-        } else {
-            error!("Request to {} failed", url);
+            Err(err) => {
+                error!("Request to {} failed: {}", url, err);
+            }
         }
     }
     Ok(())
