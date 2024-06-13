@@ -17,6 +17,7 @@ mod db;
 
 use db::Database;
 
+/// Struct to hold parameters for processing items.
 struct ProcessItemParams<'a> {
     topics: &'a [String],
     ollama: &'a Ollama,
@@ -27,6 +28,10 @@ struct ProcessItemParams<'a> {
     slack_channel: &'a str,
 }
 
+/// Main function to configure logging and process URLs asynchronously.
+///
+/// # Returns
+/// - `Result<(), Box<dyn std::error::Error>>`
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     configure_logging();
@@ -67,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Configures the logging system to log to stdout and a file.
 fn configure_logging() {
     let stdout_log = fmt::layer()
         .with_writer(io::stdout)
@@ -80,6 +86,14 @@ fn configure_logging() {
     Registry::default().with(stdout_log).with(file_log).init();
 }
 
+/// Retrieves an environment variable and splits it into a vector of strings based on a delimiter.
+///
+/// # Arguments
+/// - `var`: The name of the environment variable.
+/// - `delimiter`: The character to split the environment variable's value by.
+///
+/// # Returns
+/// - `Vec<String>`
 fn get_env_var_as_vec(var: &str, delimiter: char) -> Vec<String> {
     env::var(var)
         .unwrap_or_default()
@@ -88,6 +102,14 @@ fn get_env_var_as_vec(var: &str, delimiter: char) -> Vec<String> {
         .collect()
 }
 
+/// Processes a list of URLs by loading RSS feeds and handling each item.
+///
+/// # Arguments
+/// - `urls`: A vector of URLs to process.
+/// - `params`: Parameters for processing items.
+///
+/// # Returns
+/// - `Result<(), Box<dyn std::error::Error>>`
 async fn process_urls(
     urls: Vec<String>,
     params: &ProcessItemParams<'_>,
@@ -132,6 +154,11 @@ async fn process_urls(
     Ok(())
 }
 
+/// Processes a single RSS item by extracting the article text, generating a response, and potentially sending it to Slack.
+///
+/// # Arguments
+/// - `item`: The RSS item to process.
+/// - `params`: Parameters for processing items.
 async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
     info!(
         " - reviewing => {} ({})",
@@ -192,6 +219,13 @@ async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
         .expect("Failed to add article to database");
 }
 
+/// Extracts the text of an article from a given URL with retries.
+///
+/// # Arguments
+/// - `url`: The URL of the article to extract.
+///
+/// # Returns
+/// - `String`
 async fn extract_article_text(url: &str) -> String {
     let max_retries = 3;
     let mut article_text = String::new();
@@ -230,6 +264,14 @@ async fn extract_article_text(url: &str) -> String {
     article_text
 }
 
+/// Generates a response from the LLM based on a given prompt with retries.
+///
+/// # Arguments
+/// - `prompt`: The prompt to send to the LLM.
+/// - `params`: Parameters for processing items.
+///
+/// # Returns
+/// - `Option<String>`
 async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>) -> Option<String> {
     let max_retries = 3;
     let mut response_text = String::new();
@@ -275,6 +317,13 @@ async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>) -> 
     }
 }
 
+/// Sends a message to a Slack channel with the article and response text.
+///
+/// # Arguments
+/// - `article`: The article text to send.
+/// - `response`: The LLM response text to send.
+/// - `slack_token`: The Slack API token.
+/// - `slack_channel`: The Slack channel ID.
 async fn send_to_slack(article: &str, response: &str, slack_token: &str, slack_channel: &str) {
     let client = reqwest::Client::new();
     let payload = json!({
