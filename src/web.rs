@@ -3,7 +3,7 @@ use readability::extractor;
 use rss::Channel;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::db::Database;
 use crate::llm::generate_llm_response;
@@ -50,6 +50,9 @@ pub async fn process_urls(
                                     continue;
                                 }
                                 process_item(item.clone(), params).await;
+                                // Add a 30-second delay after processing each URL
+                                debug!(" zzz - sleeping 30 seconds ...");
+                                sleep(Duration::from_secs(30)).await;
                             }
                         }
                     } else {
