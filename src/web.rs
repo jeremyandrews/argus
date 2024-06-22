@@ -83,6 +83,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
+            let mut matched = false;
             for topic in params.topics {
                 if topic.trim().is_empty() {
                     continue;
@@ -120,16 +121,30 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                                         Some(&response_text),
                                     )
                                     .expect("Failed to add article to database");
+                                matched = true;
                                 break;
                             } else {
                                 info!(
-                                    "Article not posted to Slack as per LLM decision: {}",
+                                    "Article not posted to Slack as it is not about topic '{}': {}",
+                                    topic,
                                     post_response.trim()
                                 );
                             }
                         }
+                    } else {
+                        info!(
+                            "Article not posted to Slack as it is not about topic '{}': {}",
+                            topic,
+                            response_text.trim()
+                        );
                     }
                 }
+            }
+            if !matched {
+                info!(
+                    "Article not posted to Slack as it did not match any specified topics: {}",
+                    article_url
+                );
             }
             // Add a 20-second delay after processing each article
             debug!(" zzz - sleeping 20 seconds ...");
