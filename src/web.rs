@@ -80,6 +80,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
         item.link.clone().unwrap_or_default()
     );
     let article_url = item.link.clone().unwrap_or_default();
+
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
             for topic in params.topics {
@@ -119,20 +120,20 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                                         Some(&response_text),
                                     )
                                     .expect("Failed to add article to database");
+                                break;
                             } else {
                                 info!(
                                     "Article not posted to Slack as per LLM decision: {}",
                                     post_response.trim()
                                 );
                             }
-                            // Add a 20-second delay after processing each URL
-                            debug!(" zzz - sleeping 20 seconds ...");
-                            sleep(Duration::from_secs(20)).await;
-                            break;
                         }
                     }
                 }
             }
+            // Add a 20-second delay after processing each article
+            debug!(" zzz - sleeping 20 seconds ...");
+            sleep(Duration::from_secs(20)).await;
         }
         Err(access_denied) => {
             if access_denied {
