@@ -15,14 +15,14 @@ pub struct ProcessItemParams<'a> {
     pub ollama: &'a Ollama,
     pub model: &'a str,
     pub temperature: f32,
-    pub db: &'a Database,
+    pub db: &'a mut Database,
     pub slack_token: &'a str,
     pub slack_channel: &'a str,
 }
 
 pub async fn process_urls(
     urls: Vec<String>,
-    params: &ProcessItemParams<'_>,
+    params: &mut ProcessItemParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for url in urls {
         if url.trim().is_empty() {
@@ -50,9 +50,6 @@ pub async fn process_urls(
                                     continue;
                                 }
                                 process_item(item.clone(), params).await;
-                                // Add a 30-second delay after processing each URL
-                                debug!(" zzz - sleeping 30 seconds ...");
-                                sleep(Duration::from_secs(30)).await;
                             }
                         }
                     } else {
@@ -76,7 +73,7 @@ pub async fn process_urls(
     Ok(())
 }
 
-async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
+async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
     info!(
         " - reviewing => {} ({})",
         item.title.clone().unwrap_or_default(),
@@ -128,6 +125,9 @@ async fn process_item(item: rss::Item, params: &ProcessItemParams<'_>) {
                                     post_response.trim()
                                 );
                             }
+                            // Add a 20-second delay after processing each URL
+                            debug!(" zzz - sleeping 20 seconds ...");
+                            sleep(Duration::from_secs(20)).await;
                             break;
                         }
                     }
