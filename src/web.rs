@@ -99,7 +99,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                         if let Some(post_response) =
                             generate_llm_response(&post_prompt, params).await
                         {
-                            if post_response.trim() == "Yes" {
+                            if post_response.trim().starts_with("Yes") {
                                 let formatted_article = format!(
                                     "*<{}|{}>*",
                                     article_url,
@@ -125,18 +125,24 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                                 break;
                             } else {
                                 info!(
-                                    "Article not posted to Slack as it is not about topic '{}': {}",
+                                    "Article is not about topic '{}': {}",
                                     topic,
                                     post_response.trim()
                                 );
+                                // Add a 10-second delay after processing topic
+                                debug!(" zzz - sleeping 10 seconds ...");
+                                sleep(Duration::from_secs(10)).await;
                             }
                         }
                     } else {
                         info!(
-                            "Article not posted to Slack as it is not about topic '{}': {}",
+                            "Article is not about topic '{}': {}",
                             topic,
                             response_text.trim()
                         );
+                        // Add a 10-second delay after processing topic
+                        debug!(" zzz - sleeping 10 seconds ...");
+                        sleep(Duration::from_secs(10)).await;
                     }
                 }
             }
@@ -146,9 +152,9 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     article_url
                 );
             }
-            // Add a 20-second delay after processing each article
-            debug!(" zzz - sleeping 20 seconds ...");
-            sleep(Duration::from_secs(20)).await;
+            // Add a 60-second delay after processing each article
+            debug!(" zzz - sleeping 60 seconds ...");
+            sleep(Duration::from_secs(60)).await;
         }
         Err(access_denied) => {
             if access_denied {
