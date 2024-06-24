@@ -89,7 +89,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     continue;
                 }
 
-                let prompt = format!("{:?} | {} | \nDetermine whether this is specifically about {}. If it is concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and pointing out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", item, article_text, topic);
+                let prompt = format!("{} | \nDetermine whether this is specifically about {}. If it is, concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and point out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", article_text, topic);
                 if let Some(response_text) = generate_llm_response(&prompt, params).await {
                     if response_text.trim() != "No" {
                         let post_prompt = format!(
@@ -124,22 +124,14 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                                 matched = true;
                                 break;
                             } else {
-                                info!(
-                                    "Article is not about topic '{}': {}",
-                                    topic,
-                                    post_response.trim()
-                                );
+                                info!("Article is not about '{}': {}", topic, post_response.trim());
                                 // Add a 10-second delay after processing topic
                                 debug!(" zzz - sleeping 10 seconds ...");
                                 sleep(Duration::from_secs(10)).await;
                             }
                         }
                     } else {
-                        info!(
-                            "Article is not about topic '{}': {}",
-                            topic,
-                            response_text.trim()
-                        );
+                        info!("Article is not about '{}': {}", topic, response_text.trim());
                         // Add a 10-second delay after processing topic
                         debug!(" zzz - sleeping 10 seconds ...");
                         sleep(Duration::from_secs(10)).await;
@@ -148,7 +140,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             }
             if !matched {
                 info!(
-                    "Article not posted to Slack as it did not match any specified topics: {}",
+                    "Article not posted to Slack as it did not match any specified topic: {}",
                     article_url
                 );
             }
