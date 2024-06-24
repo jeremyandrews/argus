@@ -1,6 +1,7 @@
 use ollama_rs::Ollama;
 use readability::extractor;
 use rss::Channel;
+use serde_json::Value;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -18,6 +19,7 @@ pub struct ProcessItemParams<'a> {
     pub db: &'a mut Database,
     pub slack_token: &'a str,
     pub slack_channel: &'a str,
+    pub places: Option<Value>,
 }
 
 pub async fn process_urls(
@@ -84,6 +86,52 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
             let mut matched = false;
+            let mut affected_people = Vec::new();
+
+            if let Some(places) = &params.places {
+                for (continent, countries) in places.as_object().unwrap() {
+                    let continent_prompt = format!(
+                        "Is this a current event directly affecting people living on the continent of {}? Answer yes or no.",
+                        continent
+                    );
+                    if let Some(continent_response) =
+                        generate_llm_response(&continent_prompt, params).await
+                    {
+                        if continent_response.trim().to_lowercase().starts_with("yes") {
+                            for (country, cities) in countries.as_object().unwrap() {
+                                let country_prompt = format!("Is this a current event directly affecting people living in the country of {} on {}? Answer yes or no.", country, continent);
+                                if let Some(country_response) =
+                                    generate_llm_response(&country_prompt, params).await
+                                {
+                                    if country_response.trim().to_lowercase().starts_with("yes") {
+                                        for city in cities.as_array().unwrap() {
+                                            let city_data: Vec<&str> =
+                                                city.as_str().unwrap().split(", ").collect();
+                                            let city_name = city_data[2];
+                                            let city_prompt = format!("Is this a current event directly affecting people living in or near the city of {} in the country of {} on {}? Answer yes or no.", city_name, country, continent);
+                                            if let Some(city_response) =
+                                                generate_llm_response(&city_prompt, params).await
+                                            {
+                                                if city_response
+                                                    .trim()
+                                                    .to_lowercase()
+                                                    .starts_with("yes")
+                                                {
+                                                    affected_people.push(format!(
+                                                        "{} {} ({})",
+                                                        city_data[0], city_data[1], city_data[5]
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             for topic in params.topics {
                 if topic.trim().is_empty() {
                     continue;
@@ -105,9 +153,16 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                                     article_url,
                                     item.title.clone().unwrap_or_default()
                                 );
+                                let affected_summary = if !affected_people.is_empty() {
+                                    format!("This article affects: {}", affected_people.join(", "))
+                                } else {
+                                    "This article affects: No one".to_string()
+                                };
+                                let full_response_text =
+                                    format!("{}\n\n{}", response_text, affected_summary);
                                 send_to_slack(
                                     &formatted_article,
-                                    &response_text,
+                                    &full_response_text,
                                     params.slack_token,
                                     params.slack_channel,
                                 )

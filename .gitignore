@@ -5,3 +5,5 @@
 /.pre-commit-config.yaml
 /logs/
 /.DS_Store
+/places.json
+/*swp

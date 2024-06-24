@@ -1,0 +1,52 @@
+{
+    "Africa": {
+        "Country1": [
+            "First name, Last name, City, Country1, Time Zone, Slack ID"
+        ],
+        "Country2": [
+            "First name, Last name, City, Country2, Time Zone, Slack ID"
+        ]
+    },
+    "Asia": {
+        "Country1": [
+            "First name, Last name, City, Country1, Time Zone, Slack ID"
+        ],
+        "Country2": [
+            "First name, Last name, City, Country2, Time Zone, Slack ID"
+        ]
+    },
+    "Australia": {
+        "Australia": [
+            "First name, Last name, City, Australia, Time Zone, Slack ID",
+            "First name, Last name, City, Australia, Time Zone, Slack ID"
+        ]
+    },
+    "Europe": {
+        "Country1": [
+            "First name, Last name, City, Country1, Time Zone, Slack ID"
+        ],
+        "Country2": [
+            "First name, Last name, City, Country2, Time Zone, Slack ID",
+            "First name, Last name, City, Country2, Time Zone, Slack ID"
+        ],
+        "Country3": [
+            "First name, Last name, City, Country3, Time Zone, Slack ID"
+        ]
+    },
+    "North America": {
+        "Country1": [
+            "First name, Last name, City, Country1, Time Zone, Slack ID"
+        ],
+        "Country2": [
+            "First name, Last name, City, Country2, Time Zone, Slack ID"
+        ],
+        "Country3": [
+            "First name, Last name, City, Country3, Time Zone, Slack ID",
+            "First name, Last name, City, Country3, Time Zone, Slack ID"
+        ],
+        "Country4": [
+            "First name, Last name, City, Country4, Time Zone, Slack ID"
+        ]
+    }
+}
+

@@ -1,6 +1,9 @@
 use ollama_rs::Ollama;
+use serde_json::Value;
 use std::env;
-use tracing::info;
+use std::fs;
+use std::path::Path;
+use tracing::{debug, info, warn};
 
 const TARGET_WEB_REQUEST: &str = "web_request";
 const TARGET_LLM_REQUEST: &str = "llm_request";
@@ -43,6 +46,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .unwrap_or(0.0);
 
+    // Load JSON data if PLACES_JSON_PATH environment variable is set
+    let places = if let Ok(json_path) = env::var("PLACES_JSON_PATH") {
+        if Path::new(&json_path).exists() {
+            let json_data = fs::read_to_string(json_path)?;
+            let places: Value = serde_json::from_str(&json_data)?;
+            info!(target: TARGET_DB, "Loaded places data: {:?}", places);
+            Some(places)
+        } else {
+            warn!(target: TARGET_DB, "Specified PLACES_JSON_PATH does not exist: {}", json_path);
+            None
+        }
+    } else {
+        debug!(target: TARGET_DB, "PLACES_JSON_PATH environment variable not set.");
+        None
+    };
+
     let mut params = ProcessItemParams {
         topics: &topics,
         ollama: &ollama,
@@ -51,6 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         db: &mut db,
         slack_token: &slack_token,
         slack_channel: &slack_channel,
+        places,
     };
 
     process_urls(urls, &mut params).await?;
