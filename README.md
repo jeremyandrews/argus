@@ -29,7 +29,91 @@ Configure the program using environment variables. Copy `env.template` to `.env`
 - `OLLAMA_MODEL`: Optionally specify an Ollama model to use.
 - `DATABASE_PATH`: Optionally specify a custom path to the SQLite database file. Default is `argus.db`.
 - `LLM_TEMPERATURE`: Optionally specify a temperature for the language model. Default is `0.0`.
+- `PLACES_JSON_PATH`: Optionally specify the path to a JSON file with place information.
 - `RUST_LOG`: Logging level for the application. Possible values are: `trace`, `debug`, `info`, `warn`, `error`. Default is `info`.
+
+## Place-Specific Analysis
+
+To enable place-specific analysis, you need to create a JSON file that includes information about the continents, countries, and cities you want to monitor. Here’s how to set it up:
+
+1. **Copy the Template:**
+    ```sh
+    cp places.json.template places.json
+    ```
+
+2. **Edit `places.json`:** Update the JSON file with your data. The structure should be as follows:
+    ```json
+    {
+        "Continent": {
+            "Country": [
+                "First name, Last name, City, Country, Time Zone, Slack ID"
+            ],
+            "Another Country": [
+                "First name, Last name, City, Another Country, Time Zone, Slack ID"
+            ]
+        },
+        "Another Continent": {
+            "Country": [
+                "First name, Last name, City, Country, Time Zone, Slack ID"
+            ]
+        }
+    }
+    ```
+
+3. **Example `places.json`:**
+    ```json
+    {
+        "Africa": {
+            "Kenya": [
+                "Sammy, Gituko, Nairobi, Kenya, EAT (UTC+3), Sammy G"
+            ],
+            "South Africa": [
+                "Charles, Tanton, Cape Town, South Africa, SAST (UTC+2), Charles Tanton"
+            ]
+        },
+        "Asia": {
+            "India": [
+                "Ajit, Shinde, Pune, India, IST (UTC+5:30), AjitS"
+            ],
+            "Thailand": [
+                "Sebastian, Leu, Chiang Mai, Thailand, ICT (UTC+7), Sebastian Leu"
+            ]
+        },
+        "Europe": {
+            "Italy": [
+                "Francesco, Pesenti, Venice, Italy, CET (UTC+1), pex",
+                "Jeremy, Andrews, Barga, Italy, CET (UTC+1), jeremy"
+            ],
+            "United Kingdom": [
+                "Temi, Amosu, London, UK, GMT (UTC), Temi Amosu"
+            ]
+        },
+        "North America": {
+            "US": [
+                "Allyson, Mackay Dombey, New Orleans, US, CST (UTC-6), Allyson Mackay Dombey",
+                "Anna, S. Kalata, Chicago, US, CST (UTC-6), akalata"
+            ]
+        }
+    }
+    ```
+
+4. **Set the Environment Variable:**
+    ```sh
+    export PLACES_JSON_PATH="places.json"
+    ```
+
+### How It Works
+
+When the `PLACES_JSON_PATH` environment variable is set, the program will:
+
+1. Load the JSON structure from the specified file into memory.
+2. For each relevant continent, ask the language model, "Is this a current event directly affecting people living on the continent of <CONTINENT>? Answer yes or no."
+3. If the answer is "yes," it will loop through the countries in that continent and ask, "Is this a current event directly affecting people living in the country of <COUNTRY> on <CONTINENT>? Answer yes or no."
+4. If the answer is "yes," it will loop through the cities in that country and ask, "Is this a current event directly affecting people living in or near the city of <CITY> in the country of <COUNTRY> on <CONTINENT>? Answer yes or no."
+5. If the answer is "yes," it will add all people in that city to a list of affected individuals.
+6. After checking all relevant places, the program will post the article to Slack and include a summary of all affected people in the format: "This article affects: FIRST LAST (SLACK HANDLE), FIRST LAST (SLACK HANDLE), ..."
+
+By setting up and configuring the `places.json` file, you can tailor the analysis to focus on specific regions and ensure that relevant individuals are notified about articles that directly impact them.
 
 ## Installation
 
