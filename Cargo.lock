@@ -60,6 +60,7 @@ dependencies = [
  "chrono",
  "emailmessage",
  "ollama-rs",
+ "rand 0.8.5",
  "readability",
  "reqwest 0.12.4",
  "rss",

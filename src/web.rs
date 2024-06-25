@@ -1,4 +1,5 @@
 use ollama_rs::Ollama;
+use rand::prelude::*;
 use readability::extractor;
 use rss::Channel;
 use serde_json::Value;
@@ -57,6 +58,28 @@ struct CityProcessingParams<'a> {
     city_data: &'a [&'a str],
     affected_people: &'a mut Vec<String>,
     affected_places: &'a mut Vec<String>,
+}
+
+// Sleep for 1 to 10 seconds, favoring shorter sleeps.
+async fn weighted_sleep() {
+    // Weights for sleeping durations from 1 to 10 seconds
+    let weights = vec![10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+    // Create a weighted index based on the defined weights
+    let dist = rand::distributions::WeightedIndex::new(&weights).unwrap();
+
+    // Create a random number generator
+    let mut rng = rand::thread_rng();
+
+    // Select a duration based on the weighted distribution
+    let duration_index = dist.sample(&mut rng);
+
+    // Convert index to actual duration in seconds
+    let sleep_duration = Duration::from_secs((duration_index + 1) as u64);
+
+    // Sleep for the selected duration
+    debug!(" zzz - sleeping {:?} ...", sleep_duration);
+    sleep(sleep_duration).await;
 }
 
 /// Processes a list of URLs by fetching and parsing RSS feeds, extracting and analyzing articles, and updating the database and Slack channel with the results.
@@ -497,14 +520,12 @@ async fn process_topics(
                         return;
                     } else {
                         info!("Article is not about '{}': {}", topic, post_response.trim());
-                        debug!(" zzz - sleeping 10 seconds ...");
-                        sleep(Duration::from_secs(10)).await;
+                        weighted_sleep().await;
                     }
                 }
             } else {
                 info!("Article is not about '{}': {}", topic, response_text.trim());
-                debug!(" zzz - sleeping 10 seconds ...");
-                sleep(Duration::from_secs(10)).await;
+                weighted_sleep().await;
             }
         }
     }
