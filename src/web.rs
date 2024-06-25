@@ -87,6 +87,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
         Ok(article_text) => {
             let mut matched = false;
             let mut affected_people = Vec::new();
+            let mut affected_places = Vec::new();
 
             if let Some(places) = &params.places {
                 for (continent, countries) in places.as_object().unwrap() {
@@ -127,11 +128,15 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                                                         "{} {} ({})",
                                                         city_data[0], city_data[1], city_data[5]
                                                     ));
+                                                    affected_places.push(format!(
+                                                        "{} in {} on {}",
+                                                        city_name, country, continent
+                                                    ));
                                                     info!("Article is a current event affecting people in city '{}': {}", city, city_response.trim());
                                                 } else {
                                                     info!(
                                                         "Article is not about city '{}': {}",
-                                                        city,
+                                                        city_name,
                                                         city_response.trim()
                                                     );
                                                 }
@@ -167,15 +172,20 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     format!("This article affects: {}", affected_people.join(", "));
 
                 // Ask LLM to summarize the article
-                let summary_prompt =
-                    format!("Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}", article_text);
+                let summary_prompt = format!("Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}", article_text);
                 let article_summary = generate_llm_response(&summary_prompt, params)
                     .await
                     .unwrap_or_default();
 
+                // Ask LLM why the article affects the people it does
+                let why_prompt = format!("Why does this article affect the following places: {}? Answer in a few sentences.", affected_places.join(", "));
+                let why_response = generate_llm_response(&why_prompt, params)
+                    .await
+                    .unwrap_or_default();
+
                 let full_message = format!(
-                    "{}\n\n{}\n\nSummary: {}",
-                    formatted_article, affected_summary, article_summary
+                    "{}\n\n{}\n\nSummary: {}\n\nWhy: {}",
+                    formatted_article, affected_summary, article_summary, why_response
                 );
 
                 send_to_slack(
