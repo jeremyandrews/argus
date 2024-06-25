@@ -178,7 +178,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     .unwrap_or_default();
 
                 // Ask LLM why the article affects the people it does
-                let why_prompt = format!("Why does this article affect the following places: {}? Answer in a few sentences.", affected_places.join(", "));
+                let why_prompt = format!("{} | Why does this article affect the following places: {}? Answer in a few sentences.", article_text, affected_places.join(", "));
                 let why_response = generate_llm_response(&why_prompt, params)
                     .await
                     .unwrap_or_default();
