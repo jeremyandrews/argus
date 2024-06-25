@@ -182,8 +182,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             } else {
                 process_topics(&article_text, &article_url, &item, params).await;
             }
-            debug!(" zzz - sleeping 60 seconds ...");
-            sleep(Duration::from_secs(60)).await;
+            weighted_sleep().await;
         }
         Err(access_denied) => handle_access_denied(access_denied, &article_url, params).await,
     }
@@ -202,6 +201,7 @@ async fn process_places(
                 continent
             );
         }
+        weighted_sleep().await;
     }
 }
 
