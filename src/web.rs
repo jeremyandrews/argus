@@ -31,12 +31,25 @@ pub struct ProcessItemParams<'a> {
     pub places: Option<Value>,
 }
 
+/// Parameters required for processing a region, including article text and affected people and places.
+struct RegionProcessingParams<'a> {
+    article_text: &'a str,
+    country: &'a str,
+    continent: &'a str,
+    region: &'a str,
+    cities: &'a serde_json::Value,
+    affected_people: &'a mut Vec<String>,
+    affected_places: &'a mut Vec<String>,
+}
+
 /// Parameters required for processing a city, including article text and affected people and places.
 struct CityProcessingParams<'a> {
     /// Text of the article being processed.
     article_text: &'a str,
     /// Name of the city.
     city_name: &'a str,
+    /// Name of the region.
+    region: &'a str,
     /// Name of the country.
     country: &'a str,
     /// Name of the continent.
@@ -236,12 +249,12 @@ async fn process_continent(
         return false;
     }
 
-    for (country, cities) in countries.as_object().unwrap() {
+    for (country, regions) in countries.as_object().unwrap() {
         if process_country(
             article_text,
             country,
             continent,
-            cities,
+            regions,
             affected_people,
             affected_places,
             params,
@@ -262,7 +275,7 @@ async fn process_continent(
 /// * `article_text` - The text of the article.
 /// * `country` - The name of the country.
 /// * `continent` - The name of the continent.
-/// * `cities` - The JSON value containing the cities data.
+/// * `regions` - The JSON value containing the regions data.
 /// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
 /// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
 /// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
@@ -274,7 +287,7 @@ async fn process_country(
     article_text: &str,
     country: &str,
     continent: &str,
-    cities: &serde_json::Value,
+    regions: &serde_json::Value,
     affected_people: &mut Vec<String>,
     affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
@@ -297,6 +310,73 @@ async fn process_country(
         return false;
     }
 
+    for (region, cities) in regions.as_object().unwrap() {
+        let region_params = RegionProcessingParams {
+            article_text,
+            country,
+            continent,
+            region,
+            cities,
+            affected_people,
+            affected_places,
+        };
+
+        if process_region(region_params, params).await {
+            return true;
+        }
+    }
+
+    true
+}
+
+/// Processes the region data and updates the affected people and places lists.
+///
+/// # Arguments
+///
+/// * `article_text` - The text of the article.
+/// * `country` - The name of the country.
+/// * `continent` - The name of the continent.
+/// * `region` - The name of the region.
+/// * `cities` - The JSON value containing the cities data.
+/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
+/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
+/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
+///
+/// # Returns
+///
+/// * `bool` - `true` if the region data was processed successfully, otherwise `false`.
+async fn process_region(
+    params: RegionProcessingParams<'_>,
+    proc_params: &mut ProcessItemParams<'_>,
+) -> bool {
+    let RegionProcessingParams {
+        article_text,
+        country,
+        continent,
+        region,
+        cities,
+        affected_people,
+        affected_places,
+    } = params;
+
+    let region_prompt = format!(
+        "{} | Is this a significant event affecting life and safety of people living in the region of {} in the country of {} on {} in the past weeks? Answer yes or no.",
+        article_text, region, country, continent
+    );
+
+    let region_response = match generate_llm_response(&region_prompt, proc_params).await {
+        Some(response) => response,
+        None => return false,
+    };
+
+    if !region_response.trim().to_lowercase().starts_with("yes") {
+        info!(
+            "Article is not about something affecting life or safety in '{}', '{}'",
+            region, country
+        );
+        return false;
+    }
+
     for city in cities.as_array().unwrap() {
         let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
         let city_name = city_data[2];
@@ -304,6 +384,7 @@ async fn process_country(
         let city_params = CityProcessingParams {
             article_text,
             city_name,
+            region,
             country,
             continent,
             city_data: &city_data,
@@ -311,7 +392,7 @@ async fn process_country(
             affected_places,
         };
 
-        if process_city(city_params, params).await {
+        if process_city(city_params, proc_params).await {
             return true;
         }
     }
@@ -336,6 +417,7 @@ async fn process_city(
     let CityProcessingParams {
         article_text,
         city_name,
+        region,
         country,
         continent,
         city_data,
@@ -344,8 +426,8 @@ async fn process_city(
     } = params;
 
     let city_prompt = format!(
-        "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the country of {} on {} in the past weeks? Answer yes or no.",
-        article_text, city_name, country, continent
+        "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the region of {} in the country of {} on {} in the past weeks? Answer yes or no.",
+        article_text, city_name, region, country, continent
     );
 
     let city_response = match generate_llm_response(&city_prompt, proc_params).await {
@@ -355,8 +437,8 @@ async fn process_city(
 
     if !city_response.trim().to_lowercase().starts_with("yes") {
         info!(
-            "Article is not about something affecting life or safety in '{}, {}'",
-            city_name, country
+            "Article is not about something affecting life or safety in '{}, {}, {}'",
+            city_name, region, country
         );
         return false;
     }
