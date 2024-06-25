@@ -13,26 +13,25 @@ use crate::TARGET_WEB_REQUEST;
 
 /// Parameters required for processing an item, including topics, database, and Slack channel information.
 pub struct ProcessItemParams<'a> {
-    /// List of topics to analyze.
     pub topics: &'a [String],
-    /// Ollama client for generating responses.
     pub ollama: &'a Ollama,
-    /// Model name to use for generating responses.
     pub model: &'a str,
-    /// Temperature setting for generating responses.
     pub temperature: f32,
-    /// Mutable reference to the database for storing and retrieving data.
     pub db: &'a mut Database,
-    /// Slack token for authentication.
     pub slack_token: &'a str,
-    /// Slack channel ID to send messages to.
     pub slack_channel: &'a str,
-    /// Optional JSON value containing places data.
     pub places: Option<Value>,
-    /// Mutable reference to a vector of strings to store the non-affected people.
     pub non_affected_people: &'a mut Vec<String>,
-    /// Mutable reference to a vector of strings to store the non-affected places.
     pub non_affected_places: &'a mut Vec<String>,
+}
+
+/// Parameters required for processing places, including article text and affected people and places.
+struct PlaceProcessingParams<'a> {
+    article_text: &'a str,
+    affected_people: &'a mut Vec<String>,
+    affected_places: &'a mut Vec<String>,
+    non_affected_people: &'a mut Vec<String>,
+    non_affected_places: &'a mut Vec<String>,
 }
 
 /// Parameters required for processing a region, including article text and affected people and places.
@@ -50,34 +49,17 @@ struct RegionProcessingParams<'a> {
 
 /// Parameters required for processing a city, including article text and affected people and places.
 struct CityProcessingParams<'a> {
-    /// Text of the article being processed.
     article_text: &'a str,
-    /// Name of the city.
     city_name: &'a str,
-    /// Name of the region.
     region: &'a str,
-    /// Name of the country.
     country: &'a str,
-    /// Name of the continent.
     continent: &'a str,
-    /// Data related to the city.
     city_data: &'a [&'a str],
-    /// Mutable reference to a vector of strings to store the affected people.
     affected_people: &'a mut Vec<String>,
-    /// Mutable reference to a vector of strings to store the affected places.
     affected_places: &'a mut Vec<String>,
 }
 
 /// Processes a list of URLs by fetching and parsing RSS feeds, extracting and analyzing articles, and updating the database and Slack channel with the results.
-///
-/// # Arguments
-///
-/// * `urls` - A vector of URLs to process.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-///
-/// # Returns
-///
-/// * `Result<(), Box<dyn std::error::Error>>` - An Ok result if the processing succeeds, or an error if it fails.
 pub async fn process_urls(
     urls: Vec<String>,
     params: &mut ProcessItemParams<'_>,
@@ -132,11 +114,6 @@ pub async fn process_urls(
 }
 
 /// Processes a single RSS item by extracting and analyzing the article text, and updating the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `item` - The RSS item to process.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
     info!(
         " - reviewing => {} ({})",
@@ -156,16 +133,15 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             let places = params.places.clone();
 
             if let Some(places) = places {
-                process_places(
-                    &article_text,
-                    &places,
-                    &mut affected_people,
-                    &mut affected_places,
-                    &mut non_affected_people,
-                    &mut non_affected_places,
-                    params,
-                )
-                .await;
+                let place_params = PlaceProcessingParams {
+                    article_text: &article_text,
+                    affected_people: &mut affected_people,
+                    affected_places: &mut affected_places,
+                    non_affected_people: &mut non_affected_people,
+                    non_affected_places: &mut non_affected_places,
+                };
+
+                process_places(place_params, &places, params).await;
             }
 
             if !affected_people.is_empty() || !non_affected_people.is_empty() {
@@ -191,47 +167,13 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
 }
 
 /// Processes the places mentioned in the article text and updates the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `article_text` - The text of the article.
-/// * `places` - The JSON value containing the places data.
-/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
-/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-/// Processes the places mentioned in the article text and updates the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `article_text` - The text of the article.
-/// * `places` - The JSON value containing the places data.
-/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
-/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
-/// * `non_affected_people` - A mutable reference to a vector of strings to store the non-affected people.
-/// * `non_affected_places` - A mutable reference to a vector of strings to store the non-affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn process_places(
-    article_text: &str,
+    mut place_params: PlaceProcessingParams<'_>,
     places: &serde_json::Value,
-    affected_people: &mut Vec<String>,
-    affected_places: &mut Vec<String>,
-    non_affected_people: &mut Vec<String>,
-    non_affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
 ) {
     for (continent, countries) in places.as_object().unwrap() {
-        if !process_continent(
-            article_text,
-            continent,
-            countries,
-            affected_people,
-            affected_places,
-            non_affected_people,
-            non_affected_places,
-            params,
-        )
-        .await
-        {
+        if !process_continent(&mut place_params, continent, countries, params).await {
             info!(
                 "Article is not about something affecting life or safety on '{}'",
                 continent
@@ -241,29 +183,20 @@ async fn process_places(
 }
 
 /// Processes the continent data and updates the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `article_text` - The text of the article.
-/// * `continent` - The name of the continent.
-/// * `countries` - The JSON value containing the countries data.
-/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
-/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-///
-/// # Returns
-///
-/// * `bool` - `true` if the continent data was processed successfully, otherwise `false`.
 async fn process_continent(
-    article_text: &str,
+    place_params: &mut PlaceProcessingParams<'_>,
     continent: &str,
     countries: &serde_json::Value,
-    affected_people: &mut Vec<String>,
-    affected_places: &mut Vec<String>,
-    non_affected_people: &mut Vec<String>,
-    non_affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
+    let PlaceProcessingParams {
+        article_text,
+        affected_people,
+        affected_places,
+        non_affected_people,
+        non_affected_places,
+    } = place_params;
+
     let continent_prompt = format!(
         "{} | Is this a significant event affecting life and safety of people living on the continent of {} in the past weeks? Answer yes or no.",
         article_text, continent
@@ -300,20 +233,6 @@ async fn process_continent(
 }
 
 /// Processes the country data and updates the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `article_text` - The text of the article.
-/// * `country` - The name of the country.
-/// * `continent` - The name of the continent.
-/// * `regions` - The JSON value containing the regions data.
-/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
-/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-///
-/// # Returns
-///
-/// * `bool` - `true` if the country data was processed successfully, otherwise `false`.
 async fn process_country(
     article_text: &str,
     country: &str,
@@ -347,21 +266,6 @@ async fn process_country(
 }
 
 /// Processes the region data and updates the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `article_text` - The text of the article.
-/// * `country` - The name of the country.
-/// * `continent` - The name of the continent.
-/// * `region` - The name of the region.
-/// * `cities` - The JSON value containing the cities data.
-/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
-/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-///
-/// # Returns
-///
-/// * `bool` - `true` if the region data was processed successfully, otherwise `false`.
 async fn process_region(
     params: RegionProcessingParams<'_>,
     proc_params: &mut ProcessItemParams<'_>,
@@ -432,15 +336,6 @@ async fn process_region(
 }
 
 /// Processes the city data and updates the affected people and places lists.
-///
-/// # Arguments
-///
-/// * `params` - A `CityProcessingParams` struct containing the necessary parameters for processing the city.
-/// * `proc_params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-///
-/// # Returns
-///
-/// * `bool` - `true` if the city data was processed successfully, otherwise `false`.
 async fn process_city(
     params: CityProcessingParams<'_>,
     proc_params: &mut ProcessItemParams<'_>,
@@ -484,27 +379,6 @@ async fn process_city(
 }
 
 /// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
-///
-/// # Arguments
-///
-/// * `article_url` - The URL of the article.
-/// * `item` - The RSS item.
-/// * `article_text` - The text of the article.
-/// * `affected_people` - A slice of strings containing the affected people.
-/// * `affected_places` - A slice of strings containing the affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
-/// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
-///
-/// # Arguments
-///
-/// * `article_url` - The URL of the article.
-/// * `item` - The RSS item.
-/// * `article_text` - The text of the article.
-/// * `affected_people` - A slice of strings containing the affected people.
-/// * `affected_places` - A slice of strings containing the affected places.
-/// * `non_affected_people` - A slice of strings containing the non-affected people.
-/// * `non_affected_places` - A slice of strings containing the non-affected places.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn summarize_and_send_article(
     article_url: &str,
     item: &rss::Item,
@@ -584,13 +458,6 @@ async fn summarize_and_send_article(
 }
 
 /// Processes the topics mentioned in the article text and sends the results to the Slack channel if relevant.
-///
-/// # Arguments
-///
-/// * `article_text` - The text of the article.
-/// * `article_url` - The URL of the article.
-/// * `item` - The RSS item.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn process_topics(
     article_text: &str,
     article_url: &str,
@@ -644,12 +511,6 @@ async fn process_topics(
 }
 
 /// Handles the case where access to the article is denied, updating the database and logging a warning.
-///
-/// # Arguments
-///
-/// * `access_denied` - A boolean indicating whether access was denied.
-/// * `article_url` - The URL of the article.
-/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn handle_access_denied(
     access_denied: bool,
     article_url: &str,
@@ -665,14 +526,6 @@ async fn handle_access_denied(
 }
 
 /// Extracts the text of the article from the given URL, retrying up to a maximum number of retries if necessary.
-///
-/// # Arguments
-///
-/// * `url` - The URL of the article to extract.
-///
-/// # Returns
-///
-/// * `Result<String, bool>` - The extracted article text if successful, or a boolean indicating whether access was denied if it fails.
 async fn extract_article_text(url: &str) -> Result<String, bool> {
     let max_retries = 3;
     let article_text: String;
