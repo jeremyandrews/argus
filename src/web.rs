@@ -85,223 +85,295 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
-            let mut matched = false;
             let mut affected_people = Vec::new();
             let mut affected_places = Vec::new();
 
-            if let Some(places) = &params.places {
-                for (continent, countries) in places.as_object().unwrap() {
-                    let continent_prompt = format!(
-                        "{} | Is this a significant event affecting life and safety of people living on the continent of {} in the past weeks? Answer yes or no.",
-                        article_text, continent
-                    );
+            // Extract places from params
+            let places = params.places.clone();
 
-                    let continent_response =
-                        match generate_llm_response(&continent_prompt, params).await {
-                            Some(response) => response,
-                            None => continue,
-                        };
-
-                    if !continent_response.trim().to_lowercase().starts_with("yes") {
-                        info!(
-                            "Article is not about continent '{}': {}",
-                            continent,
-                            continent_response.trim()
-                        );
-                        continue;
-                    }
-
-                    info!(
-                        "Article is a current event affecting life and safety of people on continent '{}': {}",
-                        continent,
-                        continent_response.trim()
-                    );
-
-                    for (country, cities) in countries.as_object().unwrap() {
-                        let country_prompt = format!(
-                            "{} | Is this a significant event affecting life and safety of people living in the country of {} on {} in the past weeks? Answer yes or no.",
-                            article_text, country, continent
-                        );
-
-                        let country_response =
-                            match generate_llm_response(&country_prompt, params).await {
-                                Some(response) => response,
-                                None => continue,
-                            };
-
-                        if !country_response.trim().to_lowercase().starts_with("yes") {
-                            info!(
-                                "Article is not about country '{}': {}",
-                                country,
-                                country_response.trim()
-                            );
-                            continue;
-                        }
-
-                        info!(
-                            "Article is a current event affecting life and safety of people in country '{}': {}",
-                            country,
-                            country_response.trim()
-                        );
-
-                        for city in cities.as_array().unwrap() {
-                            let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
-                            let city_name = city_data[2];
-                            let city_prompt = format!(
-                                "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the country of {} on {} in the past weeks? Answer yes or no.",
-                                article_text, city_name, country, continent
-                            );
-
-                            let city_response =
-                                match generate_llm_response(&city_prompt, params).await {
-                                    Some(response) => response,
-                                    None => continue,
-                                };
-
-                            if !city_response.trim().to_lowercase().starts_with("yes") {
-                                info!(
-                                    "Article is not about city '{}': {}",
-                                    city_name,
-                                    city_response.trim()
-                                );
-                                continue;
-                            }
-
-                            affected_people.push(format!(
-                                "{} {} ({}) in {}",
-                                city_data[0], city_data[1], city_data[5], city_name
-                            ));
-                            affected_places
-                                .push(format!("{} in {} on {}", city_name, country, continent));
-                            info!(
-                                "Article is a current event affecting people in city '{}': {}",
-                                city_name,
-                                city_response.trim()
-                            );
-                        }
-                    }
-                }
+            if let Some(places) = places {
+                process_places(
+                    &article_text,
+                    &places,
+                    &mut affected_people,
+                    &mut affected_places,
+                    params,
+                )
+                .await;
             }
 
             if !affected_people.is_empty() {
-                let formatted_article = format!(
-                    "*<{}|{}>*",
-                    article_url,
-                    item.title.clone().unwrap_or_default()
-                );
-                let affected_summary =
-                    format!("This article affects: {}", affected_people.join(", "));
-
-                // Ask LLM to summarize the article
-                let summary_prompt = format!("Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}", article_text);
-                let article_summary = generate_llm_response(&summary_prompt, params)
-                    .await
-                    .unwrap_or_default();
-
-                // Ask LLM why the article affects the people it does
-                let why_prompt = format!("{} | Why does this article affect the following places: {}? Answer in a few sentences.", article_text, affected_places.join(", "));
-                let why_response = generate_llm_response(&why_prompt, params)
-                    .await
-                    .unwrap_or_default();
-
-                let full_message = format!(
-                    "{}\n\n{}\n\nSummary: {}\n\nWhy: {}",
-                    formatted_article, affected_summary, article_summary, why_response
-                );
-
-                send_to_slack(
-                    &formatted_article,
-                    &full_message,
-                    params.slack_token,
-                    params.slack_channel,
+                summarize_and_send_article(
+                    &article_url,
+                    &item,
+                    &article_text,
+                    &affected_people,
+                    &affected_places,
+                    params,
                 )
                 .await;
-                params
-                    .db
-                    .add_article(&article_url, true, None, Some(&full_message))
-                    .expect("Failed to add article to database");
-                matched = true;
+            } else {
+                process_topics(&article_text, &article_url, &item, params).await;
             }
-
-            if !matched {
-                for topic in params.topics {
-                    if topic.trim().is_empty() {
-                        continue;
-                    }
-
-                    let prompt = format!("{} | Determine whether this is specifically about {}. If it is, concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and point out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", article_text, topic);
-                    if let Some(response_text) = generate_llm_response(&prompt, params).await {
-                        if response_text.trim() != "No" {
-                            let post_prompt = format!(
-                                "Is the article about {}?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.",
-                                topic, article_text, response_text
-                            );
-                            if let Some(post_response) =
-                                generate_llm_response(&post_prompt, params).await
-                            {
-                                if post_response.trim().starts_with("Yes") {
-                                    let formatted_article = format!(
-                                        "*<{}|{}>*",
-                                        article_url,
-                                        item.title.clone().unwrap_or_default()
-                                    );
-                                    send_to_slack(
-                                        &formatted_article,
-                                        &response_text,
-                                        params.slack_token,
-                                        params.slack_channel,
-                                    )
-                                    .await;
-                                    params
-                                        .db
-                                        .add_article(
-                                            &article_url,
-                                            true,
-                                            Some(topic),
-                                            Some(&response_text),
-                                        )
-                                        .expect("Failed to add article to database");
-                                    matched = true;
-                                    break;
-                                } else {
-                                    info!(
-                                        "Article is not about '{}': {}",
-                                        topic,
-                                        post_response.trim()
-                                    );
-                                    // Add a 10-second delay after processing topic
-                                    debug!(" zzz - sleeping 10 seconds ...");
-                                    sleep(Duration::from_secs(10)).await;
-                                }
-                            }
-                        } else {
-                            info!("Article is not about '{}': {}", topic, response_text.trim());
-                            // Add a 10-second delay after processing topic
-                            debug!(" zzz - sleeping 10 seconds ...");
-                            sleep(Duration::from_secs(10)).await;
-                        }
-                    }
-                }
-            }
-            if !matched {
-                info!(
-                    "Article not posted to Slack as it did not match any specified topic: {}",
-                    article_url
-                );
-            }
-            // Add a 60-second delay after processing each article
             debug!(" zzz - sleeping 60 seconds ...");
             sleep(Duration::from_secs(60)).await;
         }
-        Err(access_denied) => {
-            if access_denied {
-                params
-                    .db
-                    .add_article(&article_url, false, None, None)
-                    .expect("Failed to add URL to database as access denied");
-                warn!(target: TARGET_WEB_REQUEST, "Access denied for URL: {}", article_url);
+        Err(access_denied) => handle_access_denied(access_denied, &article_url, params).await,
+    }
+}
+
+async fn process_places(
+    article_text: &str,
+    places: &serde_json::Value,
+    affected_people: &mut Vec<String>,
+    affected_places: &mut Vec<String>,
+    params: &mut ProcessItemParams<'_>,
+) {
+    for (continent, countries) in places.as_object().unwrap() {
+        if !process_continent(
+            article_text,
+            continent,
+            countries,
+            affected_people,
+            affected_places,
+            params,
+        )
+        .await
+        {
+            info!("Article is not about continent '{}'", continent);
+        }
+    }
+}
+
+async fn process_continent(
+    article_text: &str,
+    continent: &str,
+    countries: &serde_json::Value,
+    affected_people: &mut Vec<String>,
+    affected_places: &mut Vec<String>,
+    params: &mut ProcessItemParams<'_>,
+) -> bool {
+    let continent_prompt = format!(
+        "{} | Is this a significant event affecting life and safety of people living on the continent of {} in the past weeks? Answer yes or no.",
+        article_text, continent
+    );
+
+    let continent_response = match generate_llm_response(&continent_prompt, params).await {
+        Some(response) => response,
+        None => return false,
+    };
+
+    if !continent_response.trim().to_lowercase().starts_with("yes") {
+        return false;
+    }
+
+    for (country, cities) in countries.as_object().unwrap() {
+        if process_country(
+            article_text,
+            country,
+            continent,
+            cities,
+            affected_people,
+            affected_places,
+            params,
+        )
+        .await
+        {
+            return true;
+        }
+    }
+
+    true
+}
+
+async fn process_country(
+    article_text: &str,
+    country: &str,
+    continent: &str,
+    cities: &serde_json::Value,
+    affected_people: &mut Vec<String>,
+    affected_places: &mut Vec<String>,
+    params: &mut ProcessItemParams<'_>,
+) -> bool {
+    let country_prompt = format!(
+        "{} | Is this a significant event affecting life and safety of people living in the country of {} on {} in the past weeks? Answer yes or no.",
+        article_text, country, continent
+    );
+
+    let country_response = match generate_llm_response(&country_prompt, params).await {
+        Some(response) => response,
+        None => return false,
+    };
+
+    if !country_response.trim().to_lowercase().starts_with("yes") {
+        return false;
+    }
+
+    for city in cities.as_array().unwrap() {
+        let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
+        let city_name = city_data[2];
+        if process_city(
+            article_text,
+            city_name,
+            country,
+            continent,
+            &city_data,
+            affected_people,
+            affected_places,
+            params,
+        )
+        .await
+        {
+            return true;
+        }
+    }
+
+    true
+}
+
+async fn process_city(
+    article_text: &str,
+    city_name: &str,
+    country: &str,
+    continent: &str,
+    city_data: &[&str],
+    affected_people: &mut Vec<String>,
+    affected_places: &mut Vec<String>,
+    params: &mut ProcessItemParams<'_>,
+) -> bool {
+    let city_prompt = format!(
+        "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the country of {} on {} in the past weeks? Answer yes or no.",
+        article_text, city_name, country, continent
+    );
+
+    let city_response = match generate_llm_response(&city_prompt, params).await {
+        Some(response) => response,
+        None => return false,
+    };
+
+    if !city_response.trim().to_lowercase().starts_with("yes") {
+        return false;
+    }
+
+    affected_people.push(format!(
+        "{} {} ({}) in {}",
+        city_data[0], city_data[1], city_data[5], city_name
+    ));
+    affected_places.push(format!("{} in {} on {}", city_name, country, continent));
+
+    true
+}
+
+async fn summarize_and_send_article(
+    article_url: &str,
+    item: &rss::Item,
+    article_text: &str,
+    affected_people: &[String],
+    affected_places: &[String],
+    params: &mut ProcessItemParams<'_>,
+) {
+    let formatted_article = format!(
+        "*<{}|{}>*",
+        article_url,
+        item.title.clone().unwrap_or_default()
+    );
+    let affected_summary = format!("This article affects: {}", affected_people.join(", "));
+
+    let summary_prompt = format!("Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}", article_text);
+    let article_summary = generate_llm_response(&summary_prompt, params)
+        .await
+        .unwrap_or_default();
+
+    let why_prompt = format!(
+        "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+        article_text,
+        affected_places.join(", ")
+    );
+    let why_response = generate_llm_response(&why_prompt, params)
+        .await
+        .unwrap_or_default();
+
+    let full_message = format!(
+        "{}\n\n{}\n\nSummary: {}\n\nWhy: {}",
+        formatted_article, affected_summary, article_summary, why_response
+    );
+
+    send_to_slack(
+        &formatted_article,
+        &full_message,
+        params.slack_token,
+        params.slack_channel,
+    )
+    .await;
+    params
+        .db
+        .add_article(article_url, true, None, Some(&full_message))
+        .expect("Failed to add article to database");
+}
+
+async fn process_topics(
+    article_text: &str,
+    article_url: &str,
+    item: &rss::Item,
+    params: &mut ProcessItemParams<'_>,
+) {
+    for topic in params.topics {
+        if topic.trim().is_empty() {
+            continue;
+        }
+
+        let prompt = format!("{} | Determine whether this is specifically about {}. If it is, concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and point out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", article_text, topic);
+        if let Some(response_text) = generate_llm_response(&prompt, params).await {
+            if response_text.trim() != "No" {
+                let post_prompt = format!(
+                    "Is the article about {}?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.",
+                    topic, article_text, response_text
+                );
+                if let Some(post_response) = generate_llm_response(&post_prompt, params).await {
+                    if post_response.trim().starts_with("Yes") {
+                        let formatted_article = format!(
+                            "*<{}|{}>*",
+                            article_url,
+                            item.title.clone().unwrap_or_default()
+                        );
+                        send_to_slack(
+                            &formatted_article,
+                            &response_text,
+                            params.slack_token,
+                            params.slack_channel,
+                        )
+                        .await;
+                        params
+                            .db
+                            .add_article(article_url, true, Some(topic), Some(&response_text))
+                            .expect("Failed to add article to database");
+                        return;
+                    } else {
+                        info!("Article is not about '{}': {}", topic, post_response.trim());
+                        debug!(" zzz - sleeping 10 seconds ...");
+                        sleep(Duration::from_secs(10)).await;
+                    }
+                }
+            } else {
+                info!("Article is not about '{}': {}", topic, response_text.trim());
+                debug!(" zzz - sleeping 10 seconds ...");
+                sleep(Duration::from_secs(10)).await;
             }
         }
+    }
+}
+
+async fn handle_access_denied(
+    access_denied: bool,
+    article_url: &str,
+    params: &mut ProcessItemParams<'_>,
+) {
+    if access_denied {
+        params
+            .db
+            .add_article(article_url, false, None, None)
+            .expect("Failed to add URL to database as access denied");
+        warn!(target: TARGET_WEB_REQUEST, "Access denied for URL: {}", article_url);
     }
 }
 
