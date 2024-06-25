@@ -22,6 +22,16 @@ pub struct ProcessItemParams<'a> {
     pub places: Option<Value>,
 }
 
+struct CityProcessingParams<'a> {
+    article_text: &'a str,
+    city_name: &'a str,
+    country: &'a str,
+    continent: &'a str,
+    city_data: &'a [&'a str],
+    affected_people: &'a mut Vec<String>,
+    affected_places: &'a mut Vec<String>,
+}
+
 pub async fn process_urls(
     urls: Vec<String>,
     params: &mut ProcessItemParams<'_>,
@@ -212,18 +222,18 @@ async fn process_country(
     for city in cities.as_array().unwrap() {
         let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
         let city_name = city_data[2];
-        if process_city(
+
+        let city_params = CityProcessingParams {
             article_text,
             city_name,
             country,
             continent,
-            &city_data,
+            city_data: &city_data,
             affected_people,
             affected_places,
-            params,
-        )
-        .await
-        {
+        };
+
+        if process_city(city_params, params).await {
             return true;
         }
     }
@@ -232,21 +242,25 @@ async fn process_country(
 }
 
 async fn process_city(
-    article_text: &str,
-    city_name: &str,
-    country: &str,
-    continent: &str,
-    city_data: &[&str],
-    affected_people: &mut Vec<String>,
-    affected_places: &mut Vec<String>,
-    params: &mut ProcessItemParams<'_>,
+    params: CityProcessingParams<'_>,
+    proc_params: &mut ProcessItemParams<'_>,
 ) -> bool {
+    let CityProcessingParams {
+        article_text,
+        city_name,
+        country,
+        continent,
+        city_data,
+        affected_people,
+        affected_places,
+    } = params;
+
     let city_prompt = format!(
         "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the country of {} on {} in the past weeks? Answer yes or no.",
         article_text, city_name, country, continent
     );
 
-    let city_response = match generate_llm_response(&city_prompt, params).await {
+    let city_response = match generate_llm_response(&city_prompt, proc_params).await {
         Some(response) => response,
         None => return false,
     };
