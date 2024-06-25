@@ -150,7 +150,10 @@ async fn process_places(
         )
         .await
         {
-            info!("Article is not about continent '{}'", continent);
+            info!(
+                "Article is not about something affecting life or safety on '{}'",
+                continent
+            );
         }
     }
 }
@@ -216,6 +219,10 @@ async fn process_country(
     };
 
     if !country_response.trim().to_lowercase().starts_with("yes") {
+        info!(
+            "Article is not about something affecting life or safety in '{}'",
+            country
+        );
         return false;
     }
 
@@ -266,6 +273,10 @@ async fn process_city(
     };
 
     if !city_response.trim().to_lowercase().starts_with("yes") {
+        info!(
+            "Article is not about something affecting life or safety in '{}, {}'",
+            city_name, country
+        );
         return false;
     }
 
@@ -298,18 +309,18 @@ async fn summarize_and_send_article(
         .await
         .unwrap_or_default();
 
-    let why_prompt = format!(
+    let how_prompt = format!(
         "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
         article_text,
         affected_places.join(", ")
     );
-    let why_response = generate_llm_response(&why_prompt, params)
+    let how_response = generate_llm_response(&how_prompt, params)
         .await
         .unwrap_or_default();
 
     let full_message = format!(
-        "{}\n\n{}\n\nSummary: {}\n\nWhy: {}",
-        formatted_article, affected_summary, article_summary, why_response
+        "{}\n\n{}\n\n{}",
+        affected_summary, article_summary, how_response
     );
 
     send_to_slack(
