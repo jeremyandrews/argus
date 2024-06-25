@@ -71,6 +71,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         slack_token: &slack_token,
         slack_channel: &slack_channel,
         places,
+        // Initialize both with an empty vector:
+        non_affected_people: &mut vec![],
+        non_affected_places: &mut vec![],
     };
 
     process_urls(urls, &mut params).await?;

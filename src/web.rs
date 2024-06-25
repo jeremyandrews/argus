@@ -29,6 +29,10 @@ pub struct ProcessItemParams<'a> {
     pub slack_channel: &'a str,
     /// Optional JSON value containing places data.
     pub places: Option<Value>,
+    /// Mutable reference to a vector of strings to store the non-affected people.
+    pub non_affected_people: &'a mut Vec<String>,
+    /// Mutable reference to a vector of strings to store the non-affected places.
+    pub non_affected_places: &'a mut Vec<String>,
 }
 
 /// Parameters required for processing a region, including article text and affected people and places.
@@ -40,6 +44,8 @@ struct RegionProcessingParams<'a> {
     cities: &'a serde_json::Value,
     affected_people: &'a mut Vec<String>,
     affected_places: &'a mut Vec<String>,
+    non_affected_people: &'a mut Vec<String>,
+    non_affected_places: &'a mut Vec<String>,
 }
 
 /// Parameters required for processing a city, including article text and affected people and places.
@@ -143,6 +149,8 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
         Ok(article_text) => {
             let mut affected_people = Vec::new();
             let mut affected_places = Vec::new();
+            let mut non_affected_people = Vec::new();
+            let mut non_affected_places = Vec::new();
 
             // Extract places from params
             let places = params.places.clone();
@@ -153,18 +161,22 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     &places,
                     &mut affected_people,
                     &mut affected_places,
+                    &mut non_affected_people,
+                    &mut non_affected_places,
                     params,
                 )
                 .await;
             }
 
-            if !affected_people.is_empty() {
+            if !affected_people.is_empty() || !non_affected_people.is_empty() {
                 summarize_and_send_article(
                     &article_url,
                     &item,
                     &article_text,
                     &affected_people,
                     &affected_places,
+                    &non_affected_people,
+                    &non_affected_places,
                     params,
                 )
                 .await;
@@ -187,11 +199,24 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
 /// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
 /// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
 /// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
+/// Processes the places mentioned in the article text and updates the affected people and places lists.
+///
+/// # Arguments
+///
+/// * `article_text` - The text of the article.
+/// * `places` - The JSON value containing the places data.
+/// * `affected_people` - A mutable reference to a vector of strings to store the affected people.
+/// * `affected_places` - A mutable reference to a vector of strings to store the affected places.
+/// * `non_affected_people` - A mutable reference to a vector of strings to store the non-affected people.
+/// * `non_affected_places` - A mutable reference to a vector of strings to store the non-affected places.
+/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn process_places(
     article_text: &str,
     places: &serde_json::Value,
     affected_people: &mut Vec<String>,
     affected_places: &mut Vec<String>,
+    non_affected_people: &mut Vec<String>,
+    non_affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
 ) {
     for (continent, countries) in places.as_object().unwrap() {
@@ -201,6 +226,8 @@ async fn process_places(
             countries,
             affected_people,
             affected_places,
+            non_affected_people,
+            non_affected_places,
             params,
         )
         .await
@@ -233,6 +260,8 @@ async fn process_continent(
     countries: &serde_json::Value,
     affected_people: &mut Vec<String>,
     affected_places: &mut Vec<String>,
+    non_affected_people: &mut Vec<String>,
+    non_affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
     let continent_prompt = format!(
@@ -257,6 +286,8 @@ async fn process_continent(
             regions,
             affected_people,
             affected_places,
+            non_affected_people,
+            non_affected_places,
             params,
         )
         .await
@@ -290,26 +321,10 @@ async fn process_country(
     regions: &serde_json::Value,
     affected_people: &mut Vec<String>,
     affected_places: &mut Vec<String>,
+    non_affected_people: &mut Vec<String>,
+    non_affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
-    let country_prompt = format!(
-        "{} | Is this a significant event affecting life and safety of people living in the country of {} on {} in the past weeks? Answer yes or no.",
-        article_text, country, continent
-    );
-
-    let country_response = match generate_llm_response(&country_prompt, params).await {
-        Some(response) => response,
-        None => return false,
-    };
-
-    if !country_response.trim().to_lowercase().starts_with("yes") {
-        info!(
-            "Article is not about something affecting life or safety in '{}'",
-            country
-        );
-        return false;
-    }
-
     for (region, cities) in regions.as_object().unwrap() {
         let region_params = RegionProcessingParams {
             article_text,
@@ -319,6 +334,8 @@ async fn process_country(
             cities,
             affected_people,
             affected_places,
+            non_affected_people,
+            non_affected_places,
         };
 
         if process_region(region_params, params).await {
@@ -357,6 +374,8 @@ async fn process_region(
         cities,
         affected_people,
         affected_places,
+        non_affected_people,
+        non_affected_places,
     } = params;
 
     let region_prompt = format!(
@@ -393,7 +412,19 @@ async fn process_region(
         };
 
         if process_city(city_params, proc_params).await {
-            return true;
+            // Remember affected city
+            affected_people.push(format!(
+                "{} {} ({}) in {}",
+                city_data[0], city_data[1], city_data[5], city_name
+            ));
+            affected_places.push(format!("{} in {} on {}", city_name, country, continent));
+        } else {
+            // Remember non-affected city
+            non_affected_people.push(format!(
+                "{} {} ({}) in {}",
+                city_data[0], city_data[1], city_data[5], city_name
+            ));
+            non_affected_places.push(format!("{} in {} on {}", city_name, country, continent));
         }
     }
 
@@ -462,12 +493,26 @@ async fn process_city(
 /// * `affected_people` - A slice of strings containing the affected people.
 /// * `affected_places` - A slice of strings containing the affected places.
 /// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
+/// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
+///
+/// # Arguments
+///
+/// * `article_url` - The URL of the article.
+/// * `item` - The RSS item.
+/// * `article_text` - The text of the article.
+/// * `affected_people` - A slice of strings containing the affected people.
+/// * `affected_places` - A slice of strings containing the affected places.
+/// * `non_affected_people` - A slice of strings containing the non-affected people.
+/// * `non_affected_places` - A slice of strings containing the non-affected places.
+/// * `params` - A mutable reference to `ProcessItemParams` containing the necessary parameters for processing.
 async fn summarize_and_send_article(
     article_url: &str,
     item: &rss::Item,
     article_text: &str,
     affected_people: &[String],
     affected_places: &[String],
+    non_affected_people: &[String],
+    non_affected_places: &[String],
     params: &mut ProcessItemParams<'_>,
 ) {
     let formatted_article = format!(
@@ -475,38 +520,67 @@ async fn summarize_and_send_article(
         article_url,
         item.title.clone().unwrap_or_default()
     );
-    let affected_summary = format!("This article affects: {}", affected_people.join(", "));
 
-    let summary_prompt = format!("Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}", article_text);
-    let article_summary = generate_llm_response(&summary_prompt, params)
-        .await
-        .unwrap_or_default();
+    let mut full_message = String::new();
 
-    let how_prompt = format!(
-        "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
-        article_text,
-        affected_places.join(", ")
-    );
-    let how_response = generate_llm_response(&how_prompt, params)
-        .await
-        .unwrap_or_default();
+    if !affected_people.is_empty() {
+        let affected_summary = format!("This article affects: {}", affected_people.join(", "));
+        let summary_prompt = format!(
+            "Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}",
+            article_text
+        );
+        let article_summary = generate_llm_response(&summary_prompt, params)
+            .await
+            .unwrap_or_default();
 
-    let full_message = format!(
-        "{}\n\n{}\n\n{}",
-        affected_summary, article_summary, how_response
-    );
+        let how_prompt = format!(
+            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+            article_text,
+            affected_places.join(", ")
+        );
+        let how_response = generate_llm_response(&how_prompt, params)
+            .await
+            .unwrap_or_default();
 
-    send_to_slack(
-        &formatted_article,
-        &full_message,
-        params.slack_token,
-        params.slack_channel,
-    )
-    .await;
-    params
-        .db
-        .add_article(article_url, true, None, Some(&full_message))
-        .expect("Failed to add article to database");
+        full_message.push_str(&format!(
+            "{}\n\n{}\n\n{}",
+            affected_summary, article_summary, how_response
+        ));
+    }
+
+    if !non_affected_people.is_empty() {
+        let non_affected_summary = format!(
+            "This article does not affect: {}",
+            non_affected_people.join(", ")
+        );
+        let why_not_prompt = format!(
+            "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+            article_text,
+            non_affected_places.join(", ")
+        );
+        let why_not_response = generate_llm_response(&why_not_prompt, params)
+            .await
+            .unwrap_or_default();
+
+        if !full_message.is_empty() {
+            full_message.push_str("\n\n");
+        }
+        full_message.push_str(&format!("{}\n\n{}", non_affected_summary, why_not_response));
+    }
+
+    if !full_message.is_empty() {
+        send_to_slack(
+            &formatted_article,
+            &full_message,
+            params.slack_token,
+            params.slack_channel,
+        )
+        .await;
+        params
+            .db
+            .add_article(article_url, true, None, Some(&full_message))
+            .expect("Failed to add article to database");
+    }
 }
 
 /// Processes the topics mentioned in the article text and sends the results to the Slack channel if relevant.
