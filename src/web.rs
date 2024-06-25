@@ -92,70 +92,91 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             if let Some(places) = &params.places {
                 for (continent, countries) in places.as_object().unwrap() {
                     let continent_prompt = format!(
-                        "{} | Is this a current event directly affecting people living on the continent of {}? Answer yes or no.",
+                        "{} | Is this a significant event affecting life and safety of people living on the continent of {} in the past weeks? Answer yes or no.",
                         article_text, continent
                     );
-                    if let Some(continent_response) =
-                        generate_llm_response(&continent_prompt, params).await
-                    {
-                        if continent_response.trim().to_lowercase().starts_with("yes") {
+
+                    let continent_response =
+                        match generate_llm_response(&continent_prompt, params).await {
+                            Some(response) => response,
+                            None => continue,
+                        };
+
+                    if !continent_response.trim().to_lowercase().starts_with("yes") {
+                        info!(
+                            "Article is not about continent '{}': {}",
+                            continent,
+                            continent_response.trim()
+                        );
+                        continue;
+                    }
+
+                    info!(
+                        "Article is a current event affecting life and safety of people on continent '{}': {}",
+                        continent,
+                        continent_response.trim()
+                    );
+
+                    for (country, cities) in countries.as_object().unwrap() {
+                        let country_prompt = format!(
+                            "{} | Is this a significant event affecting life and safety of people living in the country of {} on {} in the past weeks? Answer yes or no.",
+                            article_text, country, continent
+                        );
+
+                        let country_response =
+                            match generate_llm_response(&country_prompt, params).await {
+                                Some(response) => response,
+                                None => continue,
+                            };
+
+                        if !country_response.trim().to_lowercase().starts_with("yes") {
                             info!(
-                                "Article is a current event affecting people on continent '{}': {}",
-                                continent,
-                                continent_response.trim()
+                                "Article is not about country '{}': {}",
+                                country,
+                                country_response.trim()
                             );
-                            for (country, cities) in countries.as_object().unwrap() {
-                                let country_prompt = format!("{} | Is this a current event directly affecting people living in the country of {} on {}? Answer yes or no.", article_text, country, continent);
-                                if let Some(country_response) =
-                                    generate_llm_response(&country_prompt, params).await
-                                {
-                                    if country_response.trim().to_lowercase().starts_with("yes") {
-                                        info!("Article is a current event affecting people in country '{}': {}", country, country_response.trim());
-                                        for city in cities.as_array().unwrap() {
-                                            let city_data: Vec<&str> =
-                                                city.as_str().unwrap().split(", ").collect();
-                                            let city_name = city_data[2];
-                                            let city_prompt = format!("{} | Is this a current event directly affecting people living in or near the city of {} in the country of {} on {}? Answer yes or no.", article_text, city_name, country, continent);
-                                            if let Some(city_response) =
-                                                generate_llm_response(&city_prompt, params).await
-                                            {
-                                                if city_response
-                                                    .trim()
-                                                    .to_lowercase()
-                                                    .starts_with("yes")
-                                                {
-                                                    affected_people.push(format!(
-                                                        "{} {} ({})",
-                                                        city_data[0], city_data[1], city_data[5]
-                                                    ));
-                                                    affected_places.push(format!(
-                                                        "{} in {} on {}",
-                                                        city_name, country, continent
-                                                    ));
-                                                    info!("Article is a current event affecting people in city '{}': {}", city, city_response.trim());
-                                                } else {
-                                                    info!(
-                                                        "Article is not about city '{}': {}",
-                                                        city_name,
-                                                        city_response.trim()
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        info!(
-                                            "Article is not about country '{}': {}",
-                                            country,
-                                            country_response.trim()
-                                        );
-                                    }
-                                }
+                            continue;
+                        }
+
+                        info!(
+                            "Article is a current event affecting life and safety of people in country '{}': {}",
+                            country,
+                            country_response.trim()
+                        );
+
+                        for city in cities.as_array().unwrap() {
+                            let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
+                            let city_name = city_data[2];
+                            let city_prompt = format!(
+                                "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the country of {} on {} in the past weeks? Answer yes or no.",
+                                article_text, city_name, country, continent
+                            );
+
+                            let city_response =
+                                match generate_llm_response(&city_prompt, params).await {
+                                    Some(response) => response,
+                                    None => continue,
+                                };
+
+                            if !city_response.trim().to_lowercase().starts_with("yes") {
+                                info!(
+                                    "Article is not about city '{}': {}",
+                                    city_name,
+                                    city_response.trim()
+                                );
+                                continue;
                             }
-                        } else {
+
+                            affected_people.push(format!(
+                                "{} {} ({}) in {}",
+                                city_data[0], city_data[1], city_data[5], city_name
+                            ));
+                            affected_places
+                                .push(format!("{} in {} on {}", city_name, country, continent));
                             info!(
-                                "Article is not about continent '{}': {}",
-                                continent,
-                                continent_response.trim()
+                                "Article is a current event affecting people in city '{}': {}",
+                                city_name,
+                                city_response.trim()
                             );
                         }
                     }
