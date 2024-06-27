@@ -62,8 +62,8 @@ struct CityProcessingParams<'a> {
 
 // Sleep for 1 to 10 seconds, favoring shorter sleeps.
 async fn weighted_sleep() {
-    // Weights for sleeping durations from 1 to 10 seconds
-    let weights = vec![10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+    // Weights for sleeping durations from 1 to 5 seconds
+    let weights = vec![5, 4, 3, 2, 1];
 
     // Create a weighted index based on the defined weights
     let dist = rand::distributions::WeightedIndex::new(&weights).unwrap();
@@ -234,6 +234,11 @@ async fn process_continent(
         return false;
     }
 
+    info!(
+        "Article is about something affecting life or safety on '{}'",
+        continent
+    );
+
     for (country, regions) in countries.as_object().unwrap() {
         if process_country(
             article_text,
@@ -267,6 +272,29 @@ async fn process_country(
     non_affected_places: &mut Vec<String>,
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
+    let country_prompt = format!(
+        "{} | Is this a significant event affecting life and safety of people living in {} on the continent of {} in the past weeks? Answer yes or no.",
+        article_text, country, continent
+    );
+
+    let country_response = match generate_llm_response(&country_prompt, params).await {
+        Some(response) => response,
+        None => return false,
+    };
+
+    if !country_response.trim().to_lowercase().starts_with("yes") {
+        info!(
+            "Article is not about something affecting life or safety in '{}' on '{}'",
+            country, continent
+        );
+        return false;
+    }
+
+    info!(
+        "Article is about something affecting life or safety in '{}' on '{}'",
+        country, continent
+    );
+
     for (region, cities) in regions.as_object().unwrap() {
         let region_params = RegionProcessingParams {
             article_text,
@@ -322,6 +350,11 @@ async fn process_region(
         );
         return false;
     }
+
+    info!(
+        "Article is about something affecting life or safety in '{}', '{}'",
+        region, country
+    );
 
     for city in cities.as_array().unwrap() {
         let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
@@ -391,6 +424,11 @@ async fn process_city(
         );
         return false;
     }
+
+    info!(
+        "Article is about something affecting life or safety in '{}, {}, {}'",
+        city_name, region, country
+    );
 
     affected_people.push(format!(
         "{} {} ({}) in {}",
