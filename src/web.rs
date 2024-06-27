@@ -29,6 +29,7 @@ pub struct ProcessItemParams<'a> {
 /// Parameters required for processing places, including article text and affected people and places.
 struct PlaceProcessingParams<'a> {
     article_text: &'a str,
+    affected_regions: &'a mut Vec<String>,
     affected_people: &'a mut Vec<String>,
     affected_places: &'a mut Vec<String>,
     non_affected_people: &'a mut Vec<String>,
@@ -42,6 +43,7 @@ struct RegionProcessingParams<'a> {
     continent: &'a str,
     region: &'a str,
     cities: &'a serde_json::Value,
+    affected_regions: &'a mut Vec<String>,
     affected_people: &'a mut Vec<String>,
     affected_places: &'a mut Vec<String>,
     non_affected_people: &'a mut Vec<String>,
@@ -147,6 +149,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
+            let mut affected_regions = Vec::new();
             let mut affected_people = Vec::new();
             let mut affected_places = Vec::new();
             let mut non_affected_people = Vec::new();
@@ -158,9 +161,11 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             if let Some(places) = places {
                 let place_params = PlaceProcessingParams {
                     article_text: &article_text,
+                    affected_regions: &mut affected_regions,
                     affected_people: &mut affected_people,
                     affected_places: &mut affected_places,
                     non_affected_people: &mut non_affected_people,
+
                     non_affected_places: &mut non_affected_places,
                 };
 
@@ -172,6 +177,7 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     &article_url,
                     &item,
                     &article_text,
+                    &affected_regions,
                     &affected_people,
                     &affected_places,
                     &non_affected_people,
@@ -214,6 +220,7 @@ async fn process_continent(
 ) -> bool {
     let PlaceProcessingParams {
         article_text,
+        affected_regions,
         affected_people,
         affected_places,
         non_affected_people,
@@ -245,6 +252,7 @@ async fn process_continent(
             country,
             continent,
             regions,
+            affected_regions,
             affected_people,
             affected_places,
             non_affected_people,
@@ -266,6 +274,7 @@ async fn process_country(
     country: &str,
     continent: &str,
     regions: &serde_json::Value,
+    affected_regions: &mut Vec<String>,
     affected_people: &mut Vec<String>,
     affected_places: &mut Vec<String>,
     non_affected_people: &mut Vec<String>,
@@ -302,6 +311,7 @@ async fn process_country(
             continent,
             region,
             cities,
+            affected_regions,
             affected_people,
             affected_places,
             non_affected_people,
@@ -327,6 +337,7 @@ async fn process_region(
         continent,
         region,
         cities,
+        affected_regions,
         affected_people,
         affected_places,
         non_affected_people,
@@ -355,6 +366,7 @@ async fn process_region(
         "Article is about something affecting life or safety in '{}', '{}'",
         region, country
     );
+    affected_regions.push(region.to_string());
 
     for city in cities.as_array().unwrap() {
         let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
@@ -444,6 +456,7 @@ async fn summarize_and_send_article(
     article_url: &str,
     item: &rss::Item,
     article_text: &str,
+    affected_regions: &[String],
     affected_people: &[String],
     affected_places: &[String],
     non_affected_people: &[String],
@@ -457,50 +470,52 @@ async fn summarize_and_send_article(
     );
 
     let mut full_message = String::new();
-
-    if !affected_people.is_empty() {
-        let affected_summary = format!("This article affects: {}", affected_people.join(", "));
+    if !affected_people.is_empty() || !non_affected_people.is_empty() {
         let summary_prompt = format!(
-            "Summarize the following article in a couple paragraphs, and provide a one paragraph critical analysis:\n\n{}",
+            "{} | Summarize this article in a couple paragraphs, and provide a few-sentence critical analysis.",
             article_text
         );
         let article_summary = generate_llm_response(&summary_prompt, params)
             .await
             .unwrap_or_default();
+        full_message.push_str(&article_summary.to_string());
 
-        let how_prompt = format!(
-            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
-            article_text,
-            affected_places.join(", ")
-        );
-        let how_response = generate_llm_response(&how_prompt, params)
-            .await
-            .unwrap_or_default();
-
-        full_message.push_str(&format!(
-            "{}\n\n{}\n\n{}",
-            affected_summary, article_summary, how_response
-        ));
-    }
-
-    if !non_affected_people.is_empty() {
-        let non_affected_summary = format!(
-            "This article does not affect: {}",
-            non_affected_people.join(", ")
-        );
-        let why_not_prompt = format!(
-            "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
-            article_text,
-            non_affected_places.join(", ")
-        );
-        let why_not_response = generate_llm_response(&why_not_prompt, params)
-            .await
-            .unwrap_or_default();
-
-        if !full_message.is_empty() {
-            full_message.push_str("\n\n");
+        if !affected_people.is_empty() {
+            let affected_summary = format!(
+                "This article affects these people in {}: {}",
+                affected_regions.join(", "),
+                affected_people.join(", ")
+            );
+            let how_prompt = format!(
+                "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+                article_text,
+                affected_places.join(", ")
+            );
+            let how_response = generate_llm_response(&how_prompt, params)
+                .await
+                .unwrap_or_default();
+            full_message.push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
         }
-        full_message.push_str(&format!("{}\n\n{}", non_affected_summary, why_not_response));
+
+        if !non_affected_people.is_empty() {
+            let non_affected_summary = format!(
+                "This article does not affect these people in {}: {}",
+                affected_regions.join(", "),
+                non_affected_people.join(", ")
+            );
+            let why_not_prompt = format!(
+                "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+                article_text,
+                non_affected_places.join(", ")
+            );
+            let why_not_response = generate_llm_response(&why_not_prompt, params)
+                .await
+                .unwrap_or_default();
+            full_message.push_str(&format!(
+                "\n\n{}\n\n{}",
+                non_affected_summary, why_not_response
+            ));
+        }
     }
 
     if !full_message.is_empty() {
