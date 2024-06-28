@@ -1,5 +1,6 @@
 use ollama_rs::Ollama;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -71,9 +72,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         slack_token: &slack_token,
         slack_channel: &slack_channel,
         places,
-        // Initialize both with an empty vector:
-        non_affected_people: &mut vec![],
-        non_affected_places: &mut vec![],
+        non_affected_people: &mut BTreeSet::new(),
+        non_affected_places: &mut BTreeSet::new(),
     };
 
     process_urls(urls, &mut params).await?;

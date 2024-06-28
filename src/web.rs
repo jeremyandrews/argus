@@ -3,6 +3,7 @@ use rand::prelude::*;
 use readability::extractor;
 use rss::Channel;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -22,18 +23,18 @@ pub struct ProcessItemParams<'a> {
     pub slack_token: &'a str,
     pub slack_channel: &'a str,
     pub places: Option<Value>,
-    pub non_affected_people: &'a mut Vec<String>,
-    pub non_affected_places: &'a mut Vec<String>,
+    pub non_affected_people: &'a mut BTreeSet<String>,
+    pub non_affected_places: &'a mut BTreeSet<String>,
 }
 
 /// Parameters required for processing places, including article text and affected people and places.
 struct PlaceProcessingParams<'a> {
     article_text: &'a str,
-    affected_regions: &'a mut Vec<String>,
-    affected_people: &'a mut Vec<String>,
-    affected_places: &'a mut Vec<String>,
-    non_affected_people: &'a mut Vec<String>,
-    non_affected_places: &'a mut Vec<String>,
+    affected_regions: &'a mut BTreeSet<String>,
+    affected_people: &'a mut BTreeSet<String>,
+    affected_places: &'a mut BTreeSet<String>,
+    non_affected_people: &'a mut BTreeSet<String>,
+    non_affected_places: &'a mut BTreeSet<String>,
 }
 
 /// Parameters required for processing a region, including article text and affected people and places.
@@ -43,11 +44,11 @@ struct RegionProcessingParams<'a> {
     continent: &'a str,
     region: &'a str,
     cities: &'a serde_json::Value,
-    affected_regions: &'a mut Vec<String>,
-    affected_people: &'a mut Vec<String>,
-    affected_places: &'a mut Vec<String>,
-    non_affected_people: &'a mut Vec<String>,
-    non_affected_places: &'a mut Vec<String>,
+    affected_regions: &'a mut BTreeSet<String>,
+    affected_people: &'a mut BTreeSet<String>,
+    affected_places: &'a mut BTreeSet<String>,
+    non_affected_people: &'a mut BTreeSet<String>,
+    non_affected_places: &'a mut BTreeSet<String>,
 }
 
 /// Parameters required for processing a city, including article text and affected people and places.
@@ -58,8 +59,8 @@ struct CityProcessingParams<'a> {
     country: &'a str,
     continent: &'a str,
     city_data: &'a [&'a str],
-    affected_people: &'a mut Vec<String>,
-    affected_places: &'a mut Vec<String>,
+    affected_people: &'a mut BTreeSet<String>,
+    affected_places: &'a mut BTreeSet<String>,
 }
 
 // Sleep for 1 to 10 seconds, favoring shorter sleeps.
@@ -149,11 +150,11 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
-            let mut affected_regions = Vec::new();
-            let mut affected_people = Vec::new();
-            let mut affected_places = Vec::new();
-            let mut non_affected_people = Vec::new();
-            let mut non_affected_places = Vec::new();
+            let mut affected_regions = BTreeSet::new();
+            let mut affected_people = BTreeSet::new();
+            let mut affected_places = BTreeSet::new();
+            let mut non_affected_people = BTreeSet::new();
+            let mut non_affected_places = BTreeSet::new();
 
             // Extract places from params
             let places = params.places.clone();
@@ -274,11 +275,11 @@ async fn process_country(
     country: &str,
     continent: &str,
     regions: &serde_json::Value,
-    affected_regions: &mut Vec<String>,
-    affected_people: &mut Vec<String>,
-    affected_places: &mut Vec<String>,
-    non_affected_people: &mut Vec<String>,
-    non_affected_places: &mut Vec<String>,
+    affected_regions: &mut BTreeSet<String>,
+    affected_people: &mut BTreeSet<String>,
+    affected_places: &mut BTreeSet<String>,
+    non_affected_people: &mut BTreeSet<String>,
+    non_affected_places: &mut BTreeSet<String>,
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
     let country_prompt = format!(
@@ -366,7 +367,7 @@ async fn process_region(
         "Article is about something affecting life or safety in '{}', '{}'",
         region, country
     );
-    affected_regions.push(region.to_string());
+    affected_regions.insert(region.to_string());
 
     for city in cities.as_array().unwrap() {
         let city_data: Vec<&str> = city.as_str().unwrap().split(", ").collect();
@@ -385,18 +386,18 @@ async fn process_region(
 
         if process_city(city_params, proc_params).await {
             // Remember affected city
-            affected_people.push(format!(
+            affected_people.insert(format!(
                 "{} {} ({}) in {}",
                 city_data[0], city_data[1], city_data[5], city_name
             ));
-            affected_places.push(format!("{} in {} on {}", city_name, country, continent));
+            affected_places.insert(format!("{} in {} on {}", city_name, country, continent));
         } else {
             // Remember non-affected city
-            non_affected_people.push(format!(
+            non_affected_people.insert(format!(
                 "{} {} ({}) in {}",
                 city_data[0], city_data[1], city_data[5], city_name
             ));
-            non_affected_places.push(format!("{} in {} on {}", city_name, country, continent));
+            non_affected_places.insert(format!("{} in {} on {}", city_name, country, continent));
         }
     }
 
@@ -442,11 +443,11 @@ async fn process_city(
         city_name, region, country
     );
 
-    affected_people.push(format!(
+    affected_people.insert(format!(
         "{} {} ({}) in {}",
         city_data[0], city_data[1], city_data[5], city_name
     ));
-    affected_places.push(format!("{} in {} on {}", city_name, country, continent));
+    affected_places.insert(format!("{} in {} on {}", city_name, country, continent));
 
     true
 }
@@ -456,11 +457,11 @@ async fn summarize_and_send_article(
     article_url: &str,
     item: &rss::Item,
     article_text: &str,
-    affected_regions: &[String],
-    affected_people: &[String],
-    affected_places: &[String],
-    non_affected_people: &[String],
-    non_affected_places: &[String],
+    affected_regions: &BTreeSet<String>,
+    affected_people: &BTreeSet<String>,
+    affected_places: &BTreeSet<String>,
+    non_affected_people: &BTreeSet<String>,
+    non_affected_places: &BTreeSet<String>,
     params: &mut ProcessItemParams<'_>,
 ) {
     let formatted_article = format!(
@@ -483,13 +484,21 @@ async fn summarize_and_send_article(
         if !affected_people.is_empty() {
             let affected_summary = format!(
                 "This article affects these people in {}: {}",
-                affected_regions.join(", "),
-                affected_people.join(", ")
+                affected_regions
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                affected_people
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
             let how_prompt = format!(
                 "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
                 article_text,
-                affected_places.join(", ")
+                affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
             );
             let how_response = generate_llm_response(&how_prompt, params)
                 .await
@@ -500,13 +509,21 @@ async fn summarize_and_send_article(
         if !non_affected_people.is_empty() {
             let non_affected_summary = format!(
                 "This article does not affect these people in {}: {}",
-                affected_regions.join(", "),
-                non_affected_people.join(", ")
+                affected_regions
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                non_affected_people
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
             let why_not_prompt = format!(
                 "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
                 article_text,
-                non_affected_places.join(", ")
+                non_affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
             );
             let why_not_response = generate_llm_response(&why_not_prompt, params)
                 .await
