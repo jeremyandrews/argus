@@ -229,7 +229,7 @@ async fn process_continent(
     } = place_params;
 
     let continent_prompt = format!(
-        "{} | Is this a significant event affecting life and safety of people living on the continent of {} in the past weeks? Answer yes or no.",
+        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living on the continent of {}? Answer yes or no.",
         article_text, continent
     );
 
@@ -283,7 +283,7 @@ async fn process_country(
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
     let country_prompt = format!(
-        "{} | Is this a significant event affecting life and safety of people living in {} on the continent of {} in the past weeks? Answer yes or no.",
+        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in {} on the continent of {}? Answer yes or no.",
         article_text, country, continent
     );
 
@@ -346,7 +346,7 @@ async fn process_region(
     } = params;
 
     let region_prompt = format!(
-        "{} | Is this a significant event affecting life and safety of people living in the region of {} in the country of {} on {} in the past weeks? Answer yes or no.",
+        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in the region of {} in the country of {} on {}? Answer yes or no.",
         article_text, region, country, continent
     );
 
@@ -421,7 +421,7 @@ async fn process_city(
     } = params;
 
     let city_prompt = format!(
-        "{} | Is this a significant event affecting life and safety of people living in or near the city of {} in the region of {} in the country of {} on {} in the past weeks? Answer yes or no.",
+        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in or near the city of {} in the region of {} in the country of {} on {}? Answer yes or no.",
         article_text, city_name, region, country, continent
     );
 
