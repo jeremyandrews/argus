@@ -65,8 +65,8 @@ struct CityProcessingParams<'a> {
 
 // Sleep for 1 to 10 seconds, favoring shorter sleeps.
 async fn weighted_sleep() {
-    // Weights for sleeping durations from 1 to 5 seconds
-    let weights = vec![5, 4, 3, 2, 1];
+    // Weights for sleeping durations from 1 to 3 seconds
+    let weights = vec![3, 2, 1];
 
     // Create a weighted index based on the defined weights
     let dist = rand::distributions::WeightedIndex::new(&weights).unwrap();
