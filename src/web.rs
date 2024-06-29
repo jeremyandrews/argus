@@ -203,7 +203,7 @@ async fn process_places(
 ) {
     for (continent, countries) in places.as_object().unwrap() {
         if !process_continent(&mut place_params, continent, countries, params).await {
-            info!(
+            debug!(
                 "Article is not about something affecting life or safety on '{}'",
                 continent
             );
@@ -293,7 +293,7 @@ async fn process_country(
     };
 
     if !country_response.trim().to_lowercase().starts_with("yes") {
-        info!(
+        debug!(
             "Article is not about something affecting life or safety in '{}' on '{}'",
             country, continent
         );
@@ -356,7 +356,7 @@ async fn process_region(
     };
 
     if !region_response.trim().to_lowercase().starts_with("yes") {
-        info!(
+        debug!(
             "Article is not about something affecting life or safety in '{}', '{}'",
             region, country
         );
@@ -589,12 +589,12 @@ async fn process_topics(
                             .expect("Failed to add article to database");
                         return;
                     } else {
-                        info!("Article is not about '{}': {}", topic, post_response.trim());
+                        debug!("Article is not about '{}': {}", topic, post_response.trim());
                         weighted_sleep().await;
                     }
                 }
             } else {
-                info!("Article is not about '{}': {}", topic, response_text.trim());
+                debug!("Article is not about '{}': {}", topic, response_text.trim());
                 weighted_sleep().await;
             }
         }
