@@ -62,36 +62,35 @@ To enable place-specific analysis, you need to create a JSON file that includes 
 
 3. **Example `places.json`:**
     ```json
-    {
+        {
         "Africa": {
-            "Kenya": [
-                "Sammy, Gituko, Nairobi, Kenya, EAT (UTC+3), Sammy G"
+            "Nigeria": [
+                "Chinwe, Okoro, Lagos, Nigeria, WAT (UTC+1), Chinwe O"
             ],
-            "South Africa": [
-                "Charles, Tanton, Cape Town, South Africa, SAST (UTC+2), Charles Tanton"
+            "Egypt": [
+                "Omar, Farouk, Cairo, Egypt, EET (UTC+2), Omar F"
             ]
         },
         "Asia": {
-            "India": [
-                "Ajit, Shinde, Pune, India, IST (UTC+5:30), AjitS"
+            "Japan": [
+                "Yuki, Nakamura, Tokyo, Japan, JST (UTC+9), YukiN"
             ],
-            "Thailand": [
-                "Sebastian, Leu, Chiang Mai, Thailand, ICT (UTC+7), Sebastian Leu"
+            "Vietnam": [
+                "Linh, Tran, Hanoi, Vietnam, ICT (UTC+7), Linh Tran"
             ]
         },
         "Europe": {
-            "Italy": [
-                "Francesco, Pesenti, Venice, Italy, CET (UTC+1), pex",
-                "Jeremy, Andrews, Barga, Italy, CET (UTC+1), jeremy"
+            "Spain": [
+                "Carlos, Ruiz, Madrid, Spain, CET (UTC+1), carlosr"
             ],
-            "United Kingdom": [
-                "Temi, Amosu, London, UK, GMT (UTC), Temi Amosu"
+            "France": [
+                "Marie, Dubois, Paris, France, CET (UTC+1), maried"
             ]
         },
         "North America": {
-            "US": [
-                "Allyson, Mackay Dombey, New Orleans, US, CST (UTC-6), Allyson Mackay Dombey",
-                "Anna, S. Kalata, Chicago, US, CST (UTC-6), akalata"
+            "Canada": [
+                "Alex, Johnson, Toronto, Canada, EST (UTC-5), AlexJ",
+                "Sarah, Wong, Vancouver, Canada, PST (UTC-8), SarahW"
             ]
         }
     }
