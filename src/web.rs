@@ -97,8 +97,8 @@ pub async fn process_urls(
 
         info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", url);
 
-        match reqwest::get(&url).await {
-            Ok(response) => {
+        match timeout(Duration::from_secs(30), reqwest::get(&url)).await {
+            Ok(Ok(response)) => {
                 info!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", url, response.status());
                 if response.status().is_success() {
                     let body = response.text().await?;
@@ -131,8 +131,11 @@ pub async fn process_urls(
                     warn!(target: TARGET_WEB_REQUEST, "Error: Status {} - Headers: {:#?}", response.status(), response.headers());
                 }
             }
-            Err(err) => {
+            Ok(Err(err)) => {
                 error!("Request to {} failed: {}", url, err);
+            }
+            Err(_) => {
+                error!("Request to {} timed out", url);
             }
         }
     }
