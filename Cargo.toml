@@ -1,12 +1,12 @@
 [package]
 name = "argus"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 
 [dependencies]
 chrono = "0.4"
 emailmessage = "0.2"
-ollama-rs = "0.1.9"
+ollama-rs = "0.2.0"
 rand = "0.8"
 readability = "0.3"
 reqwest = "0.12"
