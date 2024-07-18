@@ -543,10 +543,15 @@ async fn summarize_and_send_article(
             params.slack_channel,
         )
         .await;
-        params
+
+        // Add detailed logging and error handling around database operations
+        match params
             .db
             .add_article(article_url, true, None, Some(&full_message))
-            .expect("Failed to add article to database");
+        {
+            Ok(_) => info!("Successfully added article to database"),
+            Err(e) => error!("Failed to add article to database: {:?}", e),
+        }
     }
 }
 
