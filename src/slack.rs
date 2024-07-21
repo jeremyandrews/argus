@@ -97,7 +97,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Relevance to Topic*"
+                    "text": "*Relevance*"
                 }
             },
             {

@@ -115,6 +115,7 @@ pub async fn process_urls(
                                     info!(target: TARGET_WEB_REQUEST, "Skipping already seen article: {}", article_url);
                                     continue;
                                 }
+                                info!(target: TARGET_WEB_REQUEST, "Processing new article: {}", article_url);
                                 process_item(item.clone(), params).await;
                             }
                         }

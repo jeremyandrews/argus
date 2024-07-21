@@ -77,6 +77,8 @@ impl Database {
             return Err(e);
         }
 
+        info!("URL added to database: {}", url);
+
         if let Err(e) = tx.commit() {
             error!(target: TARGET_DB, "Failed to commit transaction: {:?}", e);
             return Err(e);
