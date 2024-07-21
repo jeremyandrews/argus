@@ -122,6 +122,8 @@ pub fn process_article(
     if !db.has_seen(url)? {
         info!(target: TARGET_DB, "Article not seen before, adding to database: {}", url);
         db.add_article(url, is_relevant, category, analysis)?;
+    } else {
+        info!(target: TARGET_DB, "Article already seen, skipping: {}", url);
     }
     Ok(())
 }

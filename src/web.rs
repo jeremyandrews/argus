@@ -2,7 +2,7 @@ use ollama_rs::Ollama;
 use rand::prelude::*;
 use readability::extractor;
 use rss::Channel;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
@@ -208,7 +208,7 @@ async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemPara
         "{} | Is this article about any ongoing or imminent and potentially life-threatening event or situation? Answer yes or no.",
         article_text
     );
-    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about any threat at all");
+    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about an ongoing or immenent and potentially life-threatening event");
 
     match generate_llm_response(&threat_prompt, params).await {
         Some(response) => response.trim().to_lowercase().starts_with("yes"),
@@ -494,85 +494,115 @@ async fn summarize_and_send_article(
         item.title.clone().unwrap_or_default()
     );
 
-    let mut full_message = String::new();
-    if !affected_people.is_empty() || !non_affected_people.is_empty() {
-        let summary_prompt = format!(
-            "{} | Concisely summarize the information in two to three paragraphs, then provide a concise one-paragraph critical analysis and point out any logical fallacies if any.",
-            article_text
+    let mut relation_to_topic_response = String::new();
+
+    // Generate summary
+    let summary_prompt = format!(
+        "{} | Concisely and accurately summarize the information in two to three paragraphs.",
+        article_text
+    );
+    let summary_response = generate_llm_response(&summary_prompt, params)
+        .await
+        .unwrap_or_default();
+
+    // Generate critical analysis
+    let critical_analysis_prompt = format!(
+        "{} | Provide a concise one-paragraph critical analysis.",
+        article_text
+    );
+    let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
+        .await
+        .unwrap_or_default();
+
+    // Generate logical fallacies
+    let logical_fallacies_prompt =
+        format!("{} | Point out any logical fallacies if any.", article_text);
+    let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
+        .await
+        .unwrap_or_default();
+
+    // Generate relation to topic (affected and non-affected summary)
+    if !affected_people.is_empty() {
+        let affected_summary = format!(
+            "This article affects these people in {}: {}",
+            affected_regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            affected_people
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
         );
-        let article_summary = generate_llm_response(&summary_prompt, params)
+        let how_prompt = format!(
+            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+            article_text,
+            affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        let how_response = generate_llm_response(&how_prompt, params)
             .await
             .unwrap_or_default();
-        full_message.push_str(&article_summary.to_string());
-
-        if !affected_people.is_empty() {
-            let affected_summary = format!(
-                "This article affects these people in {}: {}",
-                affected_regions
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                affected_people
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let how_prompt = format!(
-                "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
-                article_text,
-                affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
-            );
-            let how_response = generate_llm_response(&how_prompt, params)
-                .await
-                .unwrap_or_default();
-            full_message.push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
-        }
-
-        if !non_affected_people.is_empty() {
-            let non_affected_summary = format!(
-                "This article does not affect these people in {}: {}",
-                affected_regions
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                non_affected_people
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let why_not_prompt = format!(
-                "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
-                article_text,
-                non_affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
-            );
-            let why_not_response = generate_llm_response(&why_not_prompt, params)
-                .await
-                .unwrap_or_default();
-            full_message.push_str(&format!(
-                "\n\n{}\n\n{}",
-                non_affected_summary, why_not_response
-            ));
-        }
+        relation_to_topic_response
+            .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
     }
 
-    if !full_message.is_empty() {
+    if !non_affected_people.is_empty() {
+        let non_affected_summary = format!(
+            "This article does not affect these people in {}: {}",
+            affected_regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            non_affected_people
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let why_not_prompt = format!(
+            "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+            article_text,
+            non_affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        let why_not_response = generate_llm_response(&why_not_prompt, params)
+            .await
+            .unwrap_or_default();
+        relation_to_topic_response.push_str(&format!(
+            "\n\n{}\n\n{}",
+            non_affected_summary, why_not_response
+        ));
+    }
+
+    if !summary_response.is_empty()
+        || !critical_analysis_response.is_empty()
+        || !logical_fallacies_response.is_empty()
+        || !relation_to_topic_response.is_empty()
+    {
+        let detailed_response_json = json!({
+            "summary": summary_response,
+            "critical_analysis": critical_analysis_response,
+            "logical_fallacies": logical_fallacies_response,
+            "relation_to_topic": relation_to_topic_response
+        });
+
         send_to_slack(
             &formatted_article,
-            &full_message,
+            &detailed_response_json.to_string(),
             params.slack_token,
             params.slack_channel,
         )
         .await;
 
         // Add detailed logging and error handling around database operations
-        match params
-            .db
-            .add_article(article_url, true, None, Some(&full_message))
-        {
+        match params.db.add_article(
+            article_url,
+            true,
+            None,
+            Some(&detailed_response_json.to_string()),
+        ) {
             Ok(_) => info!("Successfully added article to database"),
             Err(e) => error!("Failed to add article to database: {:?}", e),
         }
@@ -601,58 +631,88 @@ async fn process_topics(
 
         if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
-                // Follow up with a request for a detailed summary and analysis
-                let detailed_prompt = format!(
-                    "{} | Concisely summarize the information in two to three paragraphs, then provide a concise one-paragraph critical analysis and point out any logical fallacies if any, and finally explain how it relates to {}.",
+                // Make detailed LLM requests for each section
+                let summary_prompt = format!(
+                    "{} | Concisely and accurately summarize the information in two to three paragraphs.",
+                    article_text
+                );
+
+                let critical_analysis_prompt = format!(
+                    "{} | Provide a concise one-paragraph critical analysis.",
+                    article_text
+                );
+
+                let logical_fallacies_prompt =
+                    format!("{} | Point out any logical fallacies if any.", article_text);
+
+                let relation_prompt = format!(
+                    "{} | Briefly explain how this relates to {}.",
                     article_text, topic
                 );
 
-                if let Some(detailed_response) =
-                    generate_llm_response(&detailed_prompt, params).await
+                let summary_response = generate_llm_response(&summary_prompt, params)
+                    .await
+                    .unwrap_or_default();
+                let critical_analysis_response =
+                    generate_llm_response(&critical_analysis_prompt, params)
+                        .await
+                        .unwrap_or_default();
+                let logical_fallacies_response =
+                    generate_llm_response(&logical_fallacies_prompt, params)
+                        .await
+                        .unwrap_or_default();
+                let relation_response = generate_llm_response(&relation_prompt, params)
+                    .await
+                    .unwrap_or_default();
+
+                // Ask again to be sure it's really about the topic and not a promotion or advertisement
+                let confirm_prompt = format!(
+                    "{} | Is this article really about {} and not a promotion or advertisement? Answer yes or no.",
+                    summary_response, topic
+                );
+
+                if let Some(confirm_response) = generate_llm_response(&confirm_prompt, params).await
                 {
-                    // Ask again to be sure it's really about the topic and not a promotion or advertisement
-                    let confirm_prompt = format!(
-                        "{} | Is this article really about {} and not a promotion or advertisement? Answer yes or no.",
-                        detailed_response, topic
-                    );
+                    if confirm_response.trim().to_lowercase().starts_with("yes") {
+                        let formatted_article = format!(
+                            "*<{}|{}>*",
+                            article_url,
+                            item.title.clone().unwrap_or_default()
+                        );
 
-                    if let Some(confirm_response) =
-                        generate_llm_response(&confirm_prompt, params).await
-                    {
-                        if confirm_response.trim().to_lowercase().starts_with("yes") {
-                            let formatted_article = format!(
-                                "*<{}|{}>*",
+                        let detailed_response_json = json!({
+                            "summary": summary_response,
+                            "critical_analysis": critical_analysis_response,
+                            "logical_fallacies": logical_fallacies_response,
+                            "relation_to_topic": relation_response
+                        });
+
+                        send_to_slack(
+                            &formatted_article,
+                            &detailed_response_json.to_string(),
+                            params.slack_token,
+                            params.slack_channel,
+                        )
+                        .await;
+
+                        params
+                            .db
+                            .add_article(
                                 article_url,
-                                item.title.clone().unwrap_or_default()
-                            );
-
-                            send_to_slack(
-                                &formatted_article,
-                                &detailed_response,
-                                params.slack_token,
-                                params.slack_channel,
+                                true,
+                                Some(topic),
+                                Some(&detailed_response_json.to_string()),
                             )
-                            .await;
+                            .expect("Failed to add article to database");
 
-                            params
-                                .db
-                                .add_article(
-                                    article_url,
-                                    true,
-                                    Some(topic),
-                                    Some(&detailed_response),
-                                )
-                                .expect("Failed to add article to database");
-
-                            return;
-                        } else {
-                            debug!(
-                                "Article is not about '{}' or is a promotion/advertisement: {}",
-                                topic,
-                                confirm_response.trim()
-                            );
-                            weighted_sleep().await;
-                        }
+                        return;
+                    } else {
+                        debug!(
+                            "Article is not about '{}' or is a promotion/advertisement: {}",
+                            topic,
+                            confirm_response.trim()
+                        );
+                        weighted_sleep().await;
                     }
                 }
             } else {
