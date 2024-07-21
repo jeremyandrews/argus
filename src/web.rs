@@ -570,39 +570,74 @@ async fn process_topics(
             continue;
         }
 
-        let prompt = format!("{} | Determine whether this is specifically about {}. If it is, concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and point out any logical fallacies if any. Otherwise just reply with the single word 'No', without any further analysis or explanation.", article_text, topic);
-        if let Some(response_text) = generate_llm_response(&prompt, params).await {
-            if response_text.trim() != "No" {
-                let post_prompt = format!(
-                    "Is the article about {}?\n\n{}\n\n{}\n\nRespond with 'Yes' or 'No'.",
-                    topic, article_text, response_text
+        // First ask a simple yes/no question
+        let yes_no_prompt = format!(
+            "{} | Is this article specifically about {}? Answer yes or no.",
+            article_text, topic
+        );
+
+        if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
+            if yes_no_response.trim().to_lowercase().starts_with("yes") {
+                // Follow up with a request for a detailed summary and analysis
+                let detailed_prompt = format!(
+                    "{} | Concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and point out any logical fallacies if any.",
+                    article_text
                 );
-                if let Some(post_response) = generate_llm_response(&post_prompt, params).await {
-                    if post_response.trim().starts_with("Yes") {
-                        let formatted_article = format!(
-                            "*<{}|{}>*",
-                            article_url,
-                            item.title.clone().unwrap_or_default()
-                        );
-                        send_to_slack(
-                            &formatted_article,
-                            &response_text,
-                            params.slack_token,
-                            params.slack_channel,
-                        )
-                        .await;
-                        params
-                            .db
-                            .add_article(article_url, true, Some(topic), Some(&response_text))
-                            .expect("Failed to add article to database");
-                        return;
-                    } else {
-                        debug!("Article is not about '{}': {}", topic, post_response.trim());
-                        weighted_sleep().await;
+
+                if let Some(detailed_response) =
+                    generate_llm_response(&detailed_prompt, params).await
+                {
+                    // Ask again to be sure it's really about the topic and not a promotion or advertisement
+                    let confirm_prompt = format!(
+                        "{} | Is this article really about {} and not a promotion or advertisement? Answer yes or no.",
+                        detailed_response, topic
+                    );
+
+                    if let Some(confirm_response) =
+                        generate_llm_response(&confirm_prompt, params).await
+                    {
+                        if confirm_response.trim().to_lowercase().starts_with("yes") {
+                            let formatted_article = format!(
+                                "*<{}|{}>*",
+                                article_url,
+                                item.title.clone().unwrap_or_default()
+                            );
+
+                            send_to_slack(
+                                &formatted_article,
+                                &detailed_response,
+                                params.slack_token,
+                                params.slack_channel,
+                            )
+                            .await;
+
+                            params
+                                .db
+                                .add_article(
+                                    article_url,
+                                    true,
+                                    Some(topic),
+                                    Some(&detailed_response),
+                                )
+                                .expect("Failed to add article to database");
+
+                            return;
+                        } else {
+                            debug!(
+                                "Article is not about '{}' or is a promotion/advertisement: {}",
+                                topic,
+                                confirm_response.trim()
+                            );
+                            weighted_sleep().await;
+                        }
                     }
                 }
             } else {
-                debug!("Article is not about '{}': {}", topic, response_text.trim());
+                debug!(
+                    "Article is not about '{}': {}",
+                    topic,
+                    yes_no_response.trim()
+                );
                 weighted_sleep().await;
             }
         }
