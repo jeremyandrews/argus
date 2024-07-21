@@ -63,10 +63,10 @@ struct CityProcessingParams<'a> {
     affected_places: &'a mut BTreeSet<String>,
 }
 
-// Sleep for 1 to 10 seconds, favoring shorter sleeps.
+// Sleep for 0 to 2 seconds, favoring shorter sleeps.
 async fn weighted_sleep() {
-    // Weights for sleeping durations from 1 to 3 seconds
-    let weights = vec![3, 2, 1];
+    // Weights for sleeping durations from 0 to 2 seconds
+    let weights = vec![2, 1, 0];
 
     // Create a weighted index based on the defined weights
     let dist = rand::distributions::WeightedIndex::new(&weights).unwrap();
@@ -235,6 +235,7 @@ async fn process_continent(
         "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living on the continent of {}? Answer yes or no.",
         article_text, continent
     );
+    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about ongoing or imminent threat on {}", continent);
 
     let continent_response = match generate_llm_response(&continent_prompt, params).await {
         Some(response) => response,
@@ -289,6 +290,7 @@ async fn process_country(
         "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in {} on the continent of {}? Answer yes or no.",
         article_text, country, continent
     );
+    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about ongoing or imminent threat in {} on {}", country, continent);
 
     let country_response = match generate_llm_response(&country_prompt, params).await {
         Some(response) => response,
@@ -352,6 +354,7 @@ async fn process_region(
         "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in the region of {} in the country of {} on {}? Answer yes or no.",
         article_text, region, country, continent
     );
+    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", region, country, continent);
 
     let region_response = match generate_llm_response(&region_prompt, proc_params).await {
         Some(response) => response,
@@ -476,7 +479,7 @@ async fn summarize_and_send_article(
     let mut full_message = String::new();
     if !affected_people.is_empty() || !non_affected_people.is_empty() {
         let summary_prompt = format!(
-            "{} | Summarize this article in a couple paragraphs, and provide a few-sentence critical analysis.",
+            "{} | Concisely summarize the information in two to three paragraphs, then provide a concise one-paragraph critical analysis and point out any logical fallacies if any.",
             article_text
         );
         let article_summary = generate_llm_response(&summary_prompt, params)
@@ -570,6 +573,8 @@ async fn process_topics(
             continue;
         }
 
+        info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article specifically about {}", topic);
+
         // First ask a simple yes/no question
         let yes_no_prompt = format!(
             "{} | Is this article specifically about {}? Answer yes or no.",
@@ -580,8 +585,8 @@ async fn process_topics(
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Follow up with a request for a detailed summary and analysis
                 let detailed_prompt = format!(
-                    "{} | Concisely summarize the information in about 2 paragraphs and then provide a concise one-paragraph analysis of the content and point out any logical fallacies if any.",
-                    article_text
+                    "{} | Concisely summarize the information in two to three paragraphs, then provide a concise one-paragraph critical analysis and point out any logical fallacies if any, and finally explain how it relates to {}.",
+                    article_text, topic
                 );
 
                 if let Some(detailed_response) =
