@@ -8,11 +8,26 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
     let client = Client::new();
 
     // Parse response JSON
-    let response_json: serde_json::Value = serde_json::from_str(response).unwrap();
-    let summary = response_json["summary"].as_str().unwrap();
-    let critical_analysis = response_json["critical_analysis"].as_str().unwrap();
-    let logical_fallacies = response_json["logical_fallacies"].as_str().unwrap();
-    let relation_to_topic = response_json["relation_to_topic"].as_str().unwrap();
+    let response_json: serde_json::Value = match serde_json::from_str(response) {
+        Ok(json) => json,
+        Err(err) => {
+            error!("Failed to parse response JSON: {:?}", err);
+            return;
+        }
+    };
+
+    let summary = response_json["summary"]
+        .as_str()
+        .unwrap_or("No summary available");
+    let critical_analysis = response_json["critical_analysis"]
+        .as_str()
+        .unwrap_or("No critical analysis available");
+    let logical_fallacies = response_json["logical_fallacies"]
+        .as_str()
+        .unwrap_or("No logical fallacies available");
+    let relation_to_topic = response_json["relation_to_topic"]
+        .as_str()
+        .unwrap_or("No relation to topic available");
 
     let payload = json!({
         "channel": slack_channel,
@@ -25,31 +40,71 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
                 }
             },
             {
+                "type": "divider"
+            },
+            {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Summary*\n".to_string() + summary
+                    "text": "*Summary*"
                 }
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Critical Analysis*\n".to_string() + critical_analysis
+                    "text": summary
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Critical Analysis*"
                 }
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Logical Fallacies*\n".to_string() + logical_fallacies
+                    "text": critical_analysis
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Logical Fallacies*"
                 }
             },
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Relation to Topic*\n".to_string() + relation_to_topic
+                    "text": logical_fallacies
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Relevance to Topic*"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": relation_to_topic
                 }
             }
         ],
@@ -59,6 +114,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
 
     let max_retries = 3;
     let mut backoff = 2;
+    let max_backoff = 32; // Maximum backoff time in seconds
 
     for attempt in 0..max_retries {
         info!(target: "web_request", "Sending Slack notification with payload: {}", payload);
@@ -78,7 +134,10 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
                     info!("** Slack notification sent successfully");
                     return;
                 } else {
-                    let error_text = response.text().await.unwrap_or_default();
+                    let error_text = match response.text().await {
+                        Ok(text) => text,
+                        Err(_) => "Unknown error".to_string(),
+                    };
                     warn!("!! Error sending Slack notification: {}", error_text);
                     warn!("!! Payload: {}", payload);
                 }
@@ -97,7 +156,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
                 attempt + 1,
                 max_retries
             );
-            tokio::time::sleep(Duration::from_secs(backoff)).await;
+            tokio::time::sleep(Duration::from_secs(backoff.min(max_backoff))).await;
             backoff *= 2; // Exponential backoff
         } else {
             error!(

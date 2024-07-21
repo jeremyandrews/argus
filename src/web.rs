@@ -515,8 +515,10 @@ async fn summarize_and_send_article(
         .unwrap_or_default();
 
     // Generate logical fallacies
-    let logical_fallacies_prompt =
-        format!("{} | Point out any logical fallacies if any.", article_text);
+    let logical_fallacies_prompt = format!(
+        "{} | Concisely point out any logical fallacies in one to five sentences if any.",
+        article_text
+    );
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
         .await
         .unwrap_or_default();
@@ -643,10 +645,10 @@ async fn process_topics(
                 );
 
                 let logical_fallacies_prompt =
-                    format!("{} | Point out any logical fallacies if any.", article_text);
+                    format!("{} | Concisely point out any logical fallacies in one to five sentences if any.", article_text);
 
                 let relation_prompt = format!(
-                    "{} | Briefly explain how this relates to {}.",
+                    "{} | Concisely in one to three sentences explain how this relates to {}.",
                     article_text, topic
                 );
 

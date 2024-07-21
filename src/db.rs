@@ -110,20 +110,3 @@ impl Database {
         Ok(seen)
     }
 }
-
-#[instrument(target = "db", level = "info", skip(db))]
-pub fn process_article(
-    db: &mut Database,
-    url: &str,
-    is_relevant: bool,
-    category: Option<&str>,
-    analysis: Option<&str>,
-) -> Result<()> {
-    if !db.has_seen(url)? {
-        info!(target: TARGET_DB, "Article not seen before, adding to database: {}", url);
-        db.add_article(url, is_relevant, category, analysis)?;
-    } else {
-        info!(target: TARGET_DB, "Article already seen, skipping: {}", url);
-    }
-    Ok(())
-}
