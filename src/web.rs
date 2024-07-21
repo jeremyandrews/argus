@@ -169,11 +169,15 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     affected_people: &mut affected_people,
                     affected_places: &mut affected_places,
                     non_affected_people: &mut non_affected_people,
-
                     non_affected_places: &mut non_affected_places,
                 };
 
-                process_places(place_params, &places, params).await;
+                // Preliminary threat check
+                if check_if_threat_at_all(&article_text, params).await {
+                    process_places(place_params, &places, params).await;
+                } else {
+                    debug!("Article is not about an ongoing or imminent threat at all.");
+                }
             }
 
             if !affected_people.is_empty() || !non_affected_people.is_empty() {
@@ -195,6 +199,20 @@ async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             weighted_sleep().await;
         }
         Err(access_denied) => handle_access_denied(access_denied, &article_url, params).await,
+    }
+}
+
+/// Checks if the article is about any kind of threat at all.
+async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemParams<'_>) -> bool {
+    let threat_prompt = format!(
+        "{} | Is this article about any ongoing or imminent and potentially life-threatening event or situation? Answer yes or no.",
+        article_text
+    );
+    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about any threat at all");
+
+    match generate_llm_response(&threat_prompt, params).await {
+        Some(response) => response.trim().to_lowercase().starts_with("yes"),
+        None => false,
     }
 }
 
