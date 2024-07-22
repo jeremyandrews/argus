@@ -18,17 +18,19 @@ pub fn configure_logging() {
         }
     });
 
+    // Stdout log configuration
     let stdout_log = fmt::layer()
         .with_writer(io::stdout)
         .with_filter(EnvFilter::new(
-            "info,llm_request=warn,web_request=warn,db=warn",
+            "info,llm_request=warn,web_request=warn,db=warn,sqlx=off",
         ))
         .with_filter(custom_filter);
 
+    // File log configuration
     let file_appender = rolling::daily("logs", "app.log");
     let file_log = fmt::layer()
         .with_writer(file_appender)
-        .with_filter(EnvFilter::new("llm_request=debug,info"));
+        .with_filter(EnvFilter::new("llm_request=debug,info,sqlx=info"));
 
     tracing_subscriber::Registry::default()
         .with(stdout_log)
