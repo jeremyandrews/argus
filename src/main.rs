@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::Path;
+use tokio::task;
 use tracing::{debug, info, warn};
 
 const TARGET_WEB_REQUEST: &str = "web_request";
@@ -18,9 +19,9 @@ mod llm;
 mod logging;
 mod slack;
 mod web;
+mod worker;
 
 use environment::get_env_var_as_vec;
-use web::{process_urls, ProcessItemParams};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,20 +66,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    let mut params = ProcessItemParams {
-        topics: &topics,
-        ollama: &ollama,
-        model: &model,
-        temperature,
-        db: &db,
-        slack_token: &slack_token,
-        slack_channel: &slack_channel,
-        places,
-        non_affected_people: &mut BTreeSet::new(),
-        non_affected_places: &mut BTreeSet::new(),
-    };
+    // Spawn a thread to parse URLs from RSS feeds.
+    let db_clone = db.clone();
+    let urls_clone = urls.clone();
+    task::spawn(async move {
+        web::process_rss_feeds(urls_clone, db_clone).await.unwrap();
+    });
 
-    process_urls(urls, &mut params).await?;
+    // Spawn worker threads to process URLs from the queue
+    let worker_count = 1; // Adjust the number of worker threads as needed
+    let db_clone = db.clone();
+    for _ in 0..worker_count {
+        let db_worker = db_clone.clone();
+        let ollama_worker = ollama.clone();
+        let model_worker = model.clone();
+        let topics_worker = topics.clone();
+        let slack_token_worker = slack_token.clone();
+        let slack_channel_worker = slack_channel.clone();
+        let places_worker = places.clone();
+        task::spawn(async move {
+            let mut non_affected_people = BTreeSet::new();
+            let mut non_affected_places = BTreeSet::new();
+            worker::worker_loop(
+                db_worker,
+                &topics_worker,
+                &ollama_worker,
+                &model_worker,
+                temperature,
+                &slack_token_worker,
+                &slack_channel_worker,
+                places_worker,
+                &mut non_affected_people,
+                &mut non_affected_places,
+            )
+            .await;
+        });
+    }
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 use ollama_rs::Ollama;
-use rand::prelude::*;
+use rand::{distributions::WeightedIndex, prelude::*, rngs::StdRng, SeedableRng};
 use readability::extractor;
 use rss::Channel;
 use serde_json::{json, Value};
@@ -69,10 +69,10 @@ async fn weighted_sleep() {
     let weights = vec![2, 1, 0];
 
     // Create a weighted index based on the defined weights
-    let dist = rand::distributions::WeightedIndex::new(&weights).unwrap();
+    let dist = WeightedIndex::new(&weights).unwrap();
 
-    // Create a random number generator
-    let mut rng = rand::thread_rng();
+    // Create a random number generator that is `Send`
+    let mut rng = StdRng::from_entropy();
 
     // Select a duration based on the weighted distribution
     let duration_index = dist.sample(&mut rng);
@@ -85,68 +85,32 @@ async fn weighted_sleep() {
     sleep(sleep_duration).await;
 }
 
-/// Processes a list of URLs by fetching and parsing RSS feeds, extracting and analyzing articles, and updating the database and Slack channel with the results.
-pub async fn process_urls(
-    urls: Vec<String>,
-    params: &mut ProcessItemParams<'_>,
+pub async fn process_rss_feeds(
+    rss_urls: Vec<String>,
+    db: Database,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for url in urls {
-        if url.trim().is_empty() {
-            continue;
-        }
-
-        info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", url);
-
-        match timeout(Duration::from_secs(30), reqwest::get(&url)).await {
-            Ok(Ok(response)) => {
-                info!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", url, response.status());
+    loop {
+        for rss_url in &rss_urls {
+            if let Ok(response) = reqwest::get(rss_url).await {
                 if response.status().is_success() {
                     let body = response.text().await?;
                     let reader = io::Cursor::new(body);
                     if let Ok(channel) = Channel::read_from(reader) {
-                        info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
                         for item in channel.items() {
                             if let Some(article_url) = item.link.clone() {
-                                if params
-                                    .db
-                                    .has_seen(&article_url)
-                                    .await
-                                    .expect("Failed to check database")
-                                {
-                                    info!(target: TARGET_WEB_REQUEST, "Skipping already seen article: {}", article_url);
-                                    continue;
-                                }
-                                info!(target: TARGET_WEB_REQUEST, "Processing new article: {}", article_url);
-                                process_item(item.clone(), params).await;
+                                db.add_to_queue(&article_url).await?;
                             }
                         }
-                    } else {
-                        error!("Failed to parse RSS channel");
                     }
-                } else if response.status() == reqwest::StatusCode::FORBIDDEN {
-                    params
-                        .db
-                        .add_article(&url, false, None, None)
-                        .await
-                        .expect("Failed to add URL to database as access denied");
-                    warn!(target: TARGET_WEB_REQUEST, "Access denied to {} - added to database to prevent retries", url);
-                } else {
-                    warn!(target: TARGET_WEB_REQUEST, "Error: Status {} - Headers: {:#?}", response.status(), response.headers());
                 }
             }
-            Ok(Err(err)) => {
-                error!("Request to {} failed: {}", url, err);
-            }
-            Err(_) => {
-                error!("Request to {} timed out", url);
-            }
         }
+        sleep(Duration::from_secs(3600)).await; // Sleep for 1 hour before fetching again
     }
-    Ok(())
 }
 
 /// Processes a single RSS item by extracting and analyzing the article text, and updating the affected people and places lists.
-async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
+pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
     info!(
         " - reviewing => {} ({})",
         item.title.clone().unwrap_or_default(),

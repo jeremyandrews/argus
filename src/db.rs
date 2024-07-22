@@ -1,4 +1,4 @@
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
+use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{info, instrument};
@@ -40,13 +40,36 @@ impl Database {
                 analysis TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
+
+            CREATE TABLE IF NOT EXISTS rss_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL UNIQUE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_url ON rss_queue (url);
             "#,
         )
         .execute(&mut conn)
         .await?;
-        info!(target: TARGET_DB, "Articles table ensured to exist");
+        info!(target: TARGET_DB, "Tables ensured to exist");
 
         Ok(Database { pool })
+    }
+
+    #[instrument(target = "db", level = "info", skip(self, url))]
+    pub async fn add_to_queue(&self, url: &str) -> Result<(), sqlx::Error> {
+        info!(target: TARGET_DB, "Adding URL to queue: {}", url);
+        sqlx::query(
+            r#"
+            INSERT INTO rss_queue (url)
+            VALUES (?1)
+            ON CONFLICT(url) DO NOTHING
+            "#,
+        )
+        .bind(url)
+        .execute(&self.pool)
+        .await?;
+        info!(target: TARGET_DB, "URL added to queue: {}", url);
+        Ok(())
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, category, analysis))]
@@ -99,5 +122,30 @@ impl Database {
         let seen = row.is_some();
         info!(target: TARGET_DB, "Article seen status for {}: {}", url, seen);
         Ok(seen)
+    }
+
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn fetch_and_delete_url_from_queue(&self) -> Result<Option<String>, sqlx::Error> {
+        info!(target: TARGET_DB, "Fetching and deleting URL from queue");
+
+        let mut transaction = self.pool.begin().await?;
+        let row = sqlx::query("SELECT url FROM rss_queue ORDER BY RANDOM() LIMIT 1 FOR UPDATE")
+            .fetch_optional(&mut transaction)
+            .await?;
+
+        if let Some(row) = row {
+            let url: String = row.get("url");
+            sqlx::query("DELETE FROM rss_queue WHERE url = ?1")
+                .bind(&url)
+                .execute(&mut transaction)
+                .await?;
+            transaction.commit().await?;
+            info!(target: TARGET_DB, "Fetched and deleted URL from queue: {}", url);
+            Ok(Some(url))
+        } else {
+            info!(target: TARGET_DB, "No URL found in queue");
+            transaction.rollback().await?;
+            Ok(None)
+        }
     }
 }
