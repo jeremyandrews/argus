@@ -5,7 +5,7 @@ use tokio::time::sleep;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 
-use crate::web::ProcessItemParams;
+use crate::worker::ProcessItemParams;
 use crate::TARGET_LLM_REQUEST;
 
 pub async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>) -> Option<String> {

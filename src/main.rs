@@ -17,8 +17,9 @@ use db::Database;
 mod environment;
 mod llm;
 mod logging;
+mod rss;
 mod slack;
-mod web;
+mod util;
 mod worker;
 
 use environment::get_env_var_as_vec;
@@ -70,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_clone = db.clone();
     let urls_clone = urls.clone();
     task::spawn(async move {
-        web::process_rss_feeds(urls_clone, db_clone).await.unwrap();
+        rss::rss_loop(urls_clone, db_clone).await.unwrap();
     });
 
     // Spawn worker threads to process URLs from the queue
