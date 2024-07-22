@@ -19,7 +19,7 @@ pub struct ProcessItemParams<'a> {
     pub ollama: &'a Ollama,
     pub model: &'a str,
     pub temperature: f32,
-    pub db: &'a mut Database,
+    pub db: &'a Database,
     pub slack_token: &'a str,
     pub slack_channel: &'a str,
     pub places: Option<Value>,
@@ -110,6 +110,7 @@ pub async fn process_urls(
                                 if params
                                     .db
                                     .has_seen(&article_url)
+                                    .await
                                     .expect("Failed to check database")
                                 {
                                     info!(target: TARGET_WEB_REQUEST, "Skipping already seen article: {}", article_url);
@@ -126,6 +127,7 @@ pub async fn process_urls(
                     params
                         .db
                         .add_article(&url, false, None, None)
+                        .await
                         .expect("Failed to add URL to database as access denied");
                     warn!(target: TARGET_WEB_REQUEST, "Access denied to {} - added to database to prevent retries", url);
                 } else {
@@ -600,12 +602,16 @@ async fn summarize_and_send_article(
         .await;
 
         // Add detailed logging and error handling around database operations
-        match params.db.add_article(
-            article_url,
-            true,
-            None,
-            Some(&detailed_response_json.to_string()),
-        ) {
+        match params
+            .db
+            .add_article(
+                article_url,
+                true,
+                None,
+                Some(&detailed_response_json.to_string()),
+            )
+            .await
+        {
             Ok(_) => info!("Successfully added article to database"),
             Err(e) => error!("Failed to add article to database: {:?}", e),
         }
@@ -649,8 +655,8 @@ async fn process_topics(
                     format!("{} | Concisely point out any logical fallacies in one to five sentences if any.", article_text);
 
                 let relation_prompt = format!(
-                    "{} | Concisely in one to three sentences explain how this relates to {}.",
-                    article_text, topic
+                    "{} | Brielfy explain in one short paragraph how this relates to {} starting with the words 'This relates to {}`.",
+                    article_text, topic, topic
                 );
 
                 let summary_response = generate_llm_response(&summary_prompt, params)
@@ -706,6 +712,7 @@ async fn process_topics(
                                 Some(topic),
                                 Some(&detailed_response_json.to_string()),
                             )
+                            .await
                             .expect("Failed to add article to database");
 
                         return;
@@ -740,6 +747,7 @@ async fn handle_access_denied(
         params
             .db
             .add_article(article_url, false, None, None)
+            .await
             .expect("Failed to add URL to database as access denied");
         warn!(target: TARGET_WEB_REQUEST, "Access denied for URL: {}", article_url);
     }
