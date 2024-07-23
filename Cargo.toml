@@ -1,11 +1,12 @@
 [package]
 name = "argus"
-version = "0.5.3"
+version = "0.6.0"
 edition = "2021"
 
 [dependencies]
 chrono = "0.4"
 emailmessage = "0.2"
+futures = "0.3"
 ollama-rs = "0.2.0"
 rand = "0.8"
 readability = "0.3"
@@ -18,3 +19,4 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
+url = "2.5"

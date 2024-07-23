@@ -129,7 +129,7 @@ impl Database {
         info!(target: TARGET_DB, "Fetching and deleting URL from queue");
 
         let mut transaction = self.pool.begin().await?;
-        let row = sqlx::query("SELECT url FROM rss_queue ORDER BY RANDOM() LIMIT 1 FOR UPDATE")
+        let row = sqlx::query("SELECT url FROM rss_queue ORDER BY RANDOM() LIMIT 1")
             .fetch_optional(&mut transaction)
             .await?;
 

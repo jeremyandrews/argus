@@ -1,13 +1,14 @@
 use rss::Channel;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::db::Database;
+use crate::TARGET_WEB_REQUEST;
 
-const TIMEOUT_DURATION: Duration = Duration::from_secs(60);
-const RETRY_DELAY: Duration = Duration::from_secs(15);
-const MAX_RETRIES: u8 = 3;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const RETRY_DELAY: Duration = Duration::from_secs(5);
+const MAX_RETRIES: usize = 3;
 
 pub async fn rss_loop(
     rss_urls: Vec<String>,
@@ -15,64 +16,65 @@ pub async fn rss_loop(
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         for rss_url in &rss_urls {
-            let mut retries = 0;
-            let mut success = false;
+            let mut attempts = 0;
+            let success = loop {
+                if attempts >= MAX_RETRIES {
+                    error!(target: TARGET_WEB_REQUEST, "Max retries reached for URL: {}", rss_url);
+                    break false;
+                }
 
-            while retries < MAX_RETRIES && !success {
-                match timeout(TIMEOUT_DURATION, reqwest::get(rss_url)).await {
-                    Ok(Ok(response)) if response.status().is_success() => {
-                        debug!("Successfully fetched RSS feed from {}", rss_url);
-                        if let Ok(body) = response.text().await {
+                info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
+                match timeout(REQUEST_TIMEOUT, reqwest::get(rss_url)).await {
+                    Ok(Ok(response)) => {
+                        info!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", rss_url, response.status());
+                        if response.status().is_success() {
+                            let body = match response.text().await {
+                                Ok(text) => text,
+                                Err(err) => {
+                                    error!(target: TARGET_WEB_REQUEST, "Failed to read response body from {}: {}", rss_url, err);
+                                    continue;
+                                }
+                            };
                             let reader = io::Cursor::new(body);
-                            if let Ok(channel) = Channel::read_from(reader) {
-                                info!("Parsed RSS feed from {}", rss_url);
-                                for item in channel.items() {
-                                    if let Some(article_url) = item.link.clone() {
-                                        match db.add_to_queue(&article_url).await {
-                                            Ok(_) => {
-                                                debug!("Added article to queue: {}", article_url)
+                            match Channel::read_from(reader) {
+                                Ok(channel) => {
+                                    info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
+                                    for item in channel.items() {
+                                        if let Some(article_url) = item.link.clone() {
+                                            if let Err(err) = db.add_to_queue(&article_url).await {
+                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                             }
-                                            Err(e) => error!(
-                                                "Failed to add article to queue: {}, error: {:?}",
-                                                article_url, e
-                                            ),
                                         }
                                     }
+                                    break true;
                                 }
-                            } else {
-                                warn!("Failed to parse RSS feed from {}", rss_url);
+                                Err(err) => {
+                                    error!(target: TARGET_WEB_REQUEST, "Failed to parse RSS channel from {}: {}", rss_url, err);
+                                    break false;
+                                }
                             }
                         } else {
-                            warn!("Failed to read response body from {}", rss_url);
+                            warn!(target: TARGET_WEB_REQUEST, "Non-success status {} from {}", response.status(), rss_url);
                         }
-                        success = true;
                     }
-                    Ok(Ok(response)) => {
-                        warn!("Non-success status {} from {}", response.status(), rss_url);
+                    Ok(Err(err)) => {
+                        error!(target: TARGET_WEB_REQUEST, "Request to {} failed: {}", rss_url, err);
                     }
-                    Ok(Err(e)) => {
-                        error!("Failed to fetch RSS feed from {}: {:?}", rss_url, e);
-                    }
-                    Err(e) => {
-                        error!("Timeout fetching RSS feed from {}: {:?}", rss_url, e);
+                    Err(_) => {
+                        error!(target: TARGET_WEB_REQUEST, "Request to {} timed out", rss_url);
                     }
                 }
 
-                if !success {
-                    retries += 1;
-                    warn!(
-                        "Retrying {}/{} for RSS feed {}",
-                        retries, MAX_RETRIES, rss_url
-                    );
-                    sleep(RETRY_DELAY).await;
-                }
-            }
+                attempts += 1;
+                warn!(target: TARGET_WEB_REQUEST, "Retrying {} in {:?}", rss_url, RETRY_DELAY);
+                sleep(RETRY_DELAY).await;
+            };
 
             if !success {
-                error!("Exceeded maximum retries for RSS feed {}", rss_url);
+                error!(target: TARGET_WEB_REQUEST, "Failed to process URL: {}", rss_url);
             }
         }
-        info!("Sleeping for 1 hour before fetching RSS feeds again");
-        sleep(Duration::from_secs(3600)).await;
+        info!(target: TARGET_WEB_REQUEST, "Sleeping for 1 hour before next fetch");
+        sleep(Duration::from_secs(3600)).await; // Sleep for 1 hour before fetching again
     }
 }

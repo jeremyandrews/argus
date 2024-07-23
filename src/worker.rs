@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
+use url::Url;
 
 use crate::llm::generate_llm_response;
 use crate::slack::send_to_slack;
@@ -75,23 +76,32 @@ pub async fn worker_loop(
 ) {
     loop {
         if let Some(url) = db.fetch_and_delete_url_from_queue().await.unwrap() {
-            info!("Processing URL: {}", url);
-            let item = rss::Item::default(); // Create a default Item or fetch the actual item from the URL if needed
+            // Validate the URL
+            if let Ok(parsed_url) = Url::parse(&url) {
+                info!("Processing URL: {}", parsed_url);
+                let item = rss::Item {
+                    link: Some(url.clone()),
+                    ..Default::default() // Add other fields if necessary
+                };
 
-            let mut params = ProcessItemParams {
-                topics,
-                ollama,
-                model,
-                temperature,
-                db: &db,
-                slack_token,
-                slack_channel,
-                places: places.clone(),
-                non_affected_people,
-                non_affected_places,
-            };
+                let mut params = ProcessItemParams {
+                    topics,
+                    ollama,
+                    model,
+                    temperature,
+                    db: &db,
+                    slack_token,
+                    slack_channel,
+                    places: places.clone(),
+                    non_affected_people,
+                    non_affected_places,
+                };
 
-            process_item(item, &mut params).await;
+                process_item(item, &mut params).await;
+            } else {
+                error!("Invalid URL found in queue: {}", url);
+                // Optionally, handle invalid URLs (e.g., remove them from the queue)
+            }
         } else {
             // No more URLs to process, break the loop
             break;

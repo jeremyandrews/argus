@@ -23,6 +23,7 @@ mod util;
 mod worker;
 
 use environment::get_env_var_as_vec;
+use futures::future::join_all;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,12 +71,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn a thread to parse URLs from RSS feeds.
     let db_clone = db.clone();
     let urls_clone = urls.clone();
-    task::spawn(async move {
+    let rss_handle = task::spawn(async move {
         rss::rss_loop(urls_clone, db_clone).await.unwrap();
     });
 
     // Spawn worker threads to process URLs from the queue
     let worker_count = 1; // Adjust the number of worker threads as needed
+    let mut worker_handles = Vec::new();
     let db_clone = db.clone();
     for _ in 0..worker_count {
         let db_worker = db_clone.clone();
@@ -85,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let slack_token_worker = slack_token.clone();
         let slack_channel_worker = slack_channel.clone();
         let places_worker = places.clone();
-        task::spawn(async move {
+        let worker_handle = task::spawn(async move {
             let mut non_affected_people = BTreeSet::new();
             let mut non_affected_places = BTreeSet::new();
             worker::worker_loop(
@@ -102,7 +104,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .await;
         });
+        worker_handles.push(worker_handle);
     }
+
+    // Await the completion of the RSS and worker tasks
+    rss_handle.await?;
+    join_all(worker_handles).await;
 
     Ok(())
 }
