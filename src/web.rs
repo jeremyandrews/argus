@@ -501,7 +501,7 @@ async fn summarize_and_send_article(
 
     // Generate summary
     let summary_prompt = format!(
-        "{} | Concisely and accurately summarize the information in two to three paragraphs.",
+        "{} | Concisely and accurately summarize the information in two to three paragraphs in American English.",
         article_text
     );
     let summary_response = generate_llm_response(&summary_prompt, params)
@@ -510,7 +510,7 @@ async fn summarize_and_send_article(
 
     // Generate critical analysis
     let critical_analysis_prompt = format!(
-        "{} | Provide a concise one-paragraph critical analysis.",
+        "{} | Provide a concise two to three sentence critical analysis in American English.",
         article_text
     );
     let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
@@ -519,7 +519,7 @@ async fn summarize_and_send_article(
 
     // Generate logical fallacies
     let logical_fallacies_prompt = format!(
-        "{} | Concisely point out any logical fallacies in one to five sentences if any.",
+        "{} | Concisely point out in American English if there are any logical fallacies in one to three sentences.",
         article_text
     );
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
@@ -542,7 +542,7 @@ async fn summarize_and_send_article(
                 .join(", ")
         );
         let how_prompt = format!(
-            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences in American Engish.",
             article_text,
             affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
         );
@@ -642,20 +642,20 @@ async fn process_topics(
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Make detailed LLM requests for each section
                 let summary_prompt = format!(
-                    "{} | Concisely and accurately summarize the information in two to three paragraphs.",
+                    "{} | Concisely and accurately summarize the information in two to three paragraphs in American English.",
                     article_text
                 );
 
                 let critical_analysis_prompt = format!(
-                    "{} | Provide a concise one-paragraph critical analysis.",
+                    "{} | Provide a concise two to three sentence critical analysis in American English.",
                     article_text
                 );
 
                 let logical_fallacies_prompt =
-                    format!("{} | Concisely point out any logical fallacies in one to five sentences if any.", article_text);
+                    format!( "{} | Concisely point out in American English if there are any logical fallacies in one to three sentences.", article_text);
 
                 let relation_prompt = format!(
-                    "{} | Brielfy explain in one short paragraph how this relates to {} starting with the words 'This relates to {}`.",
+                    "{} | Briefly explain in American English in one to three sentences how this relates to {} starting with the words 'This relates to {}`.",
                     article_text, topic, topic
                 );
 
