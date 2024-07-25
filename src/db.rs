@@ -1,3 +1,4 @@
+use once_cell::sync::OnceCell;
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -53,6 +54,18 @@ impl Database {
         info!(target: TARGET_DB, "Tables ensured to exist");
 
         Ok(Database { pool })
+    }
+
+    pub async fn instance() -> &'static Database {
+        static INSTANCE: OnceCell<Database> = OnceCell::new();
+        INSTANCE.get_or_init(|| {
+            let database_url =
+                std::env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
+            let database = tokio::runtime::Handle::current()
+                .block_on(Database::new(&database_url))
+                .expect("Failed to initialize database");
+            database
+        })
     }
 
     #[instrument(target = "db", level = "info", skip(self, url))]

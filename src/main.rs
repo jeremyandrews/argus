@@ -12,8 +12,6 @@ const TARGET_LLM_REQUEST: &str = "llm_request";
 const TARGET_DB: &str = "db";
 
 mod db;
-use db::Database;
-
 mod environment;
 mod llm;
 mod logging;
@@ -43,10 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let slack_token = env::var("SLACK_TOKEN").expect("SLACK_TOKEN environment variable required");
     let slack_channel =
         env::var("SLACK_CHANNEL").expect("SLACK_CHANNEL environment variable required");
-    let db_path = env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
-    let db = Database::new(&db_path)
-        .await
-        .expect("Failed to initialize database");
     let temperature = env::var("LLM_TEMPERATURE")
         .unwrap_or_else(|_| "0.0".to_string())
         .parse()
@@ -69,18 +63,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Spawn a thread to parse URLs from RSS feeds.
-    let db_clone = db.clone();
     let urls_clone = urls.clone();
     let rss_handle = task::spawn(async move {
-        rss::rss_loop(urls_clone, db_clone).await.unwrap();
+        rss::rss_loop(urls_clone).await.unwrap();
     });
 
     // Spawn worker threads to process URLs from the queue
     let worker_count = 1; // Adjust the number of worker threads as needed
     let mut worker_handles = Vec::new();
-    let db_clone = db.clone();
     for _ in 0..worker_count {
-        let db_worker = db_clone.clone();
         let ollama_worker = ollama.clone();
         let model_worker = model.clone();
         let topics_worker = topics.clone();
@@ -91,7 +82,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut non_affected_people = BTreeSet::new();
             let mut non_affected_places = BTreeSet::new();
             worker::worker_loop(
-                db_worker,
                 &topics_worker,
                 &ollama_worker,
                 &model_worker,

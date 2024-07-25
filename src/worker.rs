@@ -1,4 +1,3 @@
-use crate::db::Database;
 use ollama_rs::Ollama;
 use readability::extractor;
 use serde_json::{json, Value};
@@ -7,6 +6,7 @@ use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+use crate::db::Database;
 use crate::llm::generate_llm_response;
 use crate::slack::send_to_slack;
 use crate::util::weighted_sleep;
@@ -63,7 +63,6 @@ struct CityProcessingParams<'a> {
 }
 
 pub async fn worker_loop(
-    db: Database,
     topics: &[String],
     ollama: &Ollama,
     model: &str,
@@ -74,6 +73,7 @@ pub async fn worker_loop(
     non_affected_people: &mut BTreeSet<String>,
     non_affected_places: &mut BTreeSet<String>,
 ) {
+    let db = Database::instance().await;
     loop {
         if let Some(url) = db.fetch_and_delete_url_from_queue().await.unwrap() {
             // Validate the URL
