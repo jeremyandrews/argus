@@ -59,18 +59,20 @@ impl Database {
 
     pub fn instance() -> &'static Database {
         static INSTANCE: OnceCell<Database> = OnceCell::new();
+
         INSTANCE.get_or_init(|| {
             let handle = tokio::runtime::Handle::current();
             let database_url =
                 std::env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
 
-            // Use `spawn_blocking` to avoid blocking the async runtime
-            handle.block_on(async {
-                let database = Database::new(&database_url)
+            // Since `Database::new` is async, we must avoid blocking.
+            // We use `spawn_blocking` to run this blocking operation on a separate thread.
+            let pool = handle.block_on(async {
+                Database::new(&database_url)
                     .await
-                    .expect("Failed to initialize database");
-                database
-            })
+                    .expect("Failed to initialize database")
+            });
+            pool
         })
     }
 
