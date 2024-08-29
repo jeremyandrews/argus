@@ -1,17 +1,21 @@
 use reqwest::Client;
 use serde_json::json;
 use tokio::time::{timeout, Duration};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+
+use crate::TARGET_WEB_REQUEST;
 
 /// Sends the formatted article to the Slack channel.
 pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, slack_channel: &str) {
     let client = Client::new();
+    let worker_id = format!("{:?}", std::thread::current().id()); // Retrieve the worker number
 
     // Parse response JSON
+    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Parsing response JSON", worker_id);
     let response_json: serde_json::Value = match serde_json::from_str(response) {
         Ok(json) => json,
         Err(err) => {
-            error!("Failed to parse response JSON: {:?}", err);
+            error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to parse response JSON: {:?}", worker_id, err);
             return;
         }
     };
@@ -117,7 +121,8 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
     let max_backoff = 32; // Maximum backoff time in seconds
 
     for attempt in 0..max_retries {
-        info!(target: "web_request", "Sending Slack notification with payload: {}", payload);
+        info!(target: TARGET_WEB_REQUEST, "Worker {}: Sending Slack notification with payload: {}", worker_id, payload);
+
         match timeout(
             Duration::from_secs(30),
             client
@@ -131,36 +136,41 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
         {
             Ok(Ok(response)) => {
                 if response.status().is_success() {
-                    info!("** Slack notification sent successfully");
+                    info!(target: TARGET_WEB_REQUEST, "Worker {}: Slack notification sent successfully", worker_id);
                     return;
                 } else {
                     let error_text = match response.text().await {
                         Ok(text) => text,
                         Err(_) => "Unknown error".to_string(),
                     };
-                    warn!("!! Error sending Slack notification: {}", error_text);
-                    warn!("!! Payload: {}", payload);
+                    warn!(target: TARGET_WEB_REQUEST, "Worker {}: Error sending Slack notification: {}", worker_id, error_text);
+                    warn!(target: TARGET_WEB_REQUEST, "Worker {}: Payload: {}", worker_id, payload);
                 }
             }
             Ok(Err(err)) => {
-                warn!("!! Error sending Slack notification: {:?}", err);
+                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Error sending Slack notification: {:?}", worker_id, err);
             }
             Err(_) => {
-                warn!("!! Timeout sending Slack notification");
+                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Timeout sending Slack notification", worker_id);
             }
         }
 
         if attempt < max_retries - 1 {
             info!(
-                "Retrying Slack notification... (attempt {}/{})",
+                target: TARGET_WEB_REQUEST,
+                "Worker {}: Retrying Slack notification... (attempt {}/{})",
+                worker_id,
                 attempt + 1,
                 max_retries
             );
+            debug!(target: TARGET_WEB_REQUEST, "Worker {}: Backing off for {} seconds before retry", worker_id, backoff.min(max_backoff));
             tokio::time::sleep(Duration::from_secs(backoff.min(max_backoff))).await;
             backoff *= 2; // Exponential backoff
         } else {
             error!(
-                "Failed to send Slack notification after {} attempts",
+                target: TARGET_WEB_REQUEST,
+                "Worker {}: Failed to send Slack notification after {} attempts",
+                worker_id,
                 max_retries
             );
         }
