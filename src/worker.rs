@@ -90,6 +90,11 @@ pub async fn worker_loop(
 
         if let Some(url) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
             // Validate the URL
+            if url.trim().is_empty() {
+                error!("Found an empty URL in the queue, skipping...");
+                continue;
+            }
+
             if let Ok(parsed_url) = Url::parse(&url) {
                 info!("Processing URL: {}", parsed_url);
                 let item = rss::Item {

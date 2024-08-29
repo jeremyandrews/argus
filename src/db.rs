@@ -2,7 +2,8 @@ use once_cell::sync::OnceCell;
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
+use url::Url;
 
 use crate::TARGET_DB;
 
@@ -71,6 +72,17 @@ impl Database {
 
     #[instrument(target = "db", level = "info", skip(self, url))]
     pub async fn add_to_queue(&self, url: &str) -> Result<(), sqlx::Error> {
+        // Validate URL
+        if url.trim().is_empty() {
+            error!("Attempted to add an empty URL to the queue");
+            return Err(sqlx::Error::Protocol("Empty URL provided".into()));
+        }
+
+        if Url::parse(url).is_err() {
+            error!("Attempted to add an invalid URL to the queue: {}", url);
+            return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
+        }
+
         let seen_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time travel")
