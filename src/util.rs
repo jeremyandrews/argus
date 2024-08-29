@@ -4,6 +4,9 @@ use tracing::debug;
 
 // Sleep for 0 to 2 seconds, favoring shorter sleeps.
 pub async fn weighted_sleep() {
+    // Retrieve the worker number
+    let worker_id = format!("{:?}", std::thread::current().id());
+
     // Weights for sleeping durations from 0 to 2 seconds
     let weights = vec![2, 1, 0];
 
@@ -19,7 +22,9 @@ pub async fn weighted_sleep() {
     // Convert index to actual duration in seconds
     let sleep_duration = Duration::from_secs((duration_index + 1) as u64);
 
+    // Log the sleep duration
+    debug!("Worker {}: Sleeping for {:?}", worker_id, sleep_duration);
+
     // Sleep for the selected duration
-    debug!(" zzz - sleeping {:?} ...", sleep_duration);
     sleep(sleep_duration).await;
 }

@@ -47,7 +47,7 @@ impl Database {
                 url TEXT NOT NULL UNIQUE,
                 seen_at TEXT NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_url ON rss_queue (url);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_seen_at_url ON rss_queue (seen_at, url);
             "#,
         )
         .execute(&mut conn)
