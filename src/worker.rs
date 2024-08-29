@@ -1,4 +1,5 @@
 use ollama_rs::Ollama;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use readability::extractor;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -74,8 +75,20 @@ pub async fn worker_loop(
     non_affected_places: &mut BTreeSet<String>,
 ) {
     let db = Database::instance().await;
+    let mut rng = StdRng::from_entropy(); // Use a Send-compatible RNG
+
     loop {
-        if let Some(url) = db.fetch_and_delete_url_from_queue().await.unwrap() {
+        // Determine the order before any async calls
+        let roll = rng.gen_range(0..100);
+        let order = if roll < 30 {
+            "newest"
+        } else if roll < 55 {
+            "oldest"
+        } else {
+            "random"
+        };
+
+        if let Some(url) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
             // Validate the URL
             if let Ok(parsed_url) = Url::parse(&url) {
                 info!("Processing URL: {}", parsed_url);
@@ -106,6 +119,9 @@ pub async fn worker_loop(
             // No more URLs to process, break the loop
             break;
         }
+
+        // Optional: Add a delay to prevent tight looping
+        sleep(Duration::from_secs(1)).await;
     }
 }
 

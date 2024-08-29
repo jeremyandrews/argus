@@ -44,7 +44,8 @@ impl Database {
 
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL UNIQUE
+                url TEXT NOT NULL UNIQUE,
+                seen_at TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_url ON rss_queue (url);
             "#,
@@ -70,15 +71,22 @@ impl Database {
 
     #[instrument(target = "db", level = "info", skip(self, url))]
     pub async fn add_to_queue(&self, url: &str) -> Result<(), sqlx::Error> {
+        let seen_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time travel")
+            .as_secs()
+            .to_string();
+
         info!(target: TARGET_DB, "Adding URL to queue: {}", url);
         sqlx::query(
             r#"
-            INSERT INTO rss_queue (url)
-            VALUES (?1)
+            INSERT INTO rss_queue (url, seen_at)
+            VALUES (?1, ?2)
             ON CONFLICT(url) DO NOTHING
             "#,
         )
         .bind(url)
+        .bind(seen_at)
         .execute(&self.pool)
         .await?;
         info!(target: TARGET_DB, "URL added to queue: {}", url);
@@ -138,13 +146,30 @@ impl Database {
     }
 
     #[instrument(target = "db", level = "info", skip(self))]
-    pub async fn fetch_and_delete_url_from_queue(&self) -> Result<Option<String>, sqlx::Error> {
+    pub async fn fetch_and_delete_url_from_queue(
+        &self,
+        order: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
         info!(target: TARGET_DB, "Fetching and deleting URL from queue");
 
         let mut transaction = self.pool.begin().await?;
-        let row = sqlx::query("SELECT url FROM rss_queue ORDER BY RANDOM() LIMIT 1")
-            .fetch_optional(&mut transaction)
-            .await?;
+        let row = match order {
+            "oldest" => {
+                sqlx::query("SELECT url FROM rss_queue ORDER BY seen_at ASC LIMIT 1")
+                    .fetch_optional(&mut transaction)
+                    .await?
+            }
+            "newest" => {
+                sqlx::query("SELECT url FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
+                    .fetch_optional(&mut transaction)
+                    .await?
+            }
+            _ => {
+                sqlx::query("SELECT url FROM rss_queue ORDER BY RANDOM() LIMIT 1")
+                    .fetch_optional(&mut transaction)
+                    .await?
+            }
+        };
 
         if let Some(row) = row {
             let url: String = row.get("url");
