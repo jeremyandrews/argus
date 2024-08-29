@@ -11,7 +11,7 @@ use crate::db::Database;
 use crate::llm::generate_llm_response;
 use crate::slack::send_to_slack;
 use crate::util::weighted_sleep;
-use crate::TARGET_WEB_REQUEST;
+use crate::{TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 /// Parameters required for processing an item, including topics, database, and Slack channel information.
 pub struct ProcessItemParams<'a> {
@@ -76,9 +76,11 @@ pub async fn worker_loop(
 ) {
     let db = Database::instance().await;
     let mut rng = StdRng::from_entropy(); // Use a Send-compatible RNG
+    let worker_id = format!("{:?}", std::thread::current().id());
+
+    info!(target: TARGET_LLM_REQUEST, "Worker {}: Starting worker loop.", worker_id);
 
     loop {
-        // Determine the order before any async calls
         let roll = rng.gen_range(0..100);
         let order = if roll < 30 {
             "newest"
@@ -89,17 +91,16 @@ pub async fn worker_loop(
         };
 
         if let Some(url) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
-            // Validate the URL
             if url.trim().is_empty() {
-                error!("Found an empty URL in the queue, skipping...");
+                error!(target: TARGET_WEB_REQUEST, "Worker {}: Found an empty URL in the queue, skipping...", worker_id);
                 continue;
             }
 
             if let Ok(parsed_url) = Url::parse(&url) {
-                info!("Processing URL: {}", parsed_url);
+                info!(target: TARGET_WEB_REQUEST, "Worker {}: Processing URL: {}", worker_id, parsed_url);
                 let item = rss::Item {
                     link: Some(url.clone()),
-                    ..Default::default() // Add other fields if necessary
+                    ..Default::default()
                 };
 
                 let mut params = ProcessItemParams {
@@ -117,23 +118,25 @@ pub async fn worker_loop(
 
                 process_item(item, &mut params).await;
             } else {
-                error!("Invalid URL found in queue: {}", url);
-                // Optionally, handle invalid URLs (e.g., remove them from the queue)
+                error!(target: TARGET_WEB_REQUEST, "Worker {}: Invalid URL found in queue: {}", worker_id, url);
             }
         } else {
-            // No more URLs to process, break the loop
+            info!(target: TARGET_LLM_REQUEST, "Worker {}: No more URLs to process, exiting.", worker_id);
             break;
         }
 
-        // Optional: Add a delay to prevent tight looping
         sleep(Duration::from_secs(1)).await;
     }
+
+    info!(target: TARGET_LLM_REQUEST, "Worker {}: Completed worker loop.", worker_id);
 }
 
-/// Processes a single RSS item by extracting and analyzing the article text, and updating the affected people and places lists.
 pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
+    let worker_id = format!("{:?}", std::thread::current().id());
     info!(
-        " - reviewing => {} ({})",
+        target: TARGET_WEB_REQUEST,
+        "Worker {}: Reviewing => {} ({})",
+        worker_id,
         item.title.clone().unwrap_or_default(),
         item.link.clone().unwrap_or_default()
     );
@@ -147,7 +150,6 @@ pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             let mut non_affected_people = BTreeSet::new();
             let mut non_affected_places = BTreeSet::new();
 
-            // Extract places from params
             let places = params.places.clone();
 
             if let Some(places) = places {
@@ -160,11 +162,10 @@ pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                     non_affected_places: &mut non_affected_places,
                 };
 
-                // Preliminary threat check
                 if check_if_threat_at_all(&article_text, params).await {
                     process_places(place_params, &places, params).await;
                 } else {
-                    debug!("Article is not about an ongoing or imminent threat at all.");
+                    debug!(target: TARGET_LLM_REQUEST, "Worker {}: Article is not about an ongoing or imminent threat.", worker_id);
                 }
             }
 
@@ -196,7 +197,8 @@ async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemPara
         "{} | Is this article about any ongoing or imminent and potentially life-threatening event or situation? Answer yes or no.",
         article_text
     );
-    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about an ongoing or immenent and potentially life-threatening event");
+    let worker_id = format!("{:?}", std::thread::current().id());
+    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
 
     match generate_llm_response(&threat_prompt, params).await {
         Some(response) => response.trim().to_lowercase().starts_with("yes"),
@@ -210,10 +212,13 @@ async fn process_places(
     places: &serde_json::Value,
     params: &mut ProcessItemParams<'_>,
 ) {
+    let worker_id = format!("{:?}", std::thread::current().id());
     for (continent, countries) in places.as_object().unwrap() {
         if !process_continent(&mut place_params, continent, countries, params).await {
             debug!(
-                "Article is not about something affecting life or safety on '{}'",
+                target: TARGET_WEB_REQUEST,
+                "Worker {}: Article is not about something affecting life or safety on '{}'",
+                worker_id,
                 continent
             );
         }
@@ -241,7 +246,8 @@ async fn process_continent(
         "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living on the continent of {}? Answer yes or no.",
         article_text, continent
     );
-    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about ongoing or imminent threat on {}", continent);
+    let worker_id = format!("{:?}", std::thread::current().id());
+    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
 
     let continent_response = match generate_llm_response(&continent_prompt, params).await {
         Some(response) => response,
@@ -253,7 +259,9 @@ async fn process_continent(
     }
 
     info!(
-        "Article is about something affecting life or safety on '{}'",
+        target: TARGET_WEB_REQUEST,
+        "Worker {}: Article is about something affecting life or safety on '{}'",
+        worker_id,
         continent
     );
 
@@ -296,7 +304,8 @@ async fn process_country(
         "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in {} on the continent of {}? Answer yes or no.",
         article_text, country, continent
     );
-    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about ongoing or imminent threat in {} on {}", country, continent);
+    let worker_id = format!("{:?}", std::thread::current().id());
+    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
 
     let country_response = match generate_llm_response(&country_prompt, params).await {
         Some(response) => response,
@@ -305,15 +314,21 @@ async fn process_country(
 
     if !country_response.trim().to_lowercase().starts_with("yes") {
         debug!(
-            "Article is not about something affecting life or safety in '{}' on '{}'",
-            country, continent
+            target: TARGET_WEB_REQUEST,
+            "Worker {}: Article is not about something affecting life or safety in '{}' on '{}'",
+            worker_id,
+            country,
+            continent
         );
         return false;
     }
 
     info!(
-        "Article is about something affecting life or safety in '{}' on '{}'",
-        country, continent
+        target: TARGET_WEB_REQUEST,
+        "Worker {}: Article is about something affecting life or safety in '{}' on '{}'",
+        worker_id,
+        country,
+        continent
     );
 
     for (region, cities) in regions.as_object().unwrap() {
@@ -360,7 +375,8 @@ async fn process_region(
         "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in the region of {} in the country of {} on {}? Answer yes or no.",
         article_text, region, country, continent
     );
-    info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", region, country, continent);
+    let worker_id = format!("{:?}", std::thread::current().id());
+    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
 
     let region_response = match generate_llm_response(&region_prompt, proc_params).await {
         Some(response) => response,
@@ -369,15 +385,21 @@ async fn process_region(
 
     if !region_response.trim().to_lowercase().starts_with("yes") {
         debug!(
-            "Article is not about something affecting life or safety in '{}', '{}'",
-            region, country
+            target: TARGET_WEB_REQUEST,
+            "Worker {}: Article is not about something affecting life or safety in '{}', '{}'",
+            worker_id,
+            region,
+            country
         );
         return false;
     }
 
     info!(
-        "Article is about something affecting life or safety in '{}', '{}'",
-        region, country
+        target: TARGET_WEB_REQUEST,
+        "Worker {}: Article is about something affecting life or safety in '{}', '{}'",
+        worker_id,
+        region,
+        country
     );
     affected_regions.insert(region.to_string());
 
@@ -437,6 +459,7 @@ async fn process_city(
         article_text, city_name, region, country, continent
     );
 
+    let worker_id = format!("{:?}", std::thread::current().id());
     let city_response = match generate_llm_response(&city_prompt, proc_params).await {
         Some(response) => response,
         None => return false,
@@ -444,15 +467,23 @@ async fn process_city(
 
     if !city_response.trim().to_lowercase().starts_with("yes") {
         info!(
-            "Article is not about something affecting life or safety in '{}, {}, {}'",
-            city_name, region, country
+            target: TARGET_WEB_REQUEST,
+            "Worker {}: Article is not about something affecting life or safety in '{}, {}, {}'",
+            worker_id,
+            city_name,
+            region,
+            country
         );
         return false;
     }
 
     info!(
-        "Article is about something affecting life or safety in '{}, {}, {}'",
-        city_name, region, country
+        target: TARGET_WEB_REQUEST,
+        "Worker {}: Article is about something affecting life or safety in '{}, {}, {}'",
+        worker_id,
+        city_name,
+        region,
+        country
     );
 
     affected_people.insert(format!(
@@ -476,6 +507,7 @@ async fn summarize_and_send_article(
     non_affected_places: &BTreeSet<String>,
     params: &mut ProcessItemParams<'_>,
 ) {
+    let worker_id = format!("{:?}", std::thread::current().id());
     let formatted_article = format!(
         "*<{}|{}>*",
         article_url,
@@ -495,7 +527,7 @@ async fn summarize_and_send_article(
 
     // Generate critical analysis
     let critical_analysis_prompt = format!(
-        "{} | Provide a concise two to three sentence critical analysis in American English (wihtout telling me that's what you're doing) that also includes a credibility score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content.",
+        "{} | Provide a concise two to three sentence critical analysis in American English (without telling me that's what you're doing) that also includes a credibility score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content.",
         article_text
     );
     let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
@@ -504,7 +536,7 @@ async fn summarize_and_send_article(
 
     // Generate logical fallacies
     let logical_fallacies_prompt = format!(
-        "{} | Concisely point out in one to three sentences of American English (withot telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
+        "{} | Concisely point out in one to three sentences of American English (without telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
         article_text
     );
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
@@ -527,7 +559,7 @@ async fn summarize_and_send_article(
                 .join(", ")
         );
         let how_prompt = format!(
-            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences in American Engish (without telling me what you're doing).",
+            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences in American English (without telling me what you're doing).",
             article_text,
             affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
         );
@@ -586,7 +618,6 @@ async fn summarize_and_send_article(
         )
         .await;
 
-        // Add detailed logging and error handling around database operations
         match params
             .db
             .add_article(
@@ -597,8 +628,12 @@ async fn summarize_and_send_article(
             )
             .await
         {
-            Ok(_) => info!("Successfully added article to database"),
-            Err(e) => error!("Failed to add article to database: {:?}", e),
+            Ok(_) => {
+                info!(target: TARGET_DB, "Worker {}: Successfully added article to database", worker_id)
+            }
+            Err(e) => {
+                error!(target: TARGET_DB, "Worker {}: Failed to add article to database: {:?}", worker_id, e)
+            }
         }
     }
 }
@@ -610,14 +645,14 @@ async fn process_topics(
     item: &rss::Item,
     params: &mut ProcessItemParams<'_>,
 ) {
+    let worker_id = format!("{:?}", std::thread::current().id());
     for topic in params.topics {
         if topic.trim().is_empty() {
             continue;
         }
 
-        info!(target: TARGET_WEB_REQUEST, "Asking LLM: is this article specifically about {}", topic);
+        info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article specifically about {}", worker_id, topic);
 
-        // First ask a simple yes/no question
         let yes_no_prompt = format!(
             "{} | Is this article specifically about {}? Answer yes or no.",
             article_text, topic
@@ -625,19 +660,18 @@ async fn process_topics(
 
         if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
-                // Make detailed LLM requests for each section
                 let summary_prompt = format!(
                     "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points",
                     article_text
                 );
 
                 let critical_analysis_prompt = format!(
-                    "{} | Provide a concise two to three sentence critical analysis in American English (wihtout telling me that's what you're doing) that also includes a credibility score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content.",
+                    "{} | Provide a concise two to three sentence critical analysis in American English (without telling me that's what you're doing) that also includes a credibility score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content.",
                     article_text
                 );
 
                 let logical_fallacies_prompt = format!(
-                    "{} | Concisely point out in one to three sentences of American English (withot telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
+                    "{} | Concisely point out in one to three sentences of American English (without telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
                      article_text);
 
                 let relation_prompt = format!(
@@ -660,7 +694,6 @@ async fn process_topics(
                     .await
                     .unwrap_or_default();
 
-                // Ask again to be sure it's really about the topic and not a promotion or advertisement
                 let confirm_prompt = format!(
                     "{} | Is this article really about {} and not a promotion or advertisement? Answer yes or no.",
                     summary_response, topic
@@ -690,7 +723,7 @@ async fn process_topics(
                         )
                         .await;
 
-                        params
+                        match params
                             .db
                             .add_article(
                                 article_url,
@@ -699,12 +732,21 @@ async fn process_topics(
                                 Some(&detailed_response_json.to_string()),
                             )
                             .await
-                            .expect("Failed to add article to database");
+                        {
+                            Ok(_) => {
+                                info!(target: TARGET_DB, "Worker {}: Successfully added article about '{}' to database", worker_id, topic)
+                            }
+                            Err(e) => {
+                                error!(target: TARGET_DB, "Worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic, e)
+                            }
+                        }
 
                         return;
                     } else {
                         debug!(
-                            "Article is not about '{}' or is a promotion/advertisement: {}",
+                            target: TARGET_WEB_REQUEST,
+                            "Worker {}: Article is not about '{}' or is a promotion/advertisement: {}",
+                            worker_id,
                             topic,
                             confirm_response.trim()
                         );
@@ -713,7 +755,9 @@ async fn process_topics(
                 }
             } else {
                 debug!(
-                    "Article is not about '{}': {}",
+                    target: TARGET_WEB_REQUEST,
+                    "Worker {}: Article is not about '{}': {}",
+                    worker_id,
                     topic,
                     yes_no_response.trim()
                 );
@@ -728,48 +772,49 @@ async fn extract_article_text(url: &str) -> Result<String, bool> {
     let max_retries = 3;
     let article_text: String;
     let mut backoff = 2;
+    let worker_id = format!("{:?}", std::thread::current().id());
 
     for retry_count in 0..max_retries {
         let scrape_future = async { extractor::scrape(url) };
-        info!(target: TARGET_WEB_REQUEST, "Requesting extraction for URL: {}", url);
+        info!(target: TARGET_WEB_REQUEST, "Worker {}: Requesting extraction for URL: {}", worker_id, url);
         match timeout(Duration::from_secs(60), scrape_future).await {
             Ok(Ok(product)) => {
                 if product.text.is_empty() {
-                    warn!(target: TARGET_WEB_REQUEST, "Extracted article is empty for URL: {}", url);
+                    warn!(target: TARGET_WEB_REQUEST, "Worker {}: Extracted article is empty for URL: {}", worker_id, url);
                     break;
                 }
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
-                info!(target: TARGET_WEB_REQUEST, "Extraction succeeded for URL: {}", url);
+                info!(target: TARGET_WEB_REQUEST, "Worker {}: Extraction succeeded for URL: {}", worker_id, url);
                 return Ok(article_text);
             }
             Ok(Err(e)) => {
-                warn!(target: TARGET_WEB_REQUEST, "Error extracting page: {:?}", e);
+                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Error extracting page: {:?}", worker_id, e);
                 if retry_count < max_retries - 1 {
-                    info!(target: TARGET_WEB_REQUEST, "Retrying... ({}/{})", retry_count + 1, max_retries);
+                    info!(target: TARGET_WEB_REQUEST, "Worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
                 } else {
-                    error!(target: TARGET_WEB_REQUEST, "Failed to extract article after {} retries", max_retries);
+                    error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to extract article after {} retries", worker_id, max_retries);
                 }
                 if e.to_string().contains("Access Denied") || e.to_string().contains("Unexpected") {
                     return Err(true);
                 }
             }
             Err(_) => {
-                warn!(target: TARGET_WEB_REQUEST, "Operation timed out");
+                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Operation timed out", worker_id);
                 if retry_count < max_retries - 1 {
-                    info!(target: TARGET_WEB_REQUEST, "Retrying... ({}/{})", retry_count + 1, max_retries);
+                    info!(target: TARGET_WEB_REQUEST, "Worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
                 } else {
-                    error!(target: TARGET_WEB_REQUEST, "Failed to extract article after {} retries", max_retries);
+                    error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to extract article after {} retries", worker_id, max_retries);
                 }
             }
         }
 
         if retry_count < max_retries - 1 {
             sleep(Duration::from_secs(backoff)).await;
-            backoff *= 2; // Exponential backoff
+            backoff *= 2;
         }
     }
 
-    warn!(target: TARGET_WEB_REQUEST, "Article text extraction failed for URL: {}", url);
+    warn!(target: TARGET_WEB_REQUEST, "Worker {}: Article text extraction failed for URL: {}", worker_id, url);
     Err(false)
 }
 
@@ -779,12 +824,15 @@ async fn handle_access_denied(
     article_url: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
+    let worker_id = format!("{:?}", std::thread::current().id());
     if access_denied {
-        params
-            .db
-            .add_article(article_url, false, None, None)
-            .await
-            .expect("Failed to add URL to database as access denied");
-        warn!(target: TARGET_WEB_REQUEST, "Access denied for URL: {}", article_url);
+        match params.db.add_article(article_url, false, None, None).await {
+            Ok(_) => {
+                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Access denied for URL: {}", worker_id, article_url)
+            }
+            Err(e) => {
+                error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to add access denied URL '{}' to database: {:?}", worker_id, article_url, e)
+            }
+        }
     }
 }

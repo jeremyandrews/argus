@@ -17,7 +17,6 @@ impl Database {
     pub async fn new(database_url: &str) -> Result<Self, sqlx::Error> {
         info!(target: TARGET_DB, "Creating database pool for: {}", database_url);
 
-        // Check if the database file exists
         if !Path::new(database_url).exists() {
             return Err(sqlx::Error::Configuration(
                 format!("Database file '{}' does not exist", database_url).into(),
@@ -72,14 +71,13 @@ impl Database {
 
     #[instrument(target = "db", level = "info", skip(self, url))]
     pub async fn add_to_queue(&self, url: &str) -> Result<(), sqlx::Error> {
-        // Validate URL
         if url.trim().is_empty() {
-            error!("Attempted to add an empty URL to the queue");
+            error!(target: TARGET_DB, "Attempted to add an empty URL to the queue");
             return Err(sqlx::Error::Protocol("Empty URL provided".into()));
         }
 
         if Url::parse(url).is_err() {
-            error!("Attempted to add an invalid URL to the queue: {}", url);
+            error!(target: TARGET_DB, "Attempted to add an invalid URL to the queue: {}", url);
             return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
         }
 
