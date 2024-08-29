@@ -465,7 +465,7 @@ async fn summarize_and_send_article(
 
     // Generate summary
     let summary_prompt = format!(
-        "{} | Concisely and accurately summarize the information in two to three paragraphs.",
+        "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points",
         article_text
     );
     let summary_response = generate_llm_response(&summary_prompt, params)
@@ -474,7 +474,7 @@ async fn summarize_and_send_article(
 
     // Generate critical analysis
     let critical_analysis_prompt = format!(
-        "{} | Provide a concise one-paragraph critical analysis.",
+        "{} | Provide a concise two to three sentence critical analysis in American English (wihtout telling me that's what you're doing) that also includes a credibility score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content.",
         article_text
     );
     let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
@@ -483,7 +483,7 @@ async fn summarize_and_send_article(
 
     // Generate logical fallacies
     let logical_fallacies_prompt = format!(
-        "{} | Concisely point out any logical fallacies in one to five sentences if any.",
+        "{} | Concisely point out in one to three sentences of American English (withot telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
         article_text
     );
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
@@ -506,7 +506,7 @@ async fn summarize_and_send_article(
                 .join(", ")
         );
         let how_prompt = format!(
-            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences in American Engish (without telling me what you're doing).",
             article_text,
             affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
         );
@@ -606,20 +606,21 @@ async fn process_topics(
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Make detailed LLM requests for each section
                 let summary_prompt = format!(
-                    "{} | Concisely and accurately summarize the information in two to three paragraphs.",
+                    "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points",
                     article_text
                 );
 
                 let critical_analysis_prompt = format!(
-                    "{} | Provide a concise one-paragraph critical analysis.",
+                    "{} | Provide a concise two to three sentence critical analysis in American English (wihtout telling me that's what you're doing) that also includes a credibility score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content.",
                     article_text
                 );
 
-                let logical_fallacies_prompt =
-                    format!("{} | Concisely point out any logical fallacies in one to five sentences if any.", article_text);
+                let logical_fallacies_prompt = format!(
+                    "{} | Concisely point out in one to three sentences of American English (withot telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
+                     article_text);
 
                 let relation_prompt = format!(
-                    "{} | Brielfy explain in one short paragraph how this relates to {} starting with the words 'This relates to {}`.",
+                    "{} | Briefly explain in American English (without telling me that's what you're doing) in one to three sentences how this relates to {} starting with the words 'This relates to {}`.",
                     article_text, topic, topic
                 );
 
