@@ -12,6 +12,15 @@ const TARGET_WEB_REQUEST: &str = "web_request";
 const TARGET_LLM_REQUEST: &str = "llm_request";
 const TARGET_DB: &str = "db";
 
+const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
+const OLLAMA_PORT_ENV: &str = "OLLAMA_PORT";
+const OLLAMA_MODEL_ENV: &str = "OLLAMA_MODEL";
+const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
+const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
+const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
+const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
+const WORKER_COUNT_ENV: &str = "WORKER_COUNT";
+
 mod db;
 mod environment;
 mod llm;
@@ -28,26 +37,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logging::configure_logging();
 
     let urls = get_env_var_as_vec("URLS", ';');
-    let ollama_host = env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
-    let ollama_port = env::var("OLLAMA_PORT")
+    let ollama_host = env::var(OLLAMA_HOST_ENV).unwrap_or_else(|_| "localhost".to_string());
+    let ollama_port = env::var(OLLAMA_PORT_ENV)
         .unwrap_or_else(|_| "11434".to_string())
         .parse()
-        .unwrap_or(11434);
+        .unwrap_or_else(|_| {
+            error!("Invalid OLLAMA_PORT; defaulting to 11434");
+            11434
+        });
 
     info!(target: TARGET_LLM_REQUEST, "Connecting to Ollama at {}:{}", ollama_host, ollama_port);
     let ollama = Ollama::new(ollama_host, ollama_port);
-    let model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama2".to_string());
+    let model = env::var(OLLAMA_MODEL_ENV).unwrap_or_else(|_| "llama2".to_string());
     let topics = get_env_var_as_vec("TOPICS", ';');
-    let slack_token = env::var("SLACK_TOKEN").expect("SLACK_TOKEN environment variable required");
+    let slack_token = env::var(SLACK_TOKEN_ENV).expect("SLACK_TOKEN environment variable required");
     let slack_channel =
-        env::var("SLACK_CHANNEL").expect("SLACK_CHANNEL environment variable required");
-    let temperature = env::var("LLM_TEMPERATURE")
+        env::var(SLACK_CHANNEL_ENV).expect("SLACK_CHANNEL environment variable required");
+    let temperature = env::var(LLM_TEMPERATURE_ENV)
         .unwrap_or_else(|_| "0.0".to_string())
         .parse()
-        .unwrap_or(0.0);
+        .unwrap_or_else(|_| {
+            warn!("Invalid LLM_TEMPERATURE; defaulting to 0.0");
+            0.0
+        });
 
     // Load JSON data if PLACES_JSON_PATH environment variable is set
-    let places = if let Ok(json_path) = env::var("PLACES_JSON_PATH") {
+    let places = if let Ok(json_path) = env::var(PLACES_JSON_PATH_ENV) {
         if Path::new(&json_path).exists() {
             let json_data = fs::read_to_string(&json_path)?;
             let places: Value = serde_json::from_str(&json_data)?;
@@ -73,10 +88,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Configure worker count
-    let worker_count: usize = env::var("WORKER_COUNT")
+    let worker_count: usize = env::var(WORKER_COUNT_ENV)
         .unwrap_or_else(|_| "1".to_string())
         .parse()
-        .unwrap_or(1);
+        .unwrap_or_else(|_| {
+            warn!("Invalid WORKER_COUNT; defaulting to 1");
+            1
+        });
 
     let mut worker_handles = Vec::new();
     for worker_id in 0..worker_count {
