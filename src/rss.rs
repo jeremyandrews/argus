@@ -1,7 +1,7 @@
 use rss::Channel;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::db::Database;
 use crate::TARGET_WEB_REQUEST;
@@ -12,9 +12,12 @@ const MAX_RETRIES: usize = 3;
 
 pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::instance().await;
+
     loop {
         for rss_url in &rss_urls {
             let mut attempts = 0;
+            debug!(target: TARGET_WEB_REQUEST, "Starting to process RSS URL: {}", rss_url);
+
             let success = loop {
                 if attempts >= MAX_RETRIES {
                     error!(target: TARGET_WEB_REQUEST, "Max retries reached for URL: {}", rss_url);
@@ -39,9 +42,12 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                     info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
                                     for item in channel.items() {
                                         if let Some(article_url) = item.link.clone() {
+                                            debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {}", article_url);
                                             if let Err(err) = db.add_to_queue(&article_url).await {
                                                 error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                             }
+                                        } else {
+                                            warn!(target: TARGET_WEB_REQUEST, "RSS item missing link, skipping");
                                         }
                                     }
                                     break true;
