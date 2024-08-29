@@ -74,7 +74,7 @@ pub async fn worker_loop(
     non_affected_people: &mut BTreeSet<String>,
     non_affected_places: &mut BTreeSet<String>,
 ) {
-    let db = Database::instance().await;
+    let db = Database::instance();
     let mut rng = StdRng::from_entropy(); // Use a Send-compatible RNG
     let worker_id = format!("{:?}", std::thread::current().id());
 

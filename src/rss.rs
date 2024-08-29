@@ -11,7 +11,7 @@ const RETRY_DELAY: Duration = Duration::from_secs(5);
 const MAX_RETRIES: usize = 3;
 
 pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let db = Database::instance().await;
+    let db = Database::instance();
 
     loop {
         for rss_url in &rss_urls {
