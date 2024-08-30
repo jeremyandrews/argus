@@ -36,12 +36,19 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                         debug!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", rss_url, response.status());
                         if response.status().is_success() {
                             let body = match response.text().await {
-                                Ok(text) => text,
+                                Ok(text) => {
+                                    debug!(target: TARGET_WEB_REQUEST, "Received body from {}: {}", rss_url, &text);
+                                    text
+                                }
                                 Err(err) => {
                                     error!(target: TARGET_WEB_REQUEST, "Failed to read response body from {}: {}", rss_url, err);
                                     continue;
                                 }
                             };
+
+                            // Log the first few characters of the response body for debugging
+                            debug!(target: TARGET_WEB_REQUEST, "First 500 characters of response body: {}", &body.chars().take(500).collect::<String>());
+
                             let reader = io::Cursor::new(body);
                             match parser::parse(reader) {
                                 Ok(feed) => {
