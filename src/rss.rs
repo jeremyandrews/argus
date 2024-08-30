@@ -17,7 +17,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
         for rss_url in &rss_urls {
             // Check if the URL is empty and skip it if so
             if rss_url.trim().is_empty() {
-                warn!(target: TARGET_WEB_REQUEST, "Skipping empty RSS URL");
+                debug!(target: TARGET_WEB_REQUEST, "Skipping empty RSS URL");
                 continue;
             }
 
@@ -70,7 +70,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                                 error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                             }
                                         } else {
-                                            warn!(target: TARGET_WEB_REQUEST, "Feed entry missing link, skipping");
+                                            debug!(target: TARGET_WEB_REQUEST, "Feed entry missing link, skipping");
                                         }
                                     }
                                     break true;
