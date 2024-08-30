@@ -145,6 +145,7 @@ pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
         item.link.clone().unwrap_or_default()
     );
     let article_url = item.link.clone().unwrap_or_default();
+    let article_title = item.title.clone().unwrap_or_default();
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
@@ -176,7 +177,7 @@ pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             if !affected_people.is_empty() || !non_affected_people.is_empty() {
                 summarize_and_send_article(
                     &article_url,
-                    &item,
+                    &article_title,
                     &article_text,
                     &affected_regions,
                     &affected_people,
@@ -187,11 +188,13 @@ pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
                 )
                 .await;
             } else {
-                process_topics(&article_text, &article_url, &item, params).await;
+                process_topics(&article_text, &article_url, &article_title, params).await;
             }
             weighted_sleep().await;
         }
-        Err(access_denied) => handle_access_denied(access_denied, &article_url, params).await,
+        Err(access_denied) => {
+            handle_access_denied(access_denied, &article_url, &article_title, params).await
+        }
     }
 }
 
@@ -502,7 +505,7 @@ async fn process_city(
 /// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
 async fn summarize_and_send_article(
     article_url: &str,
-    item: &rss::Item,
+    article_title: &str,
     article_text: &str,
     affected_regions: &BTreeSet<String>,
     affected_people: &BTreeSet<String>,
@@ -512,11 +515,7 @@ async fn summarize_and_send_article(
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
-    let formatted_article = format!(
-        "*<{}|{}>*",
-        article_url,
-        item.title.clone().unwrap_or_default()
-    );
+    let formatted_article = format!("*<{}|{}>*", article_url, article_title);
 
     let mut relation_to_topic_response = String::new();
 
@@ -646,7 +645,7 @@ async fn summarize_and_send_article(
 async fn process_topics(
     article_text: &str,
     article_url: &str,
-    item: &rss::Item,
+    article_title: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
@@ -706,11 +705,7 @@ async fn process_topics(
                 if let Some(confirm_response) = generate_llm_response(&confirm_prompt, params).await
                 {
                     if confirm_response.trim().to_lowercase().starts_with("yes") {
-                        let formatted_article = format!(
-                            "*<{}|{}>*",
-                            article_url,
-                            item.title.clone().unwrap_or_default()
-                        );
+                        let formatted_article = format!("*<{}|{}>*", article_url, article_title);
 
                         let detailed_response_json = json!({
                             "summary": summary_response,
@@ -826,16 +821,17 @@ async fn extract_article_text(url: &str) -> Result<String, bool> {
 async fn handle_access_denied(
     access_denied: bool,
     article_url: &str,
+    article_title: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
     if access_denied {
         match params.db.add_article(article_url, false, None, None).await {
             Ok(_) => {
-                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Access denied for URL: {}", worker_id, article_url)
+                warn!(target: TARGET_WEB_REQUEST, "Worker {}: Access denied for URL: {} ({})", worker_id, article_url, article_title)
             }
             Err(e) => {
-                error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to add access denied URL '{}' to database: {:?}", worker_id, article_url, e)
+                error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to add access denied URL '{}' ({}) to database: {:?}", worker_id, article_url, article_title, e)
             }
         }
     }
