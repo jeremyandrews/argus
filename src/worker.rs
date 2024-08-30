@@ -5,7 +5,6 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
-use url::Url;
 
 use crate::db::Database;
 use crate::llm::generate_llm_response;
@@ -63,6 +62,12 @@ struct CityProcessingParams<'a> {
     affected_places: &'a mut BTreeSet<String>,
 }
 
+#[derive(Default)]
+pub struct FeedItem {
+    pub url: String,
+    pub title: Option<String>,
+}
+
 pub async fn worker_loop(
     topics: &[String],
     ollama: &Ollama,
@@ -75,7 +80,7 @@ pub async fn worker_loop(
     non_affected_places: &mut BTreeSet<String>,
 ) {
     let db = Database::instance().await;
-    let mut rng = StdRng::from_entropy(); // Use a Send-compatible RNG
+    let mut rng = StdRng::from_entropy();
     let worker_id = format!("{:?}", std::thread::current().id());
 
     info!(target: TARGET_LLM_REQUEST, "Worker {}: Starting worker loop.", worker_id);
@@ -96,34 +101,27 @@ pub async fn worker_loop(
                 continue;
             }
 
-            // Log a message when starting to process a new URL
             info!(target: TARGET_WEB_REQUEST, "Worker {}: Moving on to a new URL: {}", worker_id, url);
 
-            if let Ok(parsed_url) = Url::parse(&url) {
-                debug!(target: TARGET_WEB_REQUEST, "Worker {}: Processing URL: {}", worker_id, parsed_url);
-                let item = rss::Item {
-                    link: Some(url.clone()),
-                    title: title.clone(),
-                    ..Default::default()
-                };
+            let item = FeedItem {
+                url: url.clone(),
+                title,
+            };
 
-                let mut params = ProcessItemParams {
-                    topics,
-                    ollama,
-                    model,
-                    temperature,
-                    db,
-                    slack_token,
-                    slack_channel,
-                    places: places.clone(),
-                    non_affected_people,
-                    non_affected_places,
-                };
+            let mut params = ProcessItemParams {
+                topics,
+                ollama,
+                model,
+                temperature,
+                db,
+                slack_token,
+                slack_channel,
+                places: places.clone(),
+                non_affected_people,
+                non_affected_places,
+            };
 
-                process_item(item, &mut params).await;
-            } else {
-                error!(target: TARGET_WEB_REQUEST, "Worker {}: Invalid URL found in queue: {}", worker_id, url);
-            }
+            process_item(item, &mut params).await;
         } else {
             info!(target: TARGET_LLM_REQUEST, "Worker {}: No URLs to process. Sleeping for 1 minute before retrying.", worker_id);
             sleep(Duration::from_secs(60)).await;
@@ -134,17 +132,17 @@ pub async fn worker_loop(
     }
 }
 
-pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
+pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(
         target: TARGET_WEB_REQUEST,
         "Worker {}: Reviewing => {} ({})",
         worker_id,
         item.title.clone().unwrap_or_default(),
-        item.link.clone().unwrap_or_default()
+        item.url
     );
-    let article_url = item.link.clone().unwrap_or_default();
-    let article_title = item.title.clone().unwrap_or_default();
+    let article_url = item.url;
+    let article_title = item.title.unwrap_or_default();
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
@@ -192,7 +190,7 @@ pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
             weighted_sleep().await;
         }
         Err(access_denied) => {
-            handle_access_denied(access_denied, &article_url, &article_title, params).await
+            handle_access_denied(access_denied, &article_url, &article_title, params).await;
         }
     }
 }

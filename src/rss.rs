@@ -1,4 +1,4 @@
-use rss::Channel;
+use feed_rs::parser;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -43,12 +43,15 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                 }
                             };
                             let reader = io::Cursor::new(body);
-                            match Channel::read_from(reader) {
-                                Ok(channel) => {
-                                    debug!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
-                                    for item in channel.items() {
-                                        if let Some(article_url) = item.link.clone() {
-                                            let article_title = item.title.clone();
+                            match parser::parse(reader) {
+                                Ok(feed) => {
+                                    debug!(target: TARGET_WEB_REQUEST, "Parsed feed with {} entries", feed.entries.len());
+                                    for entry in feed.entries {
+                                        if let Some(article_url) =
+                                            entry.links.first().map(|link| link.href.clone())
+                                        {
+                                            let article_title =
+                                                entry.title.clone().map(|t| t.content);
                                             debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {}", article_url);
                                             if let Err(err) = db
                                                 .add_to_queue(
@@ -60,13 +63,13 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                                 error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                             }
                                         } else {
-                                            warn!(target: TARGET_WEB_REQUEST, "RSS item missing link, skipping");
+                                            warn!(target: TARGET_WEB_REQUEST, "Feed entry missing link, skipping");
                                         }
                                     }
                                     break true;
                                 }
                                 Err(err) => {
-                                    error!(target: TARGET_WEB_REQUEST, "Failed to parse RSS channel from {}: {}", rss_url, err);
+                                    error!(target: TARGET_WEB_REQUEST, "Failed to parse feed from {}: {}", rss_url, err);
                                     break false;
                                 }
                             }
