@@ -101,7 +101,7 @@ pub async fn worker_loop(
                 continue;
             }
 
-            info!(target: TARGET_LLM_REQUEST, "Worker {}: Moving on to a new URL: {}", worker_id, url);
+            info!(target: TARGET_LLM_REQUEST, "Worker {}: Moving on to a new URL: {} ({:?})", worker_id, url, title);
 
             let item = FeedItem {
                 url: url.clone(),
