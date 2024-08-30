@@ -1,7 +1,7 @@
-use once_cell::sync::OnceCell;
 use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::OnceCell;
 use tracing::{error, info, instrument};
 use url::Url;
 
@@ -57,23 +57,18 @@ impl Database {
         Ok(Database { pool })
     }
 
-    pub fn instance() -> &'static Database {
-        static INSTANCE: OnceCell<Database> = OnceCell::new();
+    pub async fn instance() -> &'static Database {
+        static INSTANCE: OnceCell<Database> = OnceCell::const_new();
 
-        INSTANCE.get_or_init(|| {
-            let handle = tokio::runtime::Handle::current();
-            let database_url =
-                std::env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
-
-            // Since `Database::new` is async, we must avoid blocking.
-            // We use `spawn_blocking` to run this blocking operation on a separate thread.
-            let pool = handle.block_on(async {
+        INSTANCE
+            .get_or_init(|| async {
+                let database_url =
+                    std::env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
                 Database::new(&database_url)
                     .await
                     .expect("Failed to initialize database")
-            });
-            pool
-        })
+            })
+            .await
     }
 
     #[instrument(target = "db", level = "info", skip(self, url))]
