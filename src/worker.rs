@@ -100,7 +100,7 @@ pub async fn worker_loop(
             info!(target: TARGET_WEB_REQUEST, "Worker {}: Moving on to a new URL: {}", worker_id, url);
 
             if let Ok(parsed_url) = Url::parse(&url) {
-                info!(target: TARGET_WEB_REQUEST, "Worker {}: Processing URL: {}", worker_id, parsed_url);
+                debug!(target: TARGET_WEB_REQUEST, "Worker {}: Processing URL: {}", worker_id, parsed_url);
                 let item = rss::Item {
                     link: Some(url.clone()),
                     ..Default::default()
@@ -136,7 +136,7 @@ pub async fn worker_loop(
 
 pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
     let worker_id = format!("{:?}", std::thread::current().id());
-    info!(
+    debug!(
         target: TARGET_WEB_REQUEST,
         "Worker {}: Reviewing => {} ({})",
         worker_id,
@@ -201,7 +201,7 @@ async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemPara
         article_text
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
+    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
 
     match generate_llm_response(&threat_prompt, params).await {
         Some(response) => response.trim().to_lowercase().starts_with("yes"),
@@ -250,7 +250,7 @@ async fn process_continent(
         article_text, continent
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
+    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
 
     let continent_response = match generate_llm_response(&continent_prompt, params).await {
         Some(response) => response,
@@ -261,7 +261,7 @@ async fn process_continent(
         return false;
     }
 
-    info!(
+    debug!(
         target: TARGET_WEB_REQUEST,
         "Worker {}: Article is about something affecting life or safety on '{}'",
         worker_id,
@@ -308,7 +308,7 @@ async fn process_country(
         article_text, country, continent
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
+    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
 
     let country_response = match generate_llm_response(&country_prompt, params).await {
         Some(response) => response,
@@ -326,7 +326,7 @@ async fn process_country(
         return false;
     }
 
-    info!(
+    debug!(
         target: TARGET_WEB_REQUEST,
         "Worker {}: Article is about something affecting life or safety in '{}' on '{}'",
         worker_id,
@@ -379,7 +379,7 @@ async fn process_region(
         article_text, region, country, continent
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
+    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
 
     let region_response = match generate_llm_response(&region_prompt, proc_params).await {
         Some(response) => response,
@@ -397,7 +397,7 @@ async fn process_region(
         return false;
     }
 
-    info!(
+    debug!(
         target: TARGET_WEB_REQUEST,
         "Worker {}: Article is about something affecting life or safety in '{}', '{}'",
         worker_id,
@@ -469,7 +469,7 @@ async fn process_city(
     };
 
     if !city_response.trim().to_lowercase().starts_with("yes") {
-        info!(
+        debug!(
             target: TARGET_WEB_REQUEST,
             "Worker {}: Article is not about something affecting life or safety in '{}, {}, {}'",
             worker_id,
@@ -632,7 +632,7 @@ async fn summarize_and_send_article(
             .await
         {
             Ok(_) => {
-                info!(target: TARGET_DB, "Worker {}: Successfully added article to database", worker_id)
+                debug!(target: TARGET_DB, "Worker {}: Successfully added article to database", worker_id)
             }
             Err(e) => {
                 error!(target: TARGET_DB, "Worker {}: Failed to add article to database: {:?}", worker_id, e)
@@ -654,7 +654,7 @@ async fn process_topics(
             continue;
         }
 
-        info!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article specifically about {}", worker_id, topic);
+        debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article specifically about {}", worker_id, topic);
 
         let yes_no_prompt = format!(
             "{} | Is this article specifically about {}? Answer yes or no.",
@@ -737,7 +737,7 @@ async fn process_topics(
                             .await
                         {
                             Ok(_) => {
-                                info!(target: TARGET_DB, "Worker {}: Successfully added article about '{}' to database", worker_id, topic)
+                                debug!(target: TARGET_DB, "Worker {}: Successfully added article about '{}' to database", worker_id, topic)
                             }
                             Err(e) => {
                                 error!(target: TARGET_DB, "Worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic, e)
@@ -779,7 +779,7 @@ async fn extract_article_text(url: &str) -> Result<String, bool> {
 
     for retry_count in 0..max_retries {
         let scrape_future = async { extractor::scrape(url) };
-        info!(target: TARGET_WEB_REQUEST, "Worker {}: Requesting extraction for URL: {}", worker_id, url);
+        debug!(target: TARGET_WEB_REQUEST, "Worker {}: Requesting extraction for URL: {}", worker_id, url);
         match timeout(Duration::from_secs(60), scrape_future).await {
             Ok(Ok(product)) => {
                 if product.text.is_empty() {
@@ -787,13 +787,13 @@ async fn extract_article_text(url: &str) -> Result<String, bool> {
                     break;
                 }
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
-                info!(target: TARGET_WEB_REQUEST, "Worker {}: Extraction succeeded for URL: {}", worker_id, url);
+                debug!(target: TARGET_WEB_REQUEST, "Worker {}: Extraction succeeded for URL: {}", worker_id, url);
                 return Ok(article_text);
             }
             Ok(Err(e)) => {
                 warn!(target: TARGET_WEB_REQUEST, "Worker {}: Error extracting page: {:?}", worker_id, e);
                 if retry_count < max_retries - 1 {
-                    info!(target: TARGET_WEB_REQUEST, "Worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
+                    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
                 } else {
                     error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to extract article after {} retries", worker_id, max_retries);
                 }
@@ -804,7 +804,7 @@ async fn extract_article_text(url: &str) -> Result<String, bool> {
             Err(_) => {
                 warn!(target: TARGET_WEB_REQUEST, "Worker {}: Operation timed out", worker_id);
                 if retry_count < max_retries - 1 {
-                    info!(target: TARGET_WEB_REQUEST, "Worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
+                    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
                 } else {
                     error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to extract article after {} retries", worker_id, max_retries);
                 }

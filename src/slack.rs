@@ -121,7 +121,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
     let max_backoff = 32; // Maximum backoff time in seconds
 
     for attempt in 0..max_retries {
-        info!(target: TARGET_WEB_REQUEST, "Worker {}: Sending Slack notification with payload: {}", worker_id, payload);
+        debug!(target: TARGET_WEB_REQUEST, "Worker {}: Sending Slack notification with payload: {}", worker_id, payload);
 
         match timeout(
             Duration::from_secs(30),
@@ -136,7 +136,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
         {
             Ok(Ok(response)) => {
                 if response.status().is_success() {
-                    info!(target: TARGET_WEB_REQUEST, "Worker {}: Slack notification sent successfully", worker_id);
+                    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Slack notification sent successfully", worker_id);
                     return;
                 } else {
                     let error_text = match response.text().await {

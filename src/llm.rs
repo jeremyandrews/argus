@@ -20,12 +20,12 @@ pub async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>)
         let mut request = GenerationRequest::new(params.model.to_string(), prompt.to_string());
         request.options = Some(GenerationOptions::default().temperature(params.temperature));
 
-        info!(target: TARGET_LLM_REQUEST, "Worker {}: Sending LLM request with prompt: {}", worker_id, prompt);
+        debug!(target: TARGET_LLM_REQUEST, "Worker {}: Sending LLM request with prompt: {}", worker_id, prompt);
 
         match timeout(Duration::from_secs(120), params.ollama.generate(request)).await {
             Ok(Ok(response)) => {
                 response_text = response.response;
-                info!(target: TARGET_LLM_REQUEST, "Worker {}: LLM response received: {}", worker_id, response_text);
+                debug!(target: TARGET_LLM_REQUEST, "Worker {}: LLM response received: {}", worker_id, response_text);
                 break;
             }
             Ok(Err(e)) => {

@@ -2,7 +2,7 @@ use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::TARGET_DB;
@@ -89,7 +89,7 @@ impl Database {
             .as_secs()
             .to_string();
 
-        info!(target: TARGET_DB, "Adding URL to queue: {}", url);
+        debug!(target: TARGET_DB, "Adding URL to queue: {}", url);
         sqlx::query(
             r#"
             INSERT INTO rss_queue (url, seen_at)
@@ -101,7 +101,7 @@ impl Database {
         .bind(seen_at)
         .execute(&self.pool)
         .await?;
-        info!(target: TARGET_DB, "URL added to queue: {}", url);
+        debug!(target: TARGET_DB, "URL added to queue: {}", url);
         Ok(())
     }
 
@@ -119,7 +119,7 @@ impl Database {
             .as_secs()
             .to_string();
 
-        info!(target: TARGET_DB, "Adding/updating article: {}", url);
+        debug!(target: TARGET_DB, "Adding/updating article: {}", url);
         sqlx::query(
             r#"
             INSERT INTO articles (url, seen_at, is_relevant, category, analysis)
@@ -139,13 +139,13 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
-        info!(target: TARGET_DB, "Article added/updated: {}", url);
+        debug!(target: TARGET_DB, "Article added/updated: {}", url);
         Ok(())
     }
 
     #[instrument(target = "db", level = "info", skip(self))]
     pub async fn has_seen(&self, url: &str) -> Result<bool, sqlx::Error> {
-        info!(target: TARGET_DB, "Checking if article has been seen: {}", url);
+        debug!(target: TARGET_DB, "Checking if article has been seen: {}", url);
 
         let row = sqlx::query("SELECT 1 FROM articles WHERE url = ?1")
             .bind(url)
@@ -153,7 +153,7 @@ impl Database {
             .await?;
 
         let seen = row.is_some();
-        info!(target: TARGET_DB, "Article seen status for {}: {}", url, seen);
+        debug!(target: TARGET_DB, "Article seen status for {}: {}", url, seen);
         Ok(seen)
     }
 
@@ -162,7 +162,7 @@ impl Database {
         &self,
         order: &str,
     ) -> Result<Option<String>, sqlx::Error> {
-        info!(target: TARGET_DB, "Fetching and deleting URL from queue");
+        debug!(target: TARGET_DB, "Fetching and deleting URL from queue");
 
         let mut transaction = self.pool.begin().await?;
         let row = match order {
@@ -190,10 +190,10 @@ impl Database {
                 .execute(&mut transaction)
                 .await?;
             transaction.commit().await?;
-            info!(target: TARGET_DB, "Fetched and deleted URL from queue: {}", url);
+            debug!(target: TARGET_DB, "Fetched and deleted URL from queue: {}", url);
             Ok(Some(url))
         } else {
-            info!(target: TARGET_DB, "No URL found in queue");
+            debug!(target: TARGET_DB, "No URL found in queue");
             transaction.rollback().await?;
             Ok(None)
         }

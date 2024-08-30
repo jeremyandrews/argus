@@ -33,7 +33,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                 info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
                 match timeout(REQUEST_TIMEOUT, reqwest::get(rss_url)).await {
                     Ok(Ok(response)) => {
-                        info!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", rss_url, response.status());
+                        debug!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", rss_url, response.status());
                         if response.status().is_success() {
                             let body = match response.text().await {
                                 Ok(text) => text,
@@ -45,7 +45,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                             let reader = io::Cursor::new(body);
                             match Channel::read_from(reader) {
                                 Ok(channel) => {
-                                    info!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
+                                    debug!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
                                     for item in channel.items() {
                                         if let Some(article_url) = item.link.clone() {
                                             debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {}", article_url);
@@ -84,7 +84,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                 error!(target: TARGET_WEB_REQUEST, "Failed to process URL: {}", rss_url);
             }
         }
-        info!(target: TARGET_WEB_REQUEST, "Sleeping for 1 hour before next fetch");
-        sleep(Duration::from_secs(3600)).await; // Sleep for 1 hour before fetching again
+        info!(target: TARGET_WEB_REQUEST, "Sleeping for 10 minutes before next fetch");
+        sleep(Duration::from_secs(600)).await; // Sleep for 10 minutes before fetching again
     }
 }
