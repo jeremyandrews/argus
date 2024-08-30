@@ -109,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut non_affected_people = BTreeSet::new();
             let mut non_affected_places = BTreeSet::new();
 
-            info!(target: TARGET_LLM_REQUEST, "Worker {}: Starting worker loop.", worker_id);
+            info!(target: TARGET_LLM_REQUEST, "worker thread {}: Starting worker loop.", worker_id);
             // Assuming worker::worker_loop is infallible and only returns ()
             worker::worker_loop(
                 &topics_worker,
@@ -124,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .await;
 
-            info!(target: TARGET_LLM_REQUEST, "Worker {}: Completed worker loop.", worker_id);
+            info!(target: TARGET_LLM_REQUEST, "worker thread {}: Completed worker loop.", worker_id);
         });
 
         worker_handles.push(worker_handle);
@@ -138,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let results = join_all(worker_handles).await;
     for (i, result) in results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "Worker {} task failed: {}", i, e);
+            error!(target: TARGET_LLM_REQUEST, "worker thread {} task failed: {}", i, e);
         }
     }
 
