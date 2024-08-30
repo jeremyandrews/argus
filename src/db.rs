@@ -45,6 +45,7 @@ impl Database {
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT NOT NULL UNIQUE,
+                title TEXT,
                 seen_at TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_seen_at_url ON rss_queue (seen_at, url);
@@ -71,8 +72,8 @@ impl Database {
             .await
     }
 
-    #[instrument(target = "db", level = "info", skip(self, url))]
-    pub async fn add_to_queue(&self, url: &str) -> Result<(), sqlx::Error> {
+    #[instrument(target = "db", level = "info", skip(self, url, title))]
+    pub async fn add_to_queue(&self, url: &str, title: Option<&str>) -> Result<(), sqlx::Error> {
         if url.trim().is_empty() {
             error!(target: TARGET_DB, "Attempted to add an empty URL to the queue");
             return Err(sqlx::Error::Protocol("Empty URL provided".into()));
@@ -116,12 +117,13 @@ impl Database {
         debug!(target: TARGET_DB, "Adding URL to queue: {}", url);
         sqlx::query(
             r#"
-        INSERT INTO rss_queue (url, seen_at)
-        VALUES (?1, ?2)
+        INSERT INTO rss_queue (url, title, seen_at)
+        VALUES (?1, ?2, ?3)
         ON CONFLICT(url) DO NOTHING
         "#,
         )
         .bind(url)
+        .bind(title)
         .bind(seen_at)
         .execute(&self.pool)
         .await?;
@@ -185,23 +187,23 @@ impl Database {
     pub async fn fetch_and_delete_url_from_queue(
         &self,
         order: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
+    ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
         debug!(target: TARGET_DB, "Fetching and deleting URL from queue");
 
         let mut transaction = self.pool.begin().await?;
         let row = match order {
             "oldest" => {
-                sqlx::query("SELECT url FROM rss_queue ORDER BY seen_at ASC LIMIT 1")
+                sqlx::query("SELECT url, title FROM rss_queue ORDER BY seen_at ASC LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
             }
             "newest" => {
-                sqlx::query("SELECT url FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
+                sqlx::query("SELECT url, title FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
             }
             _ => {
-                sqlx::query("SELECT url FROM rss_queue ORDER BY RANDOM() LIMIT 1")
+                sqlx::query("SELECT url, title FROM rss_queue ORDER BY RANDOM() LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
             }
@@ -209,13 +211,14 @@ impl Database {
 
         if let Some(row) = row {
             let url: String = row.get("url");
+            let title: Option<String> = row.get("title");
             sqlx::query("DELETE FROM rss_queue WHERE url = ?1")
                 .bind(&url)
                 .execute(&mut transaction)
                 .await?;
             transaction.commit().await?;
             debug!(target: TARGET_DB, "Fetched and deleted URL from queue: {}", url);
-            Ok(Some(url))
+            Ok(Some((url, title)))
         } else {
             debug!(target: TARGET_DB, "No URL found in queue");
             transaction.rollback().await?;

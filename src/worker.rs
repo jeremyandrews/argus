@@ -90,7 +90,7 @@ pub async fn worker_loop(
             "random"
         };
 
-        if let Some(url) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
+        if let Some((url, title)) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
             if url.trim().is_empty() {
                 error!(target: TARGET_WEB_REQUEST, "Worker {}: Found an empty URL in the queue, skipping...", worker_id);
                 continue;
@@ -103,6 +103,7 @@ pub async fn worker_loop(
                 debug!(target: TARGET_WEB_REQUEST, "Worker {}: Processing URL: {}", worker_id, parsed_url);
                 let item = rss::Item {
                     link: Some(url.clone()),
+                    title: title.clone(),
                     ..Default::default()
                 };
 

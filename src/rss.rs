@@ -48,8 +48,15 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                     debug!(target: TARGET_WEB_REQUEST, "Parsed RSS channel with {} items", channel.items().len());
                                     for item in channel.items() {
                                         if let Some(article_url) = item.link.clone() {
+                                            let article_title = item.title.clone();
                                             debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {}", article_url);
-                                            if let Err(err) = db.add_to_queue(&article_url).await {
+                                            if let Err(err) = db
+                                                .add_to_queue(
+                                                    &article_url,
+                                                    article_title.as_deref(),
+                                                )
+                                                .await
+                                            {
                                                 error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                             }
                                         } else {
