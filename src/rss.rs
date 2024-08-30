@@ -14,6 +14,16 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
     let db = Database::instance().await;
 
     loop {
+        // Count and log the number of entries in the queue
+        match db.count_queue_entries().await {
+            Ok(count) => {
+                info!(target: TARGET_WEB_REQUEST, "Processing queue with {} entries", count);
+            }
+            Err(err) => {
+                error!(target: TARGET_WEB_REQUEST, "Failed to count queue entries: {}", err);
+            }
+        }
+
         for rss_url in &rss_urls {
             // Check if the URL is empty and skip it if so
             if rss_url.trim().is_empty() {
@@ -101,7 +111,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                 error!(target: TARGET_WEB_REQUEST, "Failed to process URL: {}", rss_url);
             }
         }
-        info!(target: TARGET_WEB_REQUEST, "Sleeping for 1 minute before next fetch");
+        debug!(target: TARGET_WEB_REQUEST, "Sleeping for 1 minute before next fetch");
         sleep(Duration::from_secs(60)).await; // Sleep for 1 minute before fetching again
     }
 }

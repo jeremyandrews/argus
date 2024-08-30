@@ -225,4 +225,15 @@ impl Database {
             Ok(None)
         }
     }
+
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn count_queue_entries(&self) -> Result<i64, sqlx::Error> {
+        let row = sqlx::query("SELECT COUNT(*) as count FROM rss_queue")
+            .fetch_one(&self.pool)
+            .await?;
+
+        let count: i64 = row.get("count");
+        debug!(target: TARGET_DB, "Counted {} entries in the queue", count);
+        Ok(count)
+    }
 }
