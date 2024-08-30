@@ -15,6 +15,12 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
 
     loop {
         for rss_url in &rss_urls {
+            // Check if the URL is empty and skip it if so
+            if rss_url.trim().is_empty() {
+                warn!(target: TARGET_WEB_REQUEST, "Skipping empty RSS URL");
+                continue;
+            }
+
             let mut attempts = 0;
             debug!(target: TARGET_WEB_REQUEST, "Starting to process RSS URL: {}", rss_url);
 
