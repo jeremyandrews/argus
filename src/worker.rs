@@ -125,14 +125,13 @@ pub async fn worker_loop(
                 error!(target: TARGET_WEB_REQUEST, "Worker {}: Invalid URL found in queue: {}", worker_id, url);
             }
         } else {
-            info!(target: TARGET_LLM_REQUEST, "Worker {}: No more URLs to process, exiting.", worker_id);
-            break;
+            info!(target: TARGET_LLM_REQUEST, "Worker {}: No URLs to process. Sleeping for 1 minute before retrying.", worker_id);
+            sleep(Duration::from_secs(60)).await;
+            continue;
         }
 
         sleep(Duration::from_secs(1)).await;
     }
-
-    info!(target: TARGET_LLM_REQUEST, "Worker {}: Completed worker loop.", worker_id);
 }
 
 pub async fn process_item(item: rss::Item, params: &mut ProcessItemParams<'_>) {
