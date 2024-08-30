@@ -30,7 +30,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                     break false;
                 }
 
-                info!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
+                debug!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
                 match timeout(REQUEST_TIMEOUT, reqwest::get(rss_url)).await {
                     Ok(Ok(response)) => {
                         debug!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", rss_url, response.status());

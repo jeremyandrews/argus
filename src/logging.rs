@@ -17,9 +17,7 @@ pub fn configure_logging() {
     // Stdout log configuration
     let stdout_log = fmt::layer()
         .with_writer(io::stdout)
-        .with_filter(EnvFilter::new(
-            "info,llm_request=info,web_request=info,db=warn,sqlx=off",
-        ))
+        .with_filter(EnvFilter::new("info,db=warn,sqlx=off,html5ever=error"))
         .with_filter(custom_filter);
 
     // File log configuration
