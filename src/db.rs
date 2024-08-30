@@ -83,6 +83,30 @@ impl Database {
             return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
         }
 
+        // Check if the URL already exists in the articles table
+        let exists_in_articles = sqlx::query("SELECT 1 FROM articles WHERE url = ?1")
+            .bind(url)
+            .fetch_optional(&self.pool)
+            .await?
+            .is_some();
+
+        if exists_in_articles {
+            debug!(target: TARGET_DB, "URL already exists in articles: {}", url);
+            return Ok(());
+        }
+
+        // Check if the URL already exists in the rss_queue table
+        let exists_in_queue = sqlx::query("SELECT 1 FROM rss_queue WHERE url = ?1")
+            .bind(url)
+            .fetch_optional(&self.pool)
+            .await?
+            .is_some();
+
+        if exists_in_queue {
+            debug!(target: TARGET_DB, "URL already exists in the queue: {}", url);
+            return Ok(());
+        }
+
         let seen_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time travel")
@@ -92,10 +116,10 @@ impl Database {
         debug!(target: TARGET_DB, "Adding URL to queue: {}", url);
         sqlx::query(
             r#"
-            INSERT INTO rss_queue (url, seen_at)
-            VALUES (?1, ?2)
-            ON CONFLICT(url) DO NOTHING
-            "#,
+        INSERT INTO rss_queue (url, seen_at)
+        VALUES (?1, ?2)
+        ON CONFLICT(url) DO NOTHING
+        "#,
         )
         .bind(url)
         .bind(seen_at)
