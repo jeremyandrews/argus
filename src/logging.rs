@@ -22,7 +22,7 @@ pub fn configure_logging() {
     let stdout_log = fmt::layer()
         .with_writer(io::stdout)
         .with_filter(EnvFilter::new(
-            "info,llm_request=warn,web_request=warn,db=warn,sqlx=off",
+            "info,llm_request=info,web_request=warn,db=warn,sqlx=off",
         ))
         .with_filter(custom_filter);
 
