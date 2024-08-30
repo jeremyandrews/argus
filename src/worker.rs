@@ -112,7 +112,7 @@ pub async fn worker_loop(
                     ollama,
                     model,
                     temperature,
-                    db: &db,
+                    db: db,
                     slack_token,
                     slack_channel,
                     places: places.clone(),

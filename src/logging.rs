@@ -11,11 +11,7 @@ pub fn configure_logging() {
     // Custom filter to ignore specific warnings
     let custom_filter = FilterFn::new(|metadata| {
         // Exclude specific warnings based on their target and message
-        if metadata.level() == &Level::WARN && metadata.target() == "html5ever::serialize" {
-            false
-        } else {
-            true
-        }
+        !(metadata.level() == &Level::WARN && metadata.target() == "html5ever::serialize")
     });
 
     // Stdout log configuration
