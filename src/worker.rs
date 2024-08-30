@@ -646,6 +646,8 @@ async fn process_topics(
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
+    let mut article_relevant = false;
+
     for topic in params.topics {
         if topic.trim().is_empty() {
             continue;
@@ -660,6 +662,8 @@ async fn process_topics(
 
         if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
+                article_relevant = true;
+
                 let summary_prompt = format!(
                     "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points",
                     article_text
@@ -672,7 +676,7 @@ async fn process_topics(
 
                 let logical_fallacies_prompt = format!(
                     "{} | Concisely point out in one to three sentences of American English (without telling me that's what you're doing) if there is any potential biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy), and identifies strength of arguments and evidence presented",
-                     article_text);
+                    article_text);
 
                 let relation_prompt = format!(
                     "{} | Briefly explain in American English (without telling me that's what you're doing) in one to three sentences how this relates to {} starting with the words 'This relates to {}`.",
@@ -737,7 +741,7 @@ async fn process_topics(
                             }
                         }
 
-                        return;
+                        return; // No need to continue checking other topics
                     } else {
                         debug!(
                             target: TARGET_LLM_REQUEST,
@@ -758,6 +762,18 @@ async fn process_topics(
                     yes_no_response.trim()
                 );
                 weighted_sleep().await;
+            }
+        }
+    }
+
+    // If no relevant topic was found, add the URL to the database as a non-relevant article
+    if !article_relevant {
+        match params.db.add_article(article_url, false, None, None).await {
+            Ok(_) => {
+                debug!(target: TARGET_DB, "worker {}: Successfully added non-relevant article to database", worker_id)
+            }
+            Err(e) => {
+                error!(target: TARGET_DB, "worker {}: Failed to add non-relevant article to database: {:?}", worker_id, e)
             }
         }
     }
