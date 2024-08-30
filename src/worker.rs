@@ -97,11 +97,11 @@ pub async fn worker_loop(
 
         if let Some((url, title)) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
             if url.trim().is_empty() {
-                error!(target: TARGET_WEB_REQUEST, "Worker {}: Found an empty URL in the queue, skipping...", worker_id);
+                error!(target: TARGET_LLM_REQUEST, "Worker {}: Found an empty URL in the queue, skipping...", worker_id);
                 continue;
             }
 
-            info!(target: TARGET_WEB_REQUEST, "Worker {}: Moving on to a new URL: {}", worker_id, url);
+            info!(target: TARGET_LLM_REQUEST, "Worker {}: Moving on to a new URL: {}", worker_id, url);
 
             let item = FeedItem {
                 url: url.clone(),
@@ -135,7 +135,7 @@ pub async fn worker_loop(
 pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(
-        target: TARGET_WEB_REQUEST,
+        target: TARGET_LLM_REQUEST,
         "Worker {}: Reviewing => {} ({})",
         worker_id,
         item.title.clone().unwrap_or_default(),
@@ -202,7 +202,7 @@ async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemPara
         article_text
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
+    debug!(target: TARGET_LLM_REQUEST, "Worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
 
     match generate_llm_response(&threat_prompt, params).await {
         Some(response) => response.trim().to_lowercase().starts_with("yes"),
@@ -220,7 +220,7 @@ async fn process_places(
     for (continent, countries) in places.as_object().unwrap() {
         if !process_continent(&mut place_params, continent, countries, params).await {
             debug!(
-                target: TARGET_WEB_REQUEST,
+                target: TARGET_LLM_REQUEST,
                 "Worker {}: Article is not about something affecting life or safety on '{}'",
                 worker_id,
                 continent
@@ -251,7 +251,7 @@ async fn process_continent(
         article_text, continent
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
+    debug!(target: TARGET_LLM_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
 
     let continent_response = match generate_llm_response(&continent_prompt, params).await {
         Some(response) => response,
@@ -263,7 +263,7 @@ async fn process_continent(
     }
 
     debug!(
-        target: TARGET_WEB_REQUEST,
+        target: TARGET_LLM_REQUEST,
         "Worker {}: Article is about something affecting life or safety on '{}'",
         worker_id,
         continent
@@ -309,7 +309,7 @@ async fn process_country(
         article_text, country, continent
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
+    debug!(target: TARGET_LLM_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
 
     let country_response = match generate_llm_response(&country_prompt, params).await {
         Some(response) => response,
@@ -318,7 +318,7 @@ async fn process_country(
 
     if !country_response.trim().to_lowercase().starts_with("yes") {
         debug!(
-            target: TARGET_WEB_REQUEST,
+            target: TARGET_LLM_REQUEST,
             "Worker {}: Article is not about something affecting life or safety in '{}' on '{}'",
             worker_id,
             country,
@@ -328,7 +328,7 @@ async fn process_country(
     }
 
     debug!(
-        target: TARGET_WEB_REQUEST,
+        target: TARGET_LLM_REQUEST,
         "Worker {}: Article is about something affecting life or safety in '{}' on '{}'",
         worker_id,
         country,
@@ -380,7 +380,7 @@ async fn process_region(
         article_text, region, country, continent
     );
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
+    debug!(target: TARGET_LLM_REQUEST, "Worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
 
     let region_response = match generate_llm_response(&region_prompt, proc_params).await {
         Some(response) => response,
@@ -389,7 +389,7 @@ async fn process_region(
 
     if !region_response.trim().to_lowercase().starts_with("yes") {
         debug!(
-            target: TARGET_WEB_REQUEST,
+            target: TARGET_LLM_REQUEST,
             "Worker {}: Article is not about something affecting life or safety in '{}', '{}'",
             worker_id,
             region,
@@ -399,7 +399,7 @@ async fn process_region(
     }
 
     debug!(
-        target: TARGET_WEB_REQUEST,
+        target: TARGET_LLM_REQUEST,
         "Worker {}: Article is about something affecting life or safety in '{}', '{}'",
         worker_id,
         region,
@@ -471,7 +471,7 @@ async fn process_city(
 
     if !city_response.trim().to_lowercase().starts_with("yes") {
         debug!(
-            target: TARGET_WEB_REQUEST,
+            target: TARGET_LLM_REQUEST,
             "Worker {}: Article is not about something affecting life or safety in '{}, {}, {}'",
             worker_id,
             city_name,
@@ -482,7 +482,7 @@ async fn process_city(
     }
 
     info!(
-        target: TARGET_WEB_REQUEST,
+        target: TARGET_LLM_REQUEST,
         "Worker {}: Article is about something affecting life or safety in '{}, {}, {}'",
         worker_id,
         city_name,
@@ -651,7 +651,7 @@ async fn process_topics(
             continue;
         }
 
-        debug!(target: TARGET_WEB_REQUEST, "Worker {}: Asking LLM: is this article specifically about {}", worker_id, topic);
+        debug!(target: TARGET_LLM_REQUEST, "Worker {}: Asking LLM: is this article specifically about {}", worker_id, topic);
 
         let yes_no_prompt = format!(
             "{} | Is this article specifically about {}? Answer yes or no.",
@@ -740,7 +740,7 @@ async fn process_topics(
                         return;
                     } else {
                         debug!(
-                            target: TARGET_WEB_REQUEST,
+                            target: TARGET_LLM_REQUEST,
                             "Worker {}: Article is not about '{}' or is a promotion/advertisement: {}",
                             worker_id,
                             topic,
@@ -751,7 +751,7 @@ async fn process_topics(
                 }
             } else {
                 debug!(
-                    target: TARGET_WEB_REQUEST,
+                    target: TARGET_LLM_REQUEST,
                     "Worker {}: Article is not about '{}': {}",
                     worker_id,
                     topic,
