@@ -96,6 +96,9 @@ pub async fn worker_loop(
                 continue;
             }
 
+            // Log a message when starting to process a new URL
+            info!(target: TARGET_WEB_REQUEST, "Worker {}: Moving on to a new URL: {}", worker_id, url);
+
             if let Ok(parsed_url) = Url::parse(&url) {
                 info!(target: TARGET_WEB_REQUEST, "Worker {}: Processing URL: {}", worker_id, parsed_url);
                 let item = rss::Item {
