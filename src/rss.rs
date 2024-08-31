@@ -63,6 +63,10 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                             match parser::parse(reader) {
                                 Ok(feed) => {
                                     debug!(target: TARGET_WEB_REQUEST, "Parsed feed with {} entries", feed.entries.len());
+
+                                    // Initialize a counter for new articles
+                                    let mut new_articles_count = 0;
+
                                     for entry in feed.entries {
                                         if let Some(article_url) =
                                             entry.links.first().map(|link| link.href.clone())
@@ -78,10 +82,19 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                                 .await
                                             {
                                                 error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
+                                            } else {
+                                                new_articles_count += 1; // Increment counter
                                             }
                                         } else {
                                             debug!(target: TARGET_WEB_REQUEST, "Feed entry missing link, skipping");
                                         }
+                                    }
+
+                                    // Log based on the number of new articles added
+                                    if new_articles_count > 0 {
+                                        info!(target: TARGET_WEB_REQUEST, "Added {} new articles from {}", new_articles_count, rss_url);
+                                    } else {
+                                        debug!(target: TARGET_WEB_REQUEST, "No new articles added from {}", rss_url);
                                     }
                                     break true;
                                 }
