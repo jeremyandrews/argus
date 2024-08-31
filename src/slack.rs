@@ -44,7 +44,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
                 "text": {
                     "type": "mrkdwn",
                     "text": format!("{}
-                     {}", article, topic),
+    {}", article, topic),
                 }
             },
             {
