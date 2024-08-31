@@ -10,7 +10,7 @@ use tracing::{debug, error, info, warn};
 
 const TARGET_WEB_REQUEST: &str = "web_request";
 const TARGET_LLM_REQUEST: &str = "llm_request";
-const TARGET_DB: &str = "db";
+const TARGET_DB: &str = "db_query";
 
 const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
 const OLLAMA_PORT_ENV: &str = "OLLAMA_PORT";
