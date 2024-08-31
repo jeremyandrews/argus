@@ -111,7 +111,7 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                 error!(target: TARGET_WEB_REQUEST, "Failed to process URL: {}", rss_url);
             }
         }
-        debug!(target: TARGET_WEB_REQUEST, "Sleeping for 10 minutes before next fetch");
-        sleep(Duration::from_secs(600)).await; // Sleep for 10 minutes before fetching again
+        debug!(target: TARGET_WEB_REQUEST, "Sleeping for 30 minutes before next fetch");
+        sleep(Duration::from_secs(1800)).await; // Sleep for 30 minutes before fetching again
     }
 }
