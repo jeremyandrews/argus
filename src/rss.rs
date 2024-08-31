@@ -74,16 +74,23 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                             let article_title =
                                                 entry.title.clone().map(|t| t.content);
                                             debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {}", article_url);
-                                            if let Err(err) = db
+
+                                            match db
                                                 .add_to_queue(
                                                     &article_url,
                                                     article_title.as_deref(),
                                                 )
                                                 .await
                                             {
-                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
-                                            } else {
-                                                new_articles_count += 1; // Increment counter
+                                                Ok(added) => {
+                                                    if added {
+                                                        new_articles_count += 1;
+                                                        // Increment counter if a new article was added
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
+                                                }
                                             }
                                         } else {
                                             debug!(target: TARGET_WEB_REQUEST, "Feed entry missing link, skipping");

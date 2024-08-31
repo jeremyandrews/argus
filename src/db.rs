@@ -73,7 +73,7 @@ impl Database {
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, title))]
-    pub async fn add_to_queue(&self, url: &str, title: Option<&str>) -> Result<(), sqlx::Error> {
+    pub async fn add_to_queue(&self, url: &str, title: Option<&str>) -> Result<bool, sqlx::Error> {
         if url.trim().is_empty() {
             error!(target: TARGET_DB, "Attempted to add an empty URL to the queue");
             return Err(sqlx::Error::Protocol("Empty URL provided".into()));
@@ -93,7 +93,7 @@ impl Database {
 
         if exists_in_articles {
             debug!(target: TARGET_DB, "URL already exists in articles: {}", url);
-            return Ok(());
+            return Ok(false); // Return false since the article exists
         }
 
         // Check if the URL already exists in the rss_queue table
@@ -105,7 +105,7 @@ impl Database {
 
         if exists_in_queue {
             debug!(target: TARGET_DB, "URL already exists in the queue: {}", url);
-            return Ok(());
+            return Ok(false); // Return false since the article exists in the queue
         }
 
         let seen_at = SystemTime::now()
@@ -128,7 +128,8 @@ impl Database {
         .execute(&self.pool)
         .await?;
         debug!(target: TARGET_DB, "URL added to queue: {}", url);
-        Ok(())
+
+        Ok(true) // Return true since a new article was added
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, category, analysis))]
