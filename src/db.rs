@@ -194,19 +194,19 @@ impl Database {
         let mut transaction = self.pool.begin().await?;
         let row = match order {
             "oldest" => {
-                debug!(target: TARGET_DB, "loading oldest URL");
+                info!(target: TARGET_DB, "loading oldest URL");
                 sqlx::query("SELECT url, title FROM rss_queue ORDER BY seen_at ASC LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
             }
             "newest" => {
-                debug!(target: TARGET_DB, "loading newest URL");
+                info!(target: TARGET_DB, "loading newest URL");
                 sqlx::query("SELECT url, title FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
             }
             _ => {
-                debug!(target: TARGET_DB, "loading random URL");
+                info!(target: TARGET_DB, "loading random URL");
                 sqlx::query("SELECT url, title FROM rss_queue ORDER BY RANDOM() LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
