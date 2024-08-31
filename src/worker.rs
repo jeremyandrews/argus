@@ -127,8 +127,6 @@ pub async fn worker_loop(
             sleep(Duration::from_secs(60)).await;
             continue;
         }
-
-        sleep(Duration::from_secs(1)).await;
     }
 }
 
@@ -544,8 +542,9 @@ async fn summarize_and_send_article(
         .unwrap_or_default();
 
     // Generate relation to topic (affected and non-affected summary)
+    let mut affected_summary = String::default();
     if !affected_people.is_empty() {
-        let affected_summary = format!(
+        affected_summary = format!(
             "This article affects these people in {}: {}",
             affected_regions
                 .iter()
@@ -570,8 +569,9 @@ async fn summarize_and_send_article(
             .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
     }
 
+    let mut non_affected_summary = String::default();
     if !non_affected_people.is_empty() {
-        let non_affected_summary = format!(
+        non_affected_summary = format!(
             "This article does not affect these people in {}: {}",
             affected_regions
                 .iter()
@@ -604,6 +604,7 @@ async fn summarize_and_send_article(
         || !relation_to_topic_response.is_empty()
     {
         let detailed_response_json = json!({
+            "topic": format!("{} {}", affected_summary, non_affected_summary),
             "summary": summary_response,
             "critical_analysis": critical_analysis_response,
             "logical_fallacies": logical_fallacies_response,
@@ -709,6 +710,7 @@ async fn process_topics(
                         let formatted_article = format!("*<{}|{}>*", article_url, article_title);
 
                         let detailed_response_json = json!({
+                            "topic": topic,
                             "summary": summary_response,
                             "critical_analysis": critical_analysis_response,
                             "logical_fallacies": logical_fallacies_response,

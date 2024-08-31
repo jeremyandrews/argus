@@ -20,6 +20,9 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
         }
     };
 
+    let topic = response_json["topic"]
+        .as_str()
+        .unwrap_or("No topic available");
     let summary = response_json["summary"]
         .as_str()
         .unwrap_or("No summary available");
@@ -40,7 +43,8 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": article
+                    "text": format!("{}
+                     {}", article, topic),
                 }
             },
             {
