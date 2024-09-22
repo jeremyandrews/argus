@@ -1,12 +1,38 @@
 use reqwest::Client;
 use serde_json::json;
+use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, warn};
 
 use crate::TARGET_WEB_REQUEST;
 
 /// Sends the formatted article to the Slack channel.
-pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, slack_channel: &str) {
+pub async fn send_to_slack(
+    article: &str,
+    response: &str,
+    slack_token: &str,
+    default_channel: &str,
+) {
+    // Parse the TOPICS environment variable to get the topic-to-channel mappings
+    let topics = std::env::var("TOPICS").unwrap();
+    let topic_mappings: HashMap<&str, &str> = topics
+        .split(';')
+        .map(|entry| entry.splitn(2, ':'))
+        .filter_map(|mut parts| {
+            if parts.clone().count() == 2 {
+                Some((parts.next().unwrap(), parts.next().unwrap()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Determine the Slack channel based on the matched topic
+    let channel = topic_mappings
+        .get(response)
+        .copied()
+        .unwrap_or(default_channel);
+
     let client = Client::new();
     let worker_id = format!("{:?}", std::thread::current().id()); // Retrieve the worker number
 
@@ -37,7 +63,7 @@ pub async fn send_to_slack(article: &str, response: &str, slack_token: &str, sla
         .unwrap_or("No relation to topic available");
 
     let payload = json!({
-        "channel": slack_channel,
+        "channel": channel,
         "blocks": [
             {
                 "type": "section",

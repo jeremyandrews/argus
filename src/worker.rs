@@ -650,15 +650,17 @@ async fn process_topics(
     let mut article_relevant = false;
 
     for topic in params.topics {
-        if topic.trim().is_empty() {
+        let parts: Vec<_> = topic.trim().split(':').collect();
+        if parts.is_empty() {
             continue;
         }
 
-        debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic);
+        let topic_name = parts[0];
+        debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
 
         let yes_no_prompt = format!(
             "{} | Is this article specifically about {}? Answer yes or no.",
-            article_text, topic
+            article_text, topic_name
         );
 
         if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
@@ -681,7 +683,7 @@ async fn process_topics(
 
                 let relation_prompt = format!(
                     "{} | Briefly explain in American English (without telling me that's what you're doing) in one to three sentences how this relates to {} starting with the words 'This relates to {}`.",
-                    article_text, topic, topic
+                    article_text, topic_name, topic_name
                 );
 
                 let summary_response = generate_llm_response(&summary_prompt, params)
@@ -701,7 +703,7 @@ async fn process_topics(
 
                 let confirm_prompt = format!(
                     "{} | Is this article really about {} and not a promotion or advertisement? Answer yes or no.",
-                    summary_response, topic
+                    summary_response, topic_name
                 );
 
                 if let Some(confirm_response) = generate_llm_response(&confirm_prompt, params).await
@@ -710,7 +712,7 @@ async fn process_topics(
                         let formatted_article = format!("*<{}|{}>*", article_url, article_title);
 
                         let detailed_response_json = json!({
-                            "topic": topic,
+                            "topic": topic_name,
                             "summary": summary_response,
                             "critical_analysis": critical_analysis_response,
                             "logical_fallacies": logical_fallacies_response,
@@ -730,16 +732,16 @@ async fn process_topics(
                             .add_article(
                                 article_url,
                                 true,
-                                Some(topic),
+                                Some(topic_name),
                                 Some(&detailed_response_json.to_string()),
                             )
                             .await
                         {
                             Ok(_) => {
-                                debug!(target: TARGET_DB, "worker {}: Successfully added article about '{}' to database", worker_id, topic)
+                                debug!(target: TARGET_DB, "worker {}: Successfully added article about '{}' to database", worker_id, topic_name)
                             }
                             Err(e) => {
-                                error!(target: TARGET_DB, "worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic, e)
+                                error!(target: TARGET_DB, "worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic_name, e)
                             }
                         }
 
@@ -749,7 +751,7 @@ async fn process_topics(
                             target: TARGET_LLM_REQUEST,
                             "worker {}: Article is not about '{}' or is a promotion/advertisement: {}",
                             worker_id,
-                            topic,
+                            topic_name,
                             confirm_response.trim()
                         );
                         weighted_sleep().await;
@@ -760,7 +762,7 @@ async fn process_topics(
                     target: TARGET_LLM_REQUEST,
                     "worker {}: Article is not about '{}': {}",
                     worker_id,
-                    topic,
+                    topic_name,
                     yes_no_response.trim()
                 );
                 weighted_sleep().await;
