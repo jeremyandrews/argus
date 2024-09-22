@@ -14,24 +14,18 @@ pub async fn send_to_slack(
     default_channel: &str,
 ) {
     // Parse the TOPICS environment variable to get the topic-to-channel mappings
-    let topics = std::env::var("TOPICS").unwrap();
+    let topics = std::env::var("TOPICS").unwrap().replace("\n", "");
     let topic_mappings: HashMap<&str, &str> = topics
         .split(';')
-        .map(|entry| entry.splitn(2, ':'))
-        .filter_map(|mut parts| {
-            if parts.clone().count() == 2 {
-                Some((parts.next().unwrap(), parts.next().unwrap()))
+        .filter_map(|entry| {
+            let mut parts = entry.trim().splitn(2, ':');
+            if let (Some(topic), Some(channel)) = (parts.next(), parts.next()) {
+                Some((topic.trim(), channel.trim()))
             } else {
                 None
             }
         })
         .collect();
-
-    // Determine the Slack channel based on the matched topic
-    let channel = topic_mappings
-        .get(response)
-        .copied()
-        .unwrap_or(default_channel);
 
     let client = Client::new();
     let worker_id = format!("{:?}", std::thread::current().id()); // Retrieve the worker number
@@ -48,7 +42,13 @@ pub async fn send_to_slack(
 
     let topic = response_json["topic"]
         .as_str()
-        .unwrap_or("No topic available");
+        .unwrap_or("No topic available")
+        .trim();
+    // Determine the Slack channel based on the matched topic
+    let channel = topic_mappings
+        .get(topic)
+        .copied()
+        .unwrap_or(default_channel);
     let summary = response_json["summary"]
         .as_str()
         .unwrap_or("No summary available");
