@@ -151,7 +151,7 @@ pub async fn send_to_slack(
     let max_backoff = 32; // Maximum backoff time in seconds
 
     for attempt in 0..max_retries {
-        debug!(target: TARGET_WEB_REQUEST, "Worker {}: Sending Slack notification with payload: {}", worker_id, payload);
+        info!(target: TARGET_WEB_REQUEST, "Worker {}: Sending Slack notification with payload: {}", worker_id, payload);
 
         match timeout(
             Duration::from_secs(30),
