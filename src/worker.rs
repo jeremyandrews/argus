@@ -215,8 +215,10 @@ async fn process_places(
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
+    let mut article_about_any_area = false;
     for (continent, countries) in places.as_object().unwrap() {
         if !process_continent(&mut place_params, continent, countries, params).await {
+            article_about_any_area = true;
             debug!(
                 target: TARGET_LLM_REQUEST,
                 "worker {}: Article is not about something affecting life or safety on '{}'",
@@ -225,6 +227,12 @@ async fn process_places(
             );
         }
         weighted_sleep().await;
+    }
+
+    if !article_about_any_area {
+        // The article is not about any areas of interest; clear non_affected_people
+        place_params.non_affected_people.clear();
+        place_params.non_affected_places.clear();
     }
 }
 
