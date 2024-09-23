@@ -662,10 +662,8 @@ async fn process_topics(
         if parts.is_empty() {
             continue;
         }
-
         let topic_name = parts[0];
         if topic_name.is_empty() {
-            println!("EMPTY topic_name");
             continue;
         }
         debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
