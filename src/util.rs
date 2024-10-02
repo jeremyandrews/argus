@@ -7,8 +7,8 @@ pub async fn weighted_sleep() {
     // Retrieve the worker number
     let worker_id = format!("{:?}", std::thread::current().id());
 
-    // Weights for sleeping durations from 0 to 2 seconds
-    let weights = vec![2, 1, 0];
+    // Weights for sleeping durations from 0 to 1 seconds
+    let weights = vec![1, 0];
 
     // Create a weighted index based on the defined weights
     let dist = WeightedIndex::new(&weights).unwrap();
