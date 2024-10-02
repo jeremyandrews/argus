@@ -14,7 +14,7 @@ pub async fn send_to_slack(
     default_channel: &str,
 ) {
     // Parse the TOPICS environment variable to get the topic-to-channel mappings
-    let topics = std::env::var("TOPICS").unwrap().replace("\n", "");
+    let topics = std::env::var("TOPICS").unwrap().replace('\n', "");
     let topic_mappings: HashMap<&str, &str> = topics
         .split(';')
         .filter_map(|entry| {

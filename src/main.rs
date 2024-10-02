@@ -12,14 +12,11 @@ const TARGET_WEB_REQUEST: &str = "web_request";
 const TARGET_LLM_REQUEST: &str = "llm_request";
 const TARGET_DB: &str = "db_query";
 
-const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
-const OLLAMA_PORT_ENV: &str = "OLLAMA_PORT";
-const OLLAMA_MODEL_ENV: &str = "OLLAMA_MODEL";
+const OLLAMA_CONFIGS_ENV: &str = "OLLAMA_CONFIGS_ENV";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
 const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
-const WORKER_COUNT_ENV: &str = "WORKER_COUNT";
 
 mod db;
 mod environment;
@@ -36,19 +33,47 @@ use environment::get_env_var_as_vec;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logging::configure_logging();
 
-    let urls = get_env_var_as_vec("URLS", ';');
-    let ollama_host = env::var(OLLAMA_HOST_ENV).unwrap_or_else(|_| "localhost".to_string());
-    let ollama_port = env::var(OLLAMA_PORT_ENV)
-        .unwrap_or_else(|_| "11434".to_string())
-        .parse()
-        .unwrap_or_else(|_| {
-            error!("Invalid OLLAMA_PORT; defaulting to 11434");
-            11434
-        });
+    // Read the OLLAMA_CONFIGS environment variable
+    let configs = env::var(OLLAMA_CONFIGS_ENV).unwrap_or_else(|_| {
+        error!("{} is not set", OLLAMA_CONFIGS_ENV);
+        String::new()
+    });
 
-    info!(target: TARGET_LLM_REQUEST, "Connecting to Ollama at {}:{}", ollama_host, ollama_port);
-    let ollama = Ollama::new(ollama_host, ollama_port);
-    let model = env::var(OLLAMA_MODEL_ENV).unwrap_or_else(|_| "llama2".to_string());
+    // Split the configurations
+    let config_entries: Vec<&str> = configs.split(';').collect();
+    let worker_count = config_entries.len();
+
+    let mut workers = Vec::new();
+    let mut count: i16 = 0;
+    for config in config_entries {
+        // Split each configuration into host, port, and model
+        let parts: Vec<&str> = config.split('|').collect();
+        if parts.len() != 3 {
+            error!("Invalid configuration format: {}", config);
+            continue;
+        }
+
+        let host = parts[0].to_string();
+        let port: u16 = parts[1].parse().unwrap_or_else(|_| {
+            error!("Invalid port in configuration: {}", parts[1]);
+            11434 // Default port
+        });
+        let model = parts[2].to_string();
+
+        info!(
+            "Connecting to Ollama at {}:{} with model {}",
+            host, port, model
+        );
+
+        // Store the worker configuration
+        workers.push((count, host, port, model));
+        count += 1;
+    }
+
+    info!("Total workers configured: {}", worker_count);
+
+    let urls = get_env_var_as_vec("URLS", ';');
+
     let topics = get_env_var_as_vec("TOPICS", ';');
     let slack_token = env::var(SLACK_TOKEN_ENV).expect("SLACK_TOKEN environment variable required");
     let slack_channel =
@@ -87,19 +112,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Configure worker count
-    let worker_count: usize = env::var(WORKER_COUNT_ENV)
-        .unwrap_or_else(|_| "1".to_string())
-        .parse()
-        .unwrap_or_else(|_| {
-            warn!("Invalid WORKER_COUNT; defaulting to 1");
-            1
-        });
-
     let mut worker_handles = Vec::new();
-    for worker_id in 0..worker_count {
-        let ollama_worker = ollama.clone();
-        let model_worker = model.clone();
+    for (worker_id, host, port, model_worker) in workers {
+        let ollama_worker = Ollama::new(host, port);
         let topics_worker = topics.clone();
         let slack_token_worker = slack_token.clone();
         let slack_channel_worker = slack_channel.clone();
