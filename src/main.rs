@@ -12,7 +12,7 @@ const TARGET_WEB_REQUEST: &str = "web_request";
 const TARGET_LLM_REQUEST: &str = "llm_request";
 const TARGET_DB: &str = "db_query";
 
-const OLLAMA_CONFIGS_ENV: &str = "OLLAMA_CONFIGS_ENV";
+const OLLAMA_CONFIGS_ENV: &str = "OLLAMA_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
