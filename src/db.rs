@@ -302,4 +302,23 @@ impl Database {
         debug!(target: TARGET_DB, "Counted {} entries in the queue", count);
         Ok(count)
     }
+
+    /// Cleans up the rss_queue by removing URLs already present in the articles table.
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn clean_queue(&self) -> Result<u64, sqlx::Error> {
+        debug!(target: TARGET_DB, "Cleaning up the queue by removing processed URLs");
+
+        let affected_rows = sqlx::query(
+            r#"
+                DELETE FROM rss_queue
+                WHERE normalized_url IN (SELECT normalized_url FROM articles)
+                "#,
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+
+        info!(target: TARGET_DB, "Cleaned up {} entries from the queue", affected_rows);
+        Ok(affected_rows)
+    }
 }

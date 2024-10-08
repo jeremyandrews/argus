@@ -14,6 +14,11 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
     let db = Database::instance().await;
 
     loop {
+        // Clean up the queue
+        if let Err(err) = db.clean_queue().await {
+            error!(target: TARGET_WEB_REQUEST, "Failed to clean queue: {}", err);
+        }
+
         // Count and log the number of entries in the queue
         match db.count_queue_entries().await {
             Ok(count) => {
