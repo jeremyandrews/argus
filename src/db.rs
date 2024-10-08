@@ -96,7 +96,7 @@ impl Database {
         let normalized_url = normalizer.compute_normalization_string(&parsed_url);
 
         // Check if the URL already exists in the articles table
-        let exists_in_articles = sqlx::query("SELECT 1 FROM articles WHERE url = ?1")
+        let exists_in_articles = sqlx::query("SELECT 1 FROM articles WHERE normalized_url = ?1")
             .bind(&normalized_url)
             .fetch_optional(&self.pool)
             .await?
@@ -108,7 +108,7 @@ impl Database {
         }
 
         // Check if the URL already exists in the rss_queue table
-        let exists_in_queue = sqlx::query("SELECT 1 FROM rss_queue WHERE url = ?1")
+        let exists_in_queue = sqlx::query("SELECT 1 FROM rss_queue WHERE normalized_url = ?1")
             .bind(&normalized_url)
             .fetch_optional(&self.pool)
             .await?
@@ -128,11 +128,12 @@ impl Database {
         debug!(target: TARGET_DB, "Adding URL to queue: {}", normalized_url);
         sqlx::query(
             r#"
-        INSERT INTO rss_queue (url, title, seen_at)
-        VALUES (?1, ?2, ?3)
-        ON CONFLICT(url) DO NOTHING
+        INSERT INTO rss_queue (url, normalized_url, title, seen_at)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(normalized_url) DO NOTHING
         "#,
         )
+        .bind(url)
         .bind(&normalized_url)
         .bind(title)
         .bind(seen_at)
@@ -235,21 +236,38 @@ impl Database {
             "oldest" => {
                 info!(target: TARGET_DB, "loading oldest URL");
                 sqlx::query(
-                    "SELECT url, normalized_url, title FROM rss_queue ORDER BY seen_at ASC LIMIT 1",
+                    "SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title
+                    FROM rss_queue
+                    LEFT JOIN articles ON rss_queue.normalized_url = articles.normalized_url
+                    WHERE articles.normalized_url IS NULL
+                    ORDER BY rss_queue.seen_at ASC
+                    LIMIT 1",
                 )
                 .fetch_optional(&mut transaction)
                 .await?
             }
             "newest" => {
                 info!(target: TARGET_DB, "loading newest URL");
-                sqlx::query("SELECT url, normalized_url, title FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
-                    .fetch_optional(&mut transaction)
-                    .await?
+                sqlx::query(
+                    "SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title
+                    FROM rss_queue
+                    LEFT JOIN articles ON rss_queue.normalized_url = articles.normalized_url
+                    WHERE articles.normalized_url IS NULL
+                    ORDER BY rss_queue.seen_at DESC
+                    LIMIT 1",
+                )
+                .fetch_optional(&mut transaction)
+                .await?
             }
             _ => {
                 info!(target: TARGET_DB, "loading random URL");
                 sqlx::query(
-                    "SELECT url, normalized_url, title FROM rss_queue ORDER BY RANDOM() LIMIT 1",
+                    "SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title
+                    FROM rss_queue
+                    LEFT JOIN articles ON rss_queue.normalized_url = articles.normalized_url
+                    WHERE articles.normalized_url IS NULL
+                    ORDER BY RANDOM()
+                    LIMIT 1",
                 )
                 .fetch_optional(&mut transaction)
                 .await?
@@ -268,7 +286,7 @@ impl Database {
             debug!(target: TARGET_DB, "Fetched and deleted URL from queue: {}", url);
             Ok(Some((url, title)))
         } else {
-            debug!(target: TARGET_DB, "No URL found in queue");
+            debug!(target: TARGET_DB, "No new URLs found in queue");
             transaction.rollback().await?;
             Ok(None)
         }
