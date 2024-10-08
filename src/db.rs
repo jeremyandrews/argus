@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
 use tracing::{debug, error, info, instrument};
 use url::Url;
+use urlnorm::UrlNormalizer;
 
 use crate::TARGET_DB;
 
@@ -34,21 +35,23 @@ impl Database {
             r#"
             CREATE TABLE IF NOT EXISTS articles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL UNIQUE,
+                url TEXT NOT NULL,
+                normalized_url TEXT NOT NULL UNIQUE,
                 seen_at TEXT NOT NULL,
                 is_relevant BOOLEAN NOT NULL,
                 category TEXT,
                 analysis TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
-
+        
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL UNIQUE,
+                url TEXT NOT NULL,
+                normalized_url TEXT NOT NULL UNIQUE,
                 title TEXT,
                 seen_at TEXT NOT NULL
             );
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_seen_at_url ON rss_queue (seen_at, url);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url);
             "#,
         )
         .execute(&mut conn)
@@ -79,32 +82,40 @@ impl Database {
             return Err(sqlx::Error::Protocol("Empty URL provided".into()));
         }
 
-        if Url::parse(url).is_err() {
-            error!(target: TARGET_DB, "Attempted to add an invalid URL to the queue: {}", url);
-            return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
-        }
+        // Parse the URL
+        let parsed_url = match Url::parse(url) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                error!(target: TARGET_DB, "Attempted to add an invalid URL ({}) to the queue: {}", url, e);
+                return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
+            }
+        };
+
+        // Normalize the URL
+        let normalizer = UrlNormalizer::default();
+        let normalized_url = normalizer.compute_normalization_string(&parsed_url);
 
         // Check if the URL already exists in the articles table
         let exists_in_articles = sqlx::query("SELECT 1 FROM articles WHERE url = ?1")
-            .bind(url)
+            .bind(&normalized_url)
             .fetch_optional(&self.pool)
             .await?
             .is_some();
 
         if exists_in_articles {
-            debug!(target: TARGET_DB, "URL already exists in articles: {}", url);
+            debug!(target: TARGET_DB, "URL already exists in articles: {}", normalized_url);
             return Ok(false); // Return false since the article exists
         }
 
         // Check if the URL already exists in the rss_queue table
         let exists_in_queue = sqlx::query("SELECT 1 FROM rss_queue WHERE url = ?1")
-            .bind(url)
+            .bind(&normalized_url)
             .fetch_optional(&self.pool)
             .await?
             .is_some();
 
         if exists_in_queue {
-            debug!(target: TARGET_DB, "URL already exists in the queue: {}", url);
+            debug!(target: TARGET_DB, "URL already exists in the queue: {}", &normalized_url);
             return Ok(false); // Return false since the article exists in the queue
         }
 
@@ -114,7 +125,7 @@ impl Database {
             .as_secs()
             .to_string();
 
-        debug!(target: TARGET_DB, "Adding URL to queue: {}", url);
+        debug!(target: TARGET_DB, "Adding URL to queue: {}", normalized_url);
         sqlx::query(
             r#"
         INSERT INTO rss_queue (url, title, seen_at)
@@ -122,12 +133,12 @@ impl Database {
         ON CONFLICT(url) DO NOTHING
         "#,
         )
-        .bind(url)
+        .bind(&normalized_url)
         .bind(title)
         .bind(seen_at)
         .execute(&self.pool)
         .await?;
-        debug!(target: TARGET_DB, "URL added to queue: {}", url);
+        debug!(target: TARGET_DB, "URL added to queue: {}", normalized_url);
 
         Ok(true) // Return true since a new article was added
     }
@@ -140,6 +151,19 @@ impl Database {
         category: Option<&str>,
         analysis: Option<&str>,
     ) -> Result<(), sqlx::Error> {
+        // Parse the URL
+        let parsed_url = match Url::parse(url) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                error!(target: TARGET_DB, "Attempted to add an invalid URL ({}) to the queue: {}", url, e);
+                return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
+            }
+        };
+
+        // Normalize the URL
+        let normalizer = UrlNormalizer::default();
+        let normalized_url = normalizer.compute_normalization_string(&parsed_url);
+
         let seen_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time travel")
@@ -149,9 +173,10 @@ impl Database {
         debug!(target: TARGET_DB, "Adding/updating article: {}", url);
         sqlx::query(
             r#"
-            INSERT INTO articles (url, seen_at, is_relevant, category, analysis)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             ON CONFLICT(url) DO UPDATE SET
+                url = excluded.url,
                 seen_at = excluded.seen_at,
                 is_relevant = excluded.is_relevant,
                 category = excluded.category,
@@ -159,6 +184,7 @@ impl Database {
             "#,
         )
         .bind(url)
+        .bind(normalized_url)
         .bind(seen_at)
         .bind(is_relevant)
         .bind(category)
@@ -174,13 +200,26 @@ impl Database {
     pub async fn has_seen(&self, url: &str) -> Result<bool, sqlx::Error> {
         debug!(target: TARGET_DB, "Checking if article has been seen: {}", url);
 
-        let row = sqlx::query("SELECT 1 FROM articles WHERE url = ?1")
-            .bind(url)
+        // Parse the URL
+        let parsed_url = match Url::parse(url) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                error!(target: TARGET_DB, "Attempted to add an invalid URL ({}) to the queue: {}", url, e);
+                return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
+            }
+        };
+
+        // Normalize the URL
+        let normalizer = UrlNormalizer::default();
+        let normalized_url = normalizer.compute_normalization_string(&parsed_url);
+
+        let row = sqlx::query("SELECT 1 FROM articles WHERE normalized_url = ?1")
+            .bind(&normalized_url)
             .fetch_optional(&self.pool)
             .await?;
 
         let seen = row.is_some();
-        debug!(target: TARGET_DB, "Article seen status for {}: {}", url, seen);
+        debug!(target: TARGET_DB, "Article seen status for {}: {}", normalized_url, seen);
         Ok(seen)
     }
 
@@ -195,29 +234,34 @@ impl Database {
         let row = match order {
             "oldest" => {
                 info!(target: TARGET_DB, "loading oldest URL");
-                sqlx::query("SELECT url, title FROM rss_queue ORDER BY seen_at ASC LIMIT 1")
-                    .fetch_optional(&mut transaction)
-                    .await?
+                sqlx::query(
+                    "SELECT url, normalized_url, title FROM rss_queue ORDER BY seen_at ASC LIMIT 1",
+                )
+                .fetch_optional(&mut transaction)
+                .await?
             }
             "newest" => {
                 info!(target: TARGET_DB, "loading newest URL");
-                sqlx::query("SELECT url, title FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
+                sqlx::query("SELECT url, normalized_url, title FROM rss_queue ORDER BY seen_at DESC LIMIT 1")
                     .fetch_optional(&mut transaction)
                     .await?
             }
             _ => {
                 info!(target: TARGET_DB, "loading random URL");
-                sqlx::query("SELECT url, title FROM rss_queue ORDER BY RANDOM() LIMIT 1")
-                    .fetch_optional(&mut transaction)
-                    .await?
+                sqlx::query(
+                    "SELECT url, normalized_url, title FROM rss_queue ORDER BY RANDOM() LIMIT 1",
+                )
+                .fetch_optional(&mut transaction)
+                .await?
             }
         };
 
         if let Some(row) = row {
             let url: String = row.get("url");
+            let normalized_url: String = row.get("normalized_url");
             let title: Option<String> = row.get("title");
-            sqlx::query("DELETE FROM rss_queue WHERE url = ?1")
-                .bind(&url)
+            sqlx::query("DELETE FROM rss_queue WHERE normalized_url = ?1")
+                .bind(&normalized_url)
                 .execute(&mut transaction)
                 .await?;
             transaction.commit().await?;

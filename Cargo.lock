@@ -72,7 +72,7 @@ dependencies = [
 
 [[package]]
 name = "argus"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "chrono",
  "emailmessage",
@@ -92,6 +92,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "url",
+ "urlnorm",
 ]
 
 [[package]]
@@ -3045,6 +3046,16 @@ dependencies = [
  "form_urlencoded",
  "idna 0.5.0",
  "percent-encoding 2.3.1",
+]
+
+[[package]]
+name = "urlnorm"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f4ed8848fd98f8f982d7a98cea30c104aacccf8d5908a8f7a3c76b9897f741d"
+dependencies = [
+ "regex",
+ "url",
 ]
 
 [[package]]
