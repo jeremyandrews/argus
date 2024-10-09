@@ -616,7 +616,8 @@ async fn summarize_and_send_article(
             "summary": summary_response,
             "critical_analysis": critical_analysis_response,
             "logical_fallacies": logical_fallacies_response,
-            "relation_to_topic": relation_to_topic_response
+            "relation_to_topic": relation_to_topic_response,
+            "model": params.model
         });
 
         send_to_slack(
@@ -726,7 +727,8 @@ async fn process_topics(
                             "summary": summary_response,
                             "critical_analysis": critical_analysis_response,
                             "logical_fallacies": logical_fallacies_response,
-                            "relation_to_topic": relation_response
+                            "relation_to_topic": relation_response,
+                            "model": params.model
                         });
 
                         send_to_slack(

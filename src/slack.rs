@@ -61,6 +61,7 @@ pub async fn send_to_slack(
     let relation_to_topic = response_json["relation_to_topic"]
         .as_str()
         .unwrap_or("No relation to topic available");
+    let model = response_json["model"].as_str().unwrap_or("Unknown model");
 
     let payload = json!({
         "channel": channel,
@@ -139,6 +140,23 @@ pub async fn send_to_slack(
                 "text": {
                     "type": "mrkdwn",
                     "text": relation_to_topic
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Model*"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": model
                 }
             }
         ],
