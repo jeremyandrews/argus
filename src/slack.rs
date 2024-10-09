@@ -143,9 +143,6 @@ pub async fn send_to_slack(
                 }
             },
             {
-                "type": "divider"
-            },
-            {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
