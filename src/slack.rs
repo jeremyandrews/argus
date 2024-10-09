@@ -158,6 +158,9 @@ pub async fn send_to_slack(
                     "type": "mrkdwn",
                     "text": model
                 }
+            },
+            {
+                "type": "divider"
             }
         ],
         "unfurl_links": false,
