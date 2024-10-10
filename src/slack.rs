@@ -76,11 +76,18 @@ pub async fn send_to_slack(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": format!("{}\n{}\n{}", article, topic, tiny_summary),
+                    "text": format!("{}\n{}", article, tiny_summary),
                 }
             },
             {
                 "type": "divider"
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": topic,
+                }
             }
         ],
         "unfurl_links": false,
