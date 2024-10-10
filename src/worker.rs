@@ -551,6 +551,15 @@ async fn summarize_and_send_article(
         .await
         .unwrap_or_default();
 
+    // Generate tiny summary
+    let tiny_summary_prompt = format!(
+        "{} | Please summarize the above summary down to 200 characters or less.",
+        summary_response
+    );
+    let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
+        .await
+        .unwrap_or_default();
+
     // Generate critical analysis
     let critical_analysis_prompt = format!(
         "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English.",
@@ -634,6 +643,7 @@ async fn summarize_and_send_article(
         let detailed_response_json = json!({
             "topic": format!("{} {}", affected_summary, non_affected_summary),
             "summary": summary_response,
+            "tiny_summary": tiny_summary_response,
             "critical_analysis": critical_analysis_response,
             "logical_fallacies": logical_fallacies_response,
             "relation_to_topic": relation_to_topic_response,
@@ -722,6 +732,16 @@ async fn process_topics(
                 let summary_response = generate_llm_response(&summary_prompt, params)
                     .await
                     .unwrap_or_default();
+
+                // Generate tiny summary
+                let tiny_summary_prompt = format!(
+                    "{} | Please summarize the above summary down to 200 characters or less.",
+                    summary_response
+                );
+                let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
+                    .await
+                    .unwrap_or_default();
+
                 let critical_analysis_response =
                     generate_llm_response(&critical_analysis_prompt, params)
                         .await
@@ -747,6 +767,7 @@ async fn process_topics(
                         let detailed_response_json = json!({
                             "topic": topic_name,
                             "summary": summary_response,
+                            "tiny_summary": tiny_summary_response,
                             "critical_analysis": critical_analysis_response,
                             "logical_fallacies": logical_fallacies_response,
                             "relation_to_topic": relation_response,

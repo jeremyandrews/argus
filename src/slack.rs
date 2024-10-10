@@ -54,6 +54,9 @@ pub async fn send_to_slack(
     let summary = response_json["summary"]
         .as_str()
         .unwrap_or("No summary available");
+    let tiny_summary = response_json["tiny_summary"]
+        .as_str()
+        .unwrap_or("No tiny summary available");
     let critical_analysis = response_json["critical_analysis"]
         .as_str()
         .unwrap_or("No critical analysis available");
@@ -64,9 +67,6 @@ pub async fn send_to_slack(
         .as_str()
         .unwrap_or("No relation to topic available");
     let model = response_json["model"].as_str().unwrap_or("Unknown model");
-
-    // Generate a tiny summary (e.g., first 200 characters)
-    let tiny_summary = summary.chars().take(200).collect::<String>();
 
     // First message payload (title, topic, and tiny summary in a block)
     let first_payload = json!({
