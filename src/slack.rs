@@ -65,16 +65,24 @@ pub async fn send_to_slack(
         .unwrap_or("No relation to topic available");
     let model = response_json["model"].as_str().unwrap_or("Unknown model");
 
-    // Extract title (assuming 'article' is the title; adjust as needed)
-    let title = article;
-
     // Generate a tiny summary (e.g., first 200 characters)
     let tiny_summary = summary.chars().take(200).collect::<String>();
 
-    // First message payload (title and tiny summary)
+    // First message payload (title, topic, and tiny summary in a block)
     let first_payload = json!({
         "channel": channel,
-        "text": format!("*{}*\n\n{}", title, tiny_summary),
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!(
+                        "*{}*\n*Topic:* {}\n\n{}",
+                        article, topic, tiny_summary
+                    )
+                }
+            }
+        ],
         "unfurl_links": false,
         "unfurl_media": false,
     });
@@ -179,10 +187,10 @@ pub async fn send_to_slack(
                 {
                     "type": "section",
                     "text": {
-                        "type": "mrkdwn",
-                        "text": model
-                    }
-                },
+                            "type": "mrkdwn",
+                            "text": model
+                        }
+                    },
                 {
                     "type": "divider"
                 }
