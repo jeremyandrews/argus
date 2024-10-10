@@ -40,9 +40,11 @@ impl Database {
                 seen_at TEXT NOT NULL,
                 is_relevant BOOLEAN NOT NULL,
                 category TEXT,
-                analysis TEXT
+                analysis TEXT,
+                hash TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
+            CREATE INDEX IF NOT EXISTS idx_hash ON articles (hash);
         
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +153,7 @@ impl Database {
         is_relevant: bool,
         category: Option<&str>,
         analysis: Option<&str>,
+        hash: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         // Parse the URL
         let parsed_url = match Url::parse(url) {
@@ -174,14 +177,15 @@ impl Database {
         debug!(target: TARGET_DB, "Adding/updating article: {}", url);
         sqlx::query(
             r#"
-            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, hash)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(url) DO UPDATE SET
                 url = excluded.url,
                 seen_at = excluded.seen_at,
                 is_relevant = excluded.is_relevant,
                 category = excluded.category,
-                analysis = excluded.analysis
+                analysis = excluded.analysis,
+                hash = excluded.hash
             "#,
         )
         .bind(url)
@@ -190,6 +194,7 @@ impl Database {
         .bind(is_relevant)
         .bind(category)
         .bind(analysis)
+        .bind(hash)
         .execute(&self.pool)
         .await?;
 
@@ -320,5 +325,15 @@ impl Database {
 
         info!(target: TARGET_DB, "Cleaned up {} entries from the queue", affected_rows);
         Ok(affected_rows)
+    }
+
+    // Check if the hash of the text has already been seen, to filter out articles that
+    // have multiple URLs for the same identical text.
+    pub async fn has_hash(&self, hash: &str) -> Result<bool, sqlx::Error> {
+        let row = sqlx::query("SELECT 1 FROM articles WHERE hash = ?1")
+            .bind(hash)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
     }
 }

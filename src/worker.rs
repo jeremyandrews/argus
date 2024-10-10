@@ -2,6 +2,7 @@ use ollama_rs::Ollama;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use readability::extractor;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -144,6 +145,16 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
+            let mut hasher = Sha256::new();
+            hasher.update(article_text.as_bytes());
+            let article_hash = format!("{:x}", hasher.finalize());
+
+            // Check if the hash already exists in the database
+            if params.db.has_hash(&article_hash).await.unwrap_or(false) {
+                info!(target: TARGET_LLM_REQUEST, "Article with hash {} already processed, skipping.", article_hash);
+                return;
+            }
+
             let mut affected_regions = BTreeSet::new();
             let mut affected_people = BTreeSet::new();
             let mut affected_places = BTreeSet::new();
@@ -179,11 +190,19 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
                     &affected_places,
                     &non_affected_people,
                     &non_affected_places,
+                    &article_hash,
                     params,
                 )
                 .await;
             } else {
-                process_topics(&article_text, &article_url, &article_title, params).await;
+                process_topics(
+                    &article_text,
+                    &article_url,
+                    &article_title,
+                    &article_hash,
+                    params,
+                )
+                .await;
             }
             weighted_sleep().await;
         }
@@ -515,6 +534,7 @@ async fn summarize_and_send_article(
     affected_places: &BTreeSet<String>,
     non_affected_people: &BTreeSet<String>,
     non_affected_places: &BTreeSet<String>,
+    article_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
@@ -635,6 +655,7 @@ async fn summarize_and_send_article(
                 true,
                 None,
                 Some(&detailed_response_json.to_string()),
+                Some(&article_hash),
             )
             .await
         {
@@ -653,6 +674,7 @@ async fn process_topics(
     article_text: &str,
     article_url: &str,
     article_title: &str,
+    article_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
@@ -746,6 +768,7 @@ async fn process_topics(
                                 true,
                                 Some(topic_name),
                                 Some(&detailed_response_json.to_string()),
+                                Some(&article_hash),
                             )
                             .await
                         {
@@ -784,7 +807,11 @@ async fn process_topics(
 
     // If no relevant topic was found, add the URL to the database as a non-relevant article
     if !article_relevant {
-        match params.db.add_article(article_url, false, None, None).await {
+        match params
+            .db
+            .add_article(article_url, false, None, None, Some(&article_hash))
+            .await
+        {
             Ok(_) => {
                 debug!(target: TARGET_DB, "worker {}: Successfully added non-relevant article to database", worker_id)
             }
@@ -855,7 +882,11 @@ async fn handle_access_denied(
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
     if access_denied {
-        match params.db.add_article(article_url, false, None, None).await {
+        match params
+            .db
+            .add_article(article_url, false, None, None, None)
+            .await
+        {
             Ok(_) => {
                 warn!(target: TARGET_WEB_REQUEST, "worker {}: Access denied for URL: {} ({})", worker_id, article_url, article_title)
             }
