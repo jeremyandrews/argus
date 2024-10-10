@@ -544,7 +544,7 @@ async fn summarize_and_send_article(
 
     // Generate summary
     let summary_prompt = format!(
-        "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points",
+        "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points. Format the summary for easy and clear readability on slack, you can use MD formatting.",
         article_text
     );
     let summary_response = generate_llm_response(&summary_prompt, params)
@@ -553,7 +553,7 @@ async fn summarize_and_send_article(
 
     // Generate tiny summary
     let tiny_summary_prompt = format!(
-        "{} | Please summarize the above summary down to 200 characters or less.",
+        "{} | Please summarize down to 200 characters or less.",
         summary_response
     );
     let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
@@ -562,7 +562,7 @@ async fn summarize_and_send_article(
 
     // Generate critical analysis
     let critical_analysis_prompt = format!(
-        "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English.",
+        "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English. Format for easy and clear reasability on Slack, you can use MD formatting.",
         article_text
     );
     let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
@@ -571,7 +571,7 @@ async fn summarize_and_send_article(
 
     // Generate logical fallacies
     let logical_fallacies_prompt = format!(
-        "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy) please explain in one or two short sentences. Finally, in one or a maximum of two short sentences identify the strength of arguments and evidence presented. Do all in American English, and without explaining what you are doing.",
+        "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy) please explain in one or two short sentences. Finally, in one or a maximum of two short sentences identify the strength of arguments and evidence presented. Do all in American English, and without explaining what you are doing. Format for easy and clear reasability on Slack, you can use MD formatting.",
         article_text
     );
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
@@ -711,21 +711,21 @@ async fn process_topics(
                 article_relevant = true;
 
                 let summary_prompt = format!(
-                    "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points. Please do this without explaining what you're doing.",
+                    "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points. Please do this without explaining what you're doing. Format the summary for easy and clear readability on Slack, you can use MD formatting.",
                     article_text
                 );
 
                 let critical_analysis_prompt = format!(
-                    "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English.",
+                    "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English. Format for easy and clear readability on Slack, you can use MD formatting.",
                     article_text
                 );
 
                 let logical_fallacies_prompt = format!(
-                    "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy) please explain in one or two short sentences. Finally, in one or a maximum of two short sentences identify the strength of arguments and evidence presented. Do all in American English, and without explaining what you are doing.",
+                    "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy) please explain in one or two short sentences. Finally, in one or a maximum of two short sentences identify the strength of arguments and evidence presented. Do all in American English, and without explaining what you are doing. Format for easy and clear readability on Slack, you can use MD formatting.",
                     article_text);
 
                 let relation_prompt = format!(
-                    "{} | Briefly explain in American English in one or two short sentences how this relates to {} starting with the words 'This relates to {}`. Do so in American English, without explaining what you're doing.",
+                    "{} | Briefly explain in American English in one or two short sentences how this relates to {} starting with the words 'This relates to {}`. Do so in American English, without explaining what you're doing. Format for easy and clear readability on Slack, you can use MD formatting.",
                     article_text, topic_name, topic_name
                 );
 
@@ -735,7 +735,7 @@ async fn process_topics(
 
                 // Generate tiny summary
                 let tiny_summary_prompt = format!(
-                    "{} | Please summarize the above summary down to 200 characters or less.",
+                    "{} | Please summarize down to 200 characters or less.",
                     summary_response
                 );
                 let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
