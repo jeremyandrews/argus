@@ -44,11 +44,13 @@ pub async fn send_to_slack(
         .as_str()
         .unwrap_or("No topic available")
         .trim();
+
     // Determine the Slack channel based on the matched topic
     let channel = topic_mappings
         .get(topic)
         .copied()
         .unwrap_or(default_channel);
+
     let summary = response_json["summary"]
         .as_str()
         .unwrap_or("No summary available");
@@ -63,107 +65,147 @@ pub async fn send_to_slack(
         .unwrap_or("No relation to topic available");
     let model = response_json["model"].as_str().unwrap_or("Unknown model");
 
-    let payload = json!({
+    // Extract title (assuming 'article' is the title; adjust as needed)
+    let title = article;
+
+    // Generate a tiny summary (e.g., first 200 characters)
+    let tiny_summary = summary.chars().take(200).collect::<String>();
+
+    // First message payload (title and tiny summary)
+    let first_payload = json!({
         "channel": channel,
-        "blocks": [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("{}
-    {}", article, topic),
-                }
-            },
-            {
-                "type": "divider"
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Summary*"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": summary
-                }
-            },
-            {
-                "type": "divider"
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Critical Analysis*"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": critical_analysis
-                }
-            },
-            {
-                "type": "divider"
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Logical Fallacies*"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": logical_fallacies
-                }
-            },
-            {
-                "type": "divider"
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Relevance*"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": relation_to_topic
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Model*"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": model
-                }
-            },
-            {
-                "type": "divider"
-            }
-        ],
+        "text": format!("*{}*\n\n{}", title, tiny_summary),
         "unfurl_links": false,
         "unfurl_media": false,
     });
 
+    // Send the first message and get its 'ts' for threading
+    if let Some(slack_response_json) =
+        send_slack_message(&client, slack_token, &first_payload, &worker_id).await
+    {
+        let ts = slack_response_json["ts"].as_str().unwrap_or("").to_string();
+        if ts.is_empty() {
+            error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to get ts from Slack response", worker_id);
+            return;
+        }
+
+        // Second message payload (rest of the content)
+        let second_payload = json!({
+            "channel": channel,
+            "thread_ts": ts,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": format!("{}\n{}", article, topic),
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Summary*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": summary
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Critical Analysis*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": critical_analysis
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Logical Fallacies*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": logical_fallacies
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Relevance*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": relation_to_topic
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "*Model*"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": model
+                    }
+                },
+                {
+                    "type": "divider"
+                }
+            ],
+            "unfurl_links": false,
+            "unfurl_media": false,
+        });
+
+        // Send the second message in the thread
+        let _ = send_slack_message(&client, slack_token, &second_payload, &worker_id).await;
+    } else {
+        error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to send first Slack message", worker_id);
+        return;
+    }
+}
+
+// Helper function to send a Slack message with retries
+async fn send_slack_message(
+    client: &Client,
+    slack_token: &str,
+    payload: &serde_json::Value,
+    worker_id: &str,
+) -> Option<serde_json::Value> {
     let max_retries = 3;
     let mut backoff = 2;
     let max_backoff = 32; // Maximum backoff time in seconds
@@ -185,7 +227,13 @@ pub async fn send_to_slack(
             Ok(Ok(response)) => {
                 if response.status().is_success() {
                     debug!(target: TARGET_WEB_REQUEST, "Worker {}: Slack notification sent successfully", worker_id);
-                    return;
+                    match response.json::<serde_json::Value>().await {
+                        Ok(json) => return Some(json),
+                        Err(err) => {
+                            error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to parse Slack response JSON: {:?}", worker_id, err);
+                            return None;
+                        }
+                    }
                 } else {
                     let error_text = match response.text().await {
                         Ok(text) => text,
@@ -223,4 +271,6 @@ pub async fn send_to_slack(
             );
         }
     }
+
+    None
 }
