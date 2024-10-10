@@ -553,7 +553,7 @@ async fn summarize_and_send_article(
 
     // Generate tiny summary
     let tiny_summary_prompt = format!(
-        "{} | Please summarize down to 200 characters or less.",
+        "{} | Please summarize down to 200 characters or less. Do not tell me what you're doing.",
         summary_response
     );
     let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
@@ -735,7 +735,7 @@ async fn process_topics(
 
                 // Generate tiny summary
                 let tiny_summary_prompt = format!(
-                    "{} | Please summarize down to 200 characters or less.",
+                    "{} | Please summarize down to 200 characters or less. Do not tell me what you're doing.",
                     summary_response
                 );
                 let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
