@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
+use url::Url;
 
 use crate::db::Database;
 use crate::llm::generate_llm_response;
@@ -133,6 +134,7 @@ pub async fn worker_loop(
 
 pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
     let worker_id = format!("{:?}", std::thread::current().id());
+
     debug!(
         target: TARGET_LLM_REQUEST,
         "worker {}: Reviewing => {} ({})",
@@ -142,6 +144,41 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
     );
     let article_url = item.url;
     let article_title = item.title.unwrap_or_default();
+
+    // Compute title_domain_hash
+    let parsed_url = match Url::parse(&article_url) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            error!(
+                target: TARGET_LLM_REQUEST,
+                "Failed to parse article URL: {}: {}",
+                article_url,
+                e
+            );
+            return;
+        }
+    };
+    let base_domain = parsed_url.domain().unwrap_or("");
+    let title_domain_concat = format!("{}{}", base_domain, article_title);
+
+    let mut hasher = Sha256::new();
+    hasher.update(title_domain_concat.as_bytes());
+    let title_domain_hash = format!("{:x}", hasher.finalize());
+
+    // Check if this hash already exists in the database
+    if params
+        .db
+        .has_title_domain_hash(&title_domain_hash)
+        .await
+        .unwrap_or(false)
+    {
+        info!(
+            target: TARGET_LLM_REQUEST,
+            "Article with title_domain_hash {} already processed, skipping.",
+            title_domain_hash
+        );
+        return;
+    }
 
     match extract_article_text(&article_url).await {
         Ok(article_text) => {
@@ -191,6 +228,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
                     &non_affected_people,
                     &non_affected_places,
                     &article_hash,
+                    &title_domain_hash,
                     params,
                 )
                 .await;
@@ -200,6 +238,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
                     &article_url,
                     &article_title,
                     &article_hash,
+                    &title_domain_hash,
                     params,
                 )
                 .await;
@@ -207,7 +246,14 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
             weighted_sleep().await;
         }
         Err(access_denied) => {
-            handle_access_denied(access_denied, &article_url, &article_title, params).await;
+            handle_access_denied(
+                access_denied,
+                &article_url,
+                &article_title,
+                &&title_domain_hash,
+                params,
+            )
+            .await;
         }
     }
 }
@@ -535,6 +581,7 @@ async fn summarize_and_send_article(
     non_affected_people: &BTreeSet<String>,
     non_affected_places: &BTreeSet<String>,
     article_hash: &str,
+    title_domain_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
@@ -665,7 +712,9 @@ async fn summarize_and_send_article(
                 true,
                 None,
                 Some(&detailed_response_json.to_string()),
+                Some(&tiny_summary_response),
                 Some(&article_hash),
+                Some(&title_domain_hash),
             )
             .await
         {
@@ -685,6 +734,7 @@ async fn process_topics(
     article_url: &str,
     article_title: &str,
     article_hash: &str,
+    title_domain_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
@@ -789,7 +839,9 @@ async fn process_topics(
                                 true,
                                 Some(topic_name),
                                 Some(&detailed_response_json.to_string()),
+                                Some(&tiny_summary_response),
                                 Some(&article_hash),
+                                Some(&title_domain_hash),
                             )
                             .await
                         {
@@ -830,7 +882,15 @@ async fn process_topics(
     if !article_relevant {
         match params
             .db
-            .add_article(article_url, false, None, None, Some(&article_hash))
+            .add_article(
+                article_url,
+                false,
+                None,
+                None,
+                None,
+                Some(&article_hash),
+                Some(&title_domain_hash),
+            )
             .await
         {
             Ok(_) => {
@@ -899,13 +959,22 @@ async fn handle_access_denied(
     access_denied: bool,
     article_url: &str,
     article_title: &str,
+    title_domain_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let worker_id = format!("{:?}", std::thread::current().id());
     if access_denied {
         match params
             .db
-            .add_article(article_url, false, None, None, None)
+            .add_article(
+                article_url,
+                false,
+                None,
+                None,
+                None,
+                None,
+                Some(&title_domain_hash),
+            )
             .await
         {
             Ok(_) => {

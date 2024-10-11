@@ -40,11 +40,14 @@ impl Database {
                 seen_at TEXT NOT NULL,
                 is_relevant BOOLEAN NOT NULL,
                 category TEXT,
+                tiny_summary TEXT,
                 analysis TEXT,
-                hash TEXT
+                hash TEXT,
+                title_domain_hash TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
             CREATE INDEX IF NOT EXISTS idx_hash ON articles (hash);
+            CREATE INDEX IF NOT EXISTS idx_title_domain_hash ON articles (title_domain_hash);
         
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,7 +156,9 @@ impl Database {
         is_relevant: bool,
         category: Option<&str>,
         analysis: Option<&str>,
+        tiny_summary: Option<&str>,
         hash: Option<&str>,
+        title_domain_hash: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         // Parse the URL
         let parsed_url = match Url::parse(url) {
@@ -177,15 +182,17 @@ impl Database {
         debug!(target: TARGET_DB, "Adding/updating article: {}", url);
         sqlx::query(
             r#"
-            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, hash)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(url) DO UPDATE SET
                 url = excluded.url,
                 seen_at = excluded.seen_at,
                 is_relevant = excluded.is_relevant,
                 category = excluded.category,
                 analysis = excluded.analysis,
+                tiny_summary = excluded.tiny_summary,
                 hash = excluded.hash
+                title_domain_hash = excluded.title_domain_hash
             "#,
         )
         .bind(url)
@@ -194,7 +201,9 @@ impl Database {
         .bind(is_relevant)
         .bind(category)
         .bind(analysis)
+        .bind(tiny_summary)
         .bind(hash)
+        .bind(title_domain_hash)
         .execute(&self.pool)
         .await?;
 
@@ -332,6 +341,19 @@ impl Database {
     pub async fn has_hash(&self, hash: &str) -> Result<bool, sqlx::Error> {
         let row = sqlx::query("SELECT 1 FROM articles WHERE hash = ?1")
             .bind(hash)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
+    // Check if the hash of the domain and title has already been seen, another way to
+    // filter out articles that have multiple URLs for the same article.
+    pub async fn has_title_domain_hash(
+        &self,
+        title_domain_hash: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let row = sqlx::query("SELECT 1 FROM articles WHERE title_domain_hash = ?1")
+            .bind(title_domain_hash)
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.is_some())
