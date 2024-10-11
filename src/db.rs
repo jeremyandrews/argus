@@ -186,13 +186,12 @@ impl Database {
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
             ON CONFLICT(url) DO UPDATE SET
                 url = excluded.url,
-                normalized_url = excluded.normalized_url,
                 seen_at = excluded.seen_at,
                 is_relevant = excluded.is_relevant,
                 category = excluded.category,
                 analysis = excluded.analysis,
                 tiny_summary = excluded.tiny_summary,
-                hash = excluded.hash
+                hash = excluded.hash,
                 title_domain_hash = excluded.title_domain_hash
             "#,
         )
