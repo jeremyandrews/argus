@@ -631,16 +631,14 @@ async fn summarize_and_send_article(
         content, and 10 represents unbiased, logically sound content. On the next line explain the score
         in no more than 10 words.
 
-        Leave a blank line, then please provide a style score from 1 to 10, where 1 represents very
-        poorly written text, and 10 represents eloquent and understandable text. On the next line
-        explain the score in no more than 10 words.
+        Then please provide a style score from 1 to 10, where 1 represents very poorly written text, and
+        10 represents eloquent and understandable text. On the next line explain the score in no more than
+        10 words.
 
-        Leave another blank line, then please provide a political weight that is either Left, Center
-        Left, Center, Center Right, Right, or not-applicable. On the next line explain the score in no
-        more than 10 words.
+        Then please provide a political weight that is either Left, Center Left, Center, Center Right,
+        Right, or not-applicable. On the next line explain the score in no more than 10 words.
 
-        Leave another blank line, then please provide a concise two to three sentence critical analysis
-        of the text in American English.
+        Then please provide a concise two to three sentence critical analysis of the text in American English.
 
         Do not tell me what you're doing, do not explain that you're writing in American English.
 
@@ -848,15 +846,14 @@ async fn process_topics(
                     content, and 10 represents unbiased, logically sound content. On the next line explain the score
                     in no more than 10 words.
 
-                    Leave a blank line, then please provide a style score from 1 to 10, where 1 represents very
-                    poorly written text, and 10 represents eloquent and understandable text. On the next line
-                    explain the score in no more than 10 words.
+                    Then please provide a style score from 1 to 10, where 1 represents very poorly written text, and
+                    10 represents eloquent and understandable text. On the next line explain the score in no more than
+                    10 words.
 
-                    Leave another blank line, then please provide a political weight that is either Left, Center
-                    Left, Center, Center Right, Right, or not-applicable. On the next line explain the score in no
-                    more than 10 words.
+                    Then please provide a political weight that is either Left, Center Left, Center, Center Right,
+                    Right, or not-applicable. On the next line explain the score in no more than 10 words.
 
-                    Leave another blank line, then please provide a concise two to three sentence critical analysis
+                    Then please provide a concise two to three sentence critical analysis
                     of the text in American English.
 
                     Do not tell me what you're doing, do not explain that you're writing in American English.
