@@ -591,7 +591,20 @@ async fn summarize_and_send_article(
 
     // Generate summary
     let summary_prompt = format!(
-        "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary (without telling me that's what you're doing) in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points. Format for easy and clear readability in ASCII text.",
+        "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary
+        in bullet points in American English that cover all the main ideas and key points from the
+        entire text, maintains the original text's structure and flow, and uses clear and concise
+        language. For really short texts (up to 25 words): simply quote the text, for short texts (up to
+        100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for
+        long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10
+        bullet points.
+
+        Do not tell me what you're doing, do not explain that you're summarizing in American English.
+
+        Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+        *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+        or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+        generate a newline.",
         article_text
     );
     let summary_response = generate_llm_response(&summary_prompt, params)
@@ -600,7 +613,10 @@ async fn summarize_and_send_article(
 
     // Generate tiny summary
     let tiny_summary_prompt = format!(
-        "{} | Please summarize down to 200 characters or less. Do not tell me what you're doing.",
+        "{} | Please summarize down to 200 characters or less. Write in American English.
+
+        Do not tell me what you're doing, do not explain that you're limiting yourself to 200 characters or
+        that you're writing in American English.",
         summary_response
     );
     let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
@@ -609,7 +625,29 @@ async fn summarize_and_send_article(
 
     // Generate critical analysis
     let critical_analysis_prompt = format!(
-        "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English. Format for easy and clear reasability in ASCII text.",
+        "{} | Carefully read and thoroughly understand the provided text.
+
+        Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious
+        content, and 10 represents unbiased, logically sound content. On the next line explain the score
+        in no more than 10 words.
+
+        Leave a blank line, then please provide a style score from 1 to 10, where 1 represents very
+        poorly written text, and 10 represents eloquent and understandable text. On the next line
+        explain the score in no more than 10 words.
+
+        Leave another blank line, then please provide a political weight that is either Left, Center
+        Left, Center, Center Right, Right, or not-applicable. On the next line explain the score in no
+        more than 10 words.
+
+        Leave another blank line, then please provide a concise two to three sentence critical analysis
+        of the text in American English.
+
+        Do not tell me what you're doing, do not explain that you're writing in American English.
+
+        Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+        *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+        or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+        generate a newline.",
         article_text
     );
     let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
@@ -618,7 +656,22 @@ async fn summarize_and_send_article(
 
     // Generate logical fallacies
     let logical_fallacies_prompt = format!(
-        "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy) please explain in one or two short sentences. Finally, in one or a maximum of two short sentences identify the strength of arguments and evidence presented. Do all in American English, and without explaining what you are doing. Format for easy and clear reasability in ASCII text.",
+        "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g.,
+        confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false
+        dichotomy) please explain in one or two short sentences. If there are none, state that in no
+        more than five words.
+
+        After a blank line, with a maximum of one or two short sentences, identify the strength of
+        arguments and evidence presented.
+
+        Write in accessible and clear American English.
+
+        Do not tell me what you're doing, do not explain that you're writing in American English.
+
+        Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+        *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+        or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+        generate a newline.",
         article_text
     );
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
@@ -642,7 +695,15 @@ async fn summarize_and_send_article(
                 .join(", ")
         );
         let how_prompt = format!(
-            "{} | How does this article affect the life and safety of people living in the following places: {}? Answer in a few sentences in American English without explaining what you're doing.",
+            "{} | How does this article affect the life and safety of people living in the following
+            places: {}? Answer in no more than two sentences in American English.
+
+            Do not tell me what you're doing, do not explain that you're writing in American English.
+
+            Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+            *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+            or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+            generate a newline.",
             article_text,
             affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
         );
@@ -760,22 +821,87 @@ async fn process_topics(
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 article_relevant = true;
 
+                // Generate summary
                 let summary_prompt = format!(
-                    "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary in bullet points in American English that cover all the main ideas and key points from the entire text, maintains the original text's structure and flow, and uses clear and concise language. For really short texts (up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10 bullet points. Please do this without explaining what you're doing. Format for easy and clear readability in ASCII text.",
+                    "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary
+                    in bullet points in American English that cover all the main ideas and key points from the
+                    entire text, maintains the original text's structure and flow, and uses clear and concise
+                    language. For really short texts (up to 25 words): simply quote the text, for short texts (up to
+                    100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for
+                    long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10
+                    bullet points.
+
+                    Do not tell me what you're doing, do not explain that you're summarizing in American English.
+
+                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+                    generate a newline.",
                     article_text
                 );
 
+                // Generate critical analysis
                 let critical_analysis_prompt = format!(
-                    "{} | Carefully read and thoroughly understand the provided text. Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious content, and 10 represents unbiased, logically sound content. Then on the next line provide a style score from 1 to 10, where 1 represents very poorly written text, and 10 represents eloquent and understandable text. Then on the next line provide a political score that is either Left, Center Left, Center, Center Right, Right, or not-applicable.  Finally on the next line, provide a concise two to three sentence critical analysis of the text in American English. Format for easy and clear readability in ASCII text.",
+                    "{} | Carefully read and thoroughly understand the provided text.
+
+                    Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious
+                    content, and 10 represents unbiased, logically sound content. On the next line explain the score
+                    in no more than 10 words.
+
+                    Leave a blank line, then please provide a style score from 1 to 10, where 1 represents very
+                    poorly written text, and 10 represents eloquent and understandable text. On the next line
+                    explain the score in no more than 10 words.
+
+                    Leave another blank line, then please provide a political weight that is either Left, Center
+                    Left, Center, Center Right, Right, or not-applicable. On the next line explain the score in no
+                    more than 10 words.
+
+                    Leave another blank line, then please provide a concise two to three sentence critical analysis
+                    of the text in American English.
+
+                    Do not tell me what you're doing, do not explain that you're writing in American English.
+
+                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+                    generate a newline.",
                     article_text
                 );
 
+                // Generate logical fallacies
                 let logical_fallacies_prompt = format!(
-                    "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g., confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false dichotomy) please explain in one or two short sentences. Finally, in one or a maximum of two short sentences identify the strength of arguments and evidence presented. Do all in American English, and without explaining what you are doing. Format for easy and clear readability in ASCII text.",
-                    article_text);
+                    "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g.,
+                    confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false
+                    dichotomy) please explain in one or two short sentences. If there are none, state that in no
+                    more than five words.
 
+                    After a blank line, with a maximum of one or two short sentences, identify the strength of
+                    arguments and evidence presented.
+
+                    Write in accessible and clear American English.
+
+                    Do not tell me what you're doing, do not explain that you're writing in American English.
+
+                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+                    generate a newline.",
+                    article_text
+                );
+
+                // Explain topic relations.
                 let relation_prompt = format!(
-                    "{} | Briefly explain in American English in one or two short sentences how this relates to {} starting with the words 'This relates to {}`. Do so in American English, without explaining what you're doing. Format for easy and clear readability in ASCII text.",
+                    "{} | Briefly explain in one or two short sentences how this relates to {}, starting with the
+                    words 'This relates to {}`.
+
+                    Write in accessible and clear American English.
+
+                    Do not tell me what you're doing, do not explain that you're writing in American English.
+
+                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
+                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
+                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
+                    generate a newline.",
                     article_text, topic_name, topic_name
                 );
 
@@ -785,7 +911,10 @@ async fn process_topics(
 
                 // Generate tiny summary
                 let tiny_summary_prompt = format!(
-                    "{} | Please summarize down to 200 characters or less. Do not tell me what you're doing.",
+                    "{} | Please summarize down to 200 characters or less. Write in American English.
+
+                    Do not tell me what you're doing, do not explain that you're limiting yourself to 200 characters or
+                    that you're writing in American English.",
                     summary_response
                 );
                 let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)

@@ -117,8 +117,16 @@ pub async fn send_to_slack(
 
         let second_payload = json!({
             "channel": channel,
-            "text": full_message_content,
-            "mrkdwn": true,
+            "thread_ts": ts,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": full_message_content,
+                    }
+                }
+            ],
             "unfurl_links": false,
             "unfurl_media": false,
         });
