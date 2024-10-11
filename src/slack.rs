@@ -104,29 +104,59 @@ pub async fn send_to_slack(
             return;
         }
 
-        // Combine all content into one message
-        let full_message_content = format!(
-            "{}\n*Summary*\n{}\n\n*Critical Analysis*\n{}\n\n*Logical Fallacies*\n{}\n\n*Relevance*\n{}\n\n*Model*\n{}",
-            article,
-            summary,
-            critical_analysis,
-            logical_fallacies,
-            relation_to_topic,
-            model
-        );
+        // Build individual blocks for each section
+        let mut blocks = vec![json!({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": article
+            }
+        })];
+
+        if !summary.is_empty() {
+            blocks.push(json!({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("*Summary*\n{}", summary)
+                }
+            }));
+        }
+
+        if !critical_analysis.is_empty() {
+            blocks.push(json!({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("*Critical Analysis*\n{}", critical_analysis)
+                }
+            }));
+        }
+
+        if !logical_fallacies.is_empty() {
+            blocks.push(json!({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("*Logical Fallacies*\n{}", logical_fallacies)
+                }
+            }));
+        }
+
+        if !relation_to_topic.is_empty() {
+            blocks.push(json!({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("*Relevance*\n{}\n*Model*\n{}", relation_to_topic, model)
+                }
+            }));
+        }
 
         let second_payload = json!({
             "channel": channel,
             "thread_ts": ts,
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": full_message_content,
-                    }
-                }
-            ],
+            "blocks": blocks,
             "unfurl_links": true,
             "unfurl_media": true,
         });
