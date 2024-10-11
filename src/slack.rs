@@ -104,113 +104,38 @@ pub async fn send_to_slack(
             return;
         }
 
-        // Second message payload (rest of the content)
+        // Combine all content into one message
+        let full_message_content = format!(
+            "{}\n*Summary*\n{}\n*Critical Analysis*\n{}\n*Logical Fallacies*\n{}\n*Relevance*\n{}\n*Model*\n{}",
+            article,
+            summary,
+            critical_analysis,
+            logical_fallacies,
+            relation_to_topic,
+            model
+        );
+
         let second_payload = json!({
             "channel": channel,
-            "thread_ts": ts,
-            "blocks": [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": format!("{}\n{}", article, topic),
-                    }
-                },
-                {
-                    "type": "divider"
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": "*Summary*"
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": summary
-                    }
-                },
-                {
-                    "type": "divider"
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": "*Critical Analysis*"
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": critical_analysis
-                    }
-                },
-                {
-                    "type": "divider"
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": "*Logical Fallacies*"
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": logical_fallacies
-                    }
-                },
-                {
-                    "type": "divider"
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": "*Relevance*"
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": relation_to_topic
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": "*Model*"
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                            "type": "mrkdwn",
-                            "text": model
-                        }
-                    },
-                {
-                    "type": "divider"
-                }
-            ],
+            "text": full_message_content,
+            "mrkdwn": true,
             "unfurl_links": false,
             "unfurl_media": false,
         });
 
         // Send the second message in the thread
-        let _ = send_slack_message(&client, slack_token, &second_payload, &worker_id).await;
+        if let Some(slack_response_json) =
+            send_slack_message(&client, slack_token, &second_payload, &worker_id).await
+        {
+            info!(
+                "Worker {}: Slack accepted message: {}",
+                worker_id, slack_response_json
+            );
+        } else {
+            error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to send Slack message", worker_id);
+        }
     } else {
         error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to send first Slack message", worker_id);
-        return;
     }
 }
 
