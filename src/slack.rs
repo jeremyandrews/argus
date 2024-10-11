@@ -106,7 +106,7 @@ pub async fn send_to_slack(
 
         // Combine all content into one message
         let full_message_content = format!(
-            "{}\n*Summary*\n{}\n*Critical Analysis*\n{}\n*Logical Fallacies*\n{}\n*Relevance*\n{}\n*Model*\n{}",
+            "{}\n*Summary*\n{}\n\n*Critical Analysis*\n{}\n\n*Logical Fallacies*\n{}\n\n*Relevance*\n{}\n\n*Model*\n{}",
             article,
             summary,
             critical_analysis,
@@ -127,8 +127,8 @@ pub async fn send_to_slack(
                     }
                 }
             ],
-            "unfurl_links": false,
-            "unfurl_media": false,
+            "unfurl_links": true,
+            "unfurl_media": true,
         });
 
         // Send the second message in the thread
