@@ -659,8 +659,8 @@ async fn summarize_and_send_article(
         dichotomy) please explain in one or two short sentences. If there are none, state that in no
         more than five words.
 
-        After a blank line, with a maximum of one or two short sentences, identify the strength of
-        arguments and evidence presented.
+        Then, with a maximum of one or two short sentences, identify the strength of arguments and
+        evidence presented.
 
         Write in accessible and clear American English.
 
@@ -872,8 +872,8 @@ async fn process_topics(
                     dichotomy) please explain in one or two short sentences. If there are none, state that in no
                     more than five words.
 
-                    After a blank line, with a maximum of one or two short sentences, identify the strength of
-                    arguments and evidence presented.
+                    Then, with a maximum of one or two short sentences, identify the strength of arguments and
+                    evidence presented.
 
                     Write in accessible and clear American English.
 
