@@ -309,10 +309,7 @@ async fn process_continent(
         non_affected_places,
     } = place_params;
 
-    let continent_prompt = format!(
-        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living on the continent of {}? Answer yes or no.",
-        article_text, continent
-    );
+    let continent_prompt = prompts::continent_threat_prompt(article_text, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
 
@@ -367,10 +364,7 @@ async fn process_country(
     non_affected_places: &mut BTreeSet<String>,
     params: &mut ProcessItemParams<'_>,
 ) -> bool {
-    let country_prompt = format!(
-        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in {} on the continent of {}? Answer yes or no.",
-        article_text, country, continent
-    );
+    let country_prompt = prompts::country_threat_prompt(article_text, country, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
 
@@ -438,10 +432,7 @@ async fn process_region(
         non_affected_places,
     } = params;
 
-    let region_prompt = format!(
-        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in the region of {} in the country of {} on {}? Answer yes or no.",
-        article_text, region, country, continent
-    );
+    let region_prompt = prompts::region_threat_prompt(article_text, region, country, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
 
@@ -521,11 +512,8 @@ async fn process_city(
         affected_places,
     } = params;
 
-    let city_prompt = format!(
-        "{} | Is this article about an ongoing or imminent and potentially life-threatening event or situation that directly affects the physical safety of people living in or near the city of {} in the region of {} in the country of {} on {}? Answer yes or no.",
-        article_text, city_name, region, country, continent
-    );
-
+    let city_prompt =
+        prompts::city_threat_prompt(article_text, city_name, region, country, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
     let city_response = match generate_llm_response(&city_prompt, proc_params).await {
         Some(response) => response,
