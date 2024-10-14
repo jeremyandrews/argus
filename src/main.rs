@@ -21,6 +21,7 @@ mod db;
 mod environment;
 mod llm;
 mod logging;
+mod prompts;
 mod rss;
 mod slack;
 mod util;

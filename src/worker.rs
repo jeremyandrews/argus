@@ -10,6 +10,7 @@ use url::Url;
 
 use crate::db::Database;
 use crate::llm::generate_llm_response;
+use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::weighted_sleep;
 use crate::{TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
@@ -254,10 +255,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
 
 /// Checks if the article is about any kind of threat at all.
 async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemParams<'_>) -> bool {
-    let threat_prompt = format!(
-        "{} | Is this article about any ongoing or imminent and potentially life-threatening event or situation? Answer yes or no.",
-        article_text
-    );
+    let threat_prompt = prompts::threat_prompt(&article_text);
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
 
@@ -584,94 +582,33 @@ async fn summarize_and_send_article(
     let mut relation_to_topic_response = String::new();
 
     // Generate summary
-    let summary_prompt = format!(
-        "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary
-        in bullet points in American English that cover all the main ideas and key points from the
-        entire text, maintains the original text's structure and flow, and uses clear and concise
-        language. For really short texts (up to 25 words): simply quote the text, for short texts (up to
-        100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for
-        long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10
-        bullet points.
-
-        Do not tell me what you're doing, do not explain that you're summarizing in American English.
-
-        Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-        *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-        or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-        generate a newline.",
-        article_text
-    );
+    let summary_prompt = prompts::summary_prompt(article_text);
     let summary_response = generate_llm_response(&summary_prompt, params)
         .await
         .unwrap_or_default();
 
     // Generate tiny summary
-    let tiny_summary_prompt = format!(
-        "{} | Please summarize down to 200 characters or less. Write in American English.
-
-        Do not tell me what you're doing, do not explain that you're limiting yourself to 200 characters or
-        that you're writing in American English.",
-        summary_response
-    );
+    let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
     let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
         .await
         .unwrap_or_default();
 
     // Generate critical analysis
-    let critical_analysis_prompt = format!(
-        "{} | Carefully read and thoroughly understand the provided text.
-
-        Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious
-        content, and 10 represents unbiased, logically sound content. On the next line explain the score
-        in no more than 10 words.
-
-        Then please provide a style score from 1 to 10, where 1 represents very poorly written text, and
-        10 represents eloquent and understandable text. On the next line explain the score in no more than
-        10 words.
-
-        Then please provide a political weight that is either Left, Center Left, Center, Center Right,
-        Right, or not-applicable. On the next line explain the score in no more than 10 words.
-
-        Then please provide a concise two to three sentence critical analysis of the text in American English.
-
-        Do not tell me what you're doing, do not explain that you're writing in American English.
-
-        Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-        *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-        or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-        generate a newline.",
-        article_text
-    );
+    let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
     let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
         .await
         .unwrap_or_default();
 
     // Generate logical fallacies
-    let logical_fallacies_prompt = format!(
-        "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g.,
-        confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false
-        dichotomy) please explain in one or two short sentences. If there are none, state that in no
-        more than five words.
-
-        Then, with a maximum of one or two short sentences, identify the strength of arguments and
-        evidence presented.
-
-        Write in accessible and clear American English.
-
-        Do not tell me what you're doing, do not explain that you're writing in American English.
-
-        Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-        *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-        or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-        generate a newline.",
-        article_text
-    );
+    let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
     let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
         .await
         .unwrap_or_default();
 
     // Generate relation to topic (affected and non-affected summary)
     let mut affected_summary = String::default();
+
+    // For affected places
     if !affected_people.is_empty() {
         affected_summary = format!(
             "This article affects these people in {}: {}",
@@ -686,24 +623,47 @@ async fn summarize_and_send_article(
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        let how_prompt = format!(
-            "{} | How does this article affect the life and safety of people living in the following
-            places: {}? Answer in no more than two sentences in American English.
-
-            Do not tell me what you're doing, do not explain that you're writing in American English.
-
-            Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-            *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-            or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-            generate a newline.",
-            article_text,
-            affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
-        );
+        let affected_places_str = affected_places
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let how_prompt = prompts::how_does_it_affect_prompt(article_text, &affected_places_str);
         let how_response = generate_llm_response(&how_prompt, params)
             .await
             .unwrap_or_default();
         relation_to_topic_response
             .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
+    }
+
+    // For non-affected places
+    if !non_affected_people.is_empty() {
+        let non_affected_summary = format!(
+            "This article does not affect these people in {}: {}",
+            affected_regions
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            non_affected_people
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let non_affected_places_str = non_affected_places
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let why_not_prompt = prompts::why_not_affect_prompt(article_text, &non_affected_places_str);
+        let why_not_response = generate_llm_response(&why_not_prompt, params)
+            .await
+            .unwrap_or_default();
+        relation_to_topic_response.push_str(&format!(
+            "\n\n{}\n\n{}",
+            non_affected_summary, why_not_response
+        ));
     }
 
     let mut non_affected_summary = String::default();
@@ -802,133 +762,49 @@ async fn process_topics(
         if topic_name.is_empty() {
             continue;
         }
+
         debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
 
-        let yes_no_prompt = format!(
-            "{} | Is this article specifically about {}? Answer yes or no.",
-            article_text, topic_name
-        );
-
+        let yes_no_prompt = prompts::yes_no_prompt(article_text, topic_name);
         if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
+                // Article is relevant to the topic
                 article_relevant = true;
 
                 // Generate summary
-                let summary_prompt = format!(
-                    "{} | Carefully read and thoroughly understand the provided text. Create a comprehensive summary
-                    in bullet points in American English that cover all the main ideas and key points from the
-                    entire text, maintains the original text's structure and flow, and uses clear and concise
-                    language. For really short texts (up to 25 words): simply quote the text, for short texts (up to
-                    100 words): 2-4 bullet points, for medium-length texts (501-1000 words): 3-5 bullet points, for
-                    long texts (1001-2000 words): 4-8 bullet points, and for very long texts (over 2000 words): 6-10
-                    bullet points.
-
-                    Do not tell me what you're doing, do not explain that you're summarizing in American English.
-
-                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-                    generate a newline.",
-                    article_text
-                );
-
-                // Generate critical analysis
-                let critical_analysis_prompt = format!(
-                    "{} | Carefully read and thoroughly understand the provided text.
-
-                    Please provide a credability score from 1 to 10, where 1 represents highly biased or fallacious
-                    content, and 10 represents unbiased, logically sound content. On the next line explain the score
-                    in no more than 10 words.
-
-                    Then please provide a style score from 1 to 10, where 1 represents very poorly written text, and
-                    10 represents eloquent and understandable text. On the next line explain the score in no more than
-                    10 words.
-
-                    Then please provide a political weight that is either Left, Center Left, Center, Center Right,
-                    Right, or not-applicable. On the next line explain the score in no more than 10 words.
-
-                    Then please provide a concise two to three sentence critical analysis
-                    of the text in American English.
-
-                    Do not tell me what you're doing, do not explain that you're writing in American English.
-
-                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-                    generate a newline.",
-                    article_text
-                );
-
-                // Generate logical fallacies
-                let logical_fallacies_prompt = format!(
-                    "{} | Carefully read and throroughly understand the provided text. If there are biases (e.g.,
-                    confirmation bias, selection bias), logical fallacies (e.g., ad hominem, straw man, false
-                    dichotomy) please explain in one or two short sentences. If there are none, state that in no
-                    more than five words.
-
-                    Then, with a maximum of one or two short sentences, identify the strength of arguments and
-                    evidence presented.
-
-                    Write in accessible and clear American English.
-
-                    Do not tell me what you're doing, do not explain that you're writing in American English.
-
-                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-                    generate a newline.",
-                    article_text
-                );
-
-                // Explain topic relations.
-                let relation_prompt = format!(
-                    "{} | Briefly explain in one or two short sentences how this relates to {}, starting with the
-                    words 'This relates to {}`.
-
-                    Write in accessible and clear American English.
-
-                    Do not tell me what you're doing, do not explain that you're writing in American English.
-
-                    Format your answer for easy and clear readability in text, _italic_ will produce italicized text,
-                    *bold* will produce bold text, ~strike~ will produce strikethrough text, > at the beginning of one
-                    or more lines will generate a block quote, ` surrounding text will format it as code, and \n will
-                    generate a newline.",
-                    article_text, topic_name, topic_name
-                );
-
+                let summary_prompt = prompts::summary_prompt(article_text);
                 let summary_response = generate_llm_response(&summary_prompt, params)
                     .await
                     .unwrap_or_default();
 
                 // Generate tiny summary
-                let tiny_summary_prompt = format!(
-                    "{} | Please summarize down to 200 characters or less. Write in American English.
-
-                    Do not tell me what you're doing, do not explain that you're limiting yourself to 200 characters or
-                    that you're writing in American English.",
-                    summary_response
-                );
+                let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
                 let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
                     .await
                     .unwrap_or_default();
 
+                // Generate critical analysis
+                let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
                 let critical_analysis_response =
                     generate_llm_response(&critical_analysis_prompt, params)
                         .await
                         .unwrap_or_default();
+
+                // Generate logical fallacies
+                let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
                 let logical_fallacies_response =
                     generate_llm_response(&logical_fallacies_prompt, params)
                         .await
                         .unwrap_or_default();
+
+                // Generate relation to topic
+                let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic_name);
                 let relation_response = generate_llm_response(&relation_prompt, params)
                     .await
                     .unwrap_or_default();
 
-                let confirm_prompt = format!(
-                    "{} | Is this article really about {} and not a promotion or advertisement? Answer yes or no.",
-                    summary_response, topic_name
-                );
-
+                // Confirm the article relevance
+                let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
                 if let Some(confirm_response) = generate_llm_response(&confirm_prompt, params).await
                 {
                     if confirm_response.trim().to_lowercase().starts_with("yes") {
