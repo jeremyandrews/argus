@@ -94,35 +94,43 @@ pub async fn worker_loop(
             "random"
         };
 
-        if let Some((url, title)) = db.fetch_and_delete_url_from_queue(order).await.unwrap() {
-            if url.trim().is_empty() {
-                error!(target: TARGET_LLM_REQUEST, "worker {}: Found an empty URL in the queue, skipping...", worker_id);
+        match db.fetch_and_delete_url_from_queue(order).await {
+            Ok(Some((url, title))) => {
+                if url.trim().is_empty() {
+                    error!(target: TARGET_LLM_REQUEST, "worker {}: Found an empty URL in the queue, skipping...", worker_id);
+                    continue;
+                }
+
+                info!(target: TARGET_LLM_REQUEST, "worker {}: Moving on to a new URL: {} ({:?})", worker_id, url, title);
+
+                let item = FeedItem {
+                    url: url.clone(),
+                    title,
+                };
+
+                let mut params = ProcessItemParams {
+                    topics,
+                    ollama,
+                    model,
+                    temperature,
+                    db,
+                    slack_token,
+                    slack_channel,
+                    places: places.clone(),
+                };
+
+                process_item(item, &mut params).await;
+            }
+            Ok(None) => {
+                debug!(target: TARGET_LLM_REQUEST, "worker {}: No URLs to process. Sleeping for 1 minute before retrying.", worker_id);
+                sleep(Duration::from_secs(60)).await;
                 continue;
             }
-
-            info!(target: TARGET_LLM_REQUEST, "worker {}: Moving on to a new URL: {} ({:?})", worker_id, url, title);
-
-            let item = FeedItem {
-                url: url.clone(),
-                title,
-            };
-
-            let mut params = ProcessItemParams {
-                topics,
-                ollama,
-                model,
-                temperature,
-                db,
-                slack_token,
-                slack_channel,
-                places: places.clone(),
-            };
-
-            process_item(item, &mut params).await;
-        } else {
-            debug!(target: TARGET_LLM_REQUEST, "worker {}: No URLs to process. Sleeping for 1 minute before retrying.", worker_id);
-            sleep(Duration::from_secs(60)).await;
-            continue;
+            Err(e) => {
+                error!(target: TARGET_LLM_REQUEST, "worker {}: Error fetching URL from queue: {:?}", worker_id, e);
+                sleep(Duration::from_secs(5)).await; // Wait and retry
+                continue;
+            }
         }
     }
 }

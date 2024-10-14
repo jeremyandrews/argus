@@ -1,7 +1,12 @@
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    Pool, Row, Sqlite,
+};
 use std::path::Path;
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
+use tokio::time::Duration;
 use tracing::{debug, error, info, instrument};
 use url::Url;
 use urlnorm::UrlNormalizer;
@@ -24,10 +29,18 @@ impl Database {
             ));
         }
 
+        let connect_options =
+            SqliteConnectOptions::from_str(&format!("sqlite://{}", database_url))?
+                .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Wal)
+                .busy_timeout(Duration::from_secs(5))
+                .synchronous(SqliteSynchronous::Normal);
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&format!("sqlite://{}", database_url))
+            .connect_with(connect_options)
             .await?;
+
         info!(target: TARGET_DB, "Database pool created");
 
         let mut conn = pool.acquire().await?;
