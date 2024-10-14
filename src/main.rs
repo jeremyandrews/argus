@@ -1,7 +1,6 @@
 use futures::future::join_all;
 use ollama_rs::Ollama;
 use serde_json::Value;
-use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -121,9 +120,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let places_worker = places.clone();
 
         let worker_handle = task::spawn(async move {
-            let mut non_affected_people = BTreeSet::new();
-            let mut non_affected_places = BTreeSet::new();
-
             info!(target: TARGET_LLM_REQUEST, "worker thread {}: Starting worker loop.", worker_id);
             // Assuming worker::worker_loop is infallible and only returns ()
             worker::worker_loop(
@@ -134,8 +130,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &slack_token_worker,
                 &slack_channel_worker,
                 places_worker,
-                &mut non_affected_people,
-                &mut non_affected_places,
             )
             .await;
 

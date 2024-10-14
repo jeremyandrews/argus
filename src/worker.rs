@@ -24,8 +24,6 @@ pub struct ProcessItemParams<'a> {
     pub slack_token: &'a str,
     pub slack_channel: &'a str,
     pub places: Option<Value>,
-    pub non_affected_people: &'a mut BTreeSet<String>,
-    pub non_affected_places: &'a mut BTreeSet<String>,
 }
 
 /// Parameters required for processing places, including article text and affected people and places.
@@ -78,8 +76,6 @@ pub async fn worker_loop(
     slack_token: &str,
     slack_channel: &str,
     places: Option<Value>,
-    non_affected_people: &mut BTreeSet<String>,
-    non_affected_places: &mut BTreeSet<String>,
 ) {
     let db = Database::instance().await;
     let mut rng = StdRng::from_entropy();
@@ -119,8 +115,6 @@ pub async fn worker_loop(
                 slack_token,
                 slack_channel,
                 places: places.clone(),
-                non_affected_people,
-                non_affected_places,
             };
 
             process_item(item, &mut params).await;
