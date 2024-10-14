@@ -148,7 +148,7 @@ pub async fn send_to_slack(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": format!("*Relevance*\n{}\n*Model*\n{}", relation_to_topic, model)
+                    "text": format!("*Relevance*\n{}\n\n*Model*\n{}", relation_to_topic, model)
                 }
             }));
         }
