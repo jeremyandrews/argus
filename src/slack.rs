@@ -6,6 +6,12 @@ use tracing::{debug, error, info, warn};
 
 use crate::TARGET_WEB_REQUEST;
 
+fn deduplicate_markdown(text: &str) -> String {
+    text.replace("**", "*")
+        .replace("__", "_")
+        .replace("~~", "~")
+}
+
 /// Sends the formatted article to the Slack channel.
 pub async fn send_to_slack(
     article: &str,
@@ -51,22 +57,32 @@ pub async fn send_to_slack(
         .copied()
         .unwrap_or(default_channel);
 
-    let summary = response_json["summary"]
-        .as_str()
-        .unwrap_or("No summary available");
-    let tiny_summary = response_json["tiny_summary"]
-        .as_str()
-        .unwrap_or("No tiny summary available");
-    let critical_analysis = response_json["critical_analysis"]
-        .as_str()
-        .unwrap_or("No critical analysis available");
-    let logical_fallacies = response_json["logical_fallacies"]
-        .as_str()
-        .unwrap_or("No logical fallacies available");
-    let relation_to_topic = response_json["relation_to_topic"]
-        .as_str()
-        .unwrap_or("No relation to topic available");
-    let model = response_json["model"].as_str().unwrap_or("Unknown model");
+    let summary = deduplicate_markdown(
+        response_json["summary"]
+            .as_str()
+            .unwrap_or("No summary available"),
+    );
+    let tiny_summary = deduplicate_markdown(
+        response_json["tiny_summary"]
+            .as_str()
+            .unwrap_or("No tiny summary available"),
+    );
+    let critical_analysis = deduplicate_markdown(
+        response_json["critical_analysis"]
+            .as_str()
+            .unwrap_or("No critical analysis available"),
+    );
+    let logical_fallacies = deduplicate_markdown(
+        response_json["logical_fallacies"]
+            .as_str()
+            .unwrap_or("No logical fallacies available"),
+    );
+    let relation_to_topic = deduplicate_markdown(
+        response_json["relation_to_topic"]
+            .as_str()
+            .unwrap_or("No relation to topic available"),
+    );
+    let model = deduplicate_markdown(response_json["model"].as_str().unwrap_or("Unknown model"));
 
     // First message payload (title, topic, and tiny summary in a block)
     let first_payload = json!({
