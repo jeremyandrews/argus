@@ -83,6 +83,7 @@ pub async fn send_to_slack(
             .unwrap_or("No relation to topic available"),
     );
     let model = deduplicate_markdown(response_json["model"].as_str().unwrap_or("Unknown model"));
+    let elapsed_time = response_json["elapsed_time"].as_f64().unwrap_or(0.0);
 
     // First message payload (title, topic, and tiny summary in a block)
     let first_payload = json!({
@@ -129,6 +130,16 @@ pub async fn send_to_slack(
             }
         })];
 
+        if !relation_to_topic.is_empty() {
+            blocks.push(json!({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format!("*Relevance*\n{}\n\n*Generated with {} in {:.2} seconds.*\n", relation_to_topic, model, elapsed_time)
+                }
+            }));
+        }
+
         if !summary.is_empty() {
             blocks.push(json!({
                 "type": "section",
@@ -155,16 +166,6 @@ pub async fn send_to_slack(
                 "text": {
                     "type": "mrkdwn",
                     "text": format!("*Logical Fallacies*\n{}", logical_fallacies)
-                }
-            }));
-        }
-
-        if !relation_to_topic.is_empty() {
-            blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("*Relevance*\n{}\n\n*Model*\n{}", relation_to_topic, model)
                 }
             }));
         }

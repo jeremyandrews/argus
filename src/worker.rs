@@ -572,6 +572,8 @@ async fn summarize_and_send_article(
     title_domain_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
+    let start_time = std::time::Instant::now();
+
     let worker_id = format!("{:?}", std::thread::current().id());
     let formatted_article = format!("*<{}|{}>*", article_url, article_title);
 
@@ -703,6 +705,7 @@ async fn summarize_and_send_article(
             "critical_analysis": critical_analysis_response,
             "logical_fallacies": logical_fallacies_response,
             "relation_to_topic": relation_to_topic_response,
+            "elapsed_time": start_time.elapsed().as_secs_f64(),
             "model": params.model
         });
 
@@ -746,6 +749,8 @@ async fn process_topics(
     title_domain_hash: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
+    let start_time = std::time::Instant::now();
+
     let worker_id = format!("{:?}", std::thread::current().id());
     let mut article_relevant = false;
 
@@ -813,6 +818,7 @@ async fn process_topics(
                             "critical_analysis": critical_analysis_response,
                             "logical_fallacies": logical_fallacies_response,
                             "relation_to_topic": relation_response,
+                            "elapsed_time": start_time.elapsed().as_secs_f64(),
                             "model": params.model
                         });
 
