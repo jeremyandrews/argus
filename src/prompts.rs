@@ -146,6 +146,14 @@ Why does this article not affect the life and safety of people in the following 
 
 /** The following prompts expect a 'yes' or 'no' answer. */
 
+pub fn threat_prompt(article_text: &str) -> String {
+    format!(
+        "{article} |
+Is this article about any ongoing or imminent life-threatening event or situation? Answer yes or no.",
+        article = article_text
+    )
+}
+
 pub fn continent_threat_prompt(article_text: &str, continent: &str) -> String {
     format!("{article} |
 Is this article about an ongoing or imminent life-threatening event affecting people on the continent
@@ -204,25 +212,17 @@ city of {city}, {region}, {country}, {continent}? Answer yes or no.",
 pub fn confirm_prompt(summary_response: &str, topic_name: &str) -> String {
     format!(
         "{summary} |
-Is this article really about {topic} and not a promotion or advertisement? Answer yes or no.",
+Is this article really about {topic} with enough content to analyze, and not a promotion or advertisement? Answer yes or no.",
         summary = summary_response,
         topic = topic_name
     )
 }
 
-pub fn yes_no_prompt(article_text: &str, topic_name: &str) -> String {
+pub fn is_this_about(article_text: &str, topic_name: &str) -> String {
     format!(
         "{article} |
-Is this article specifically about {topic}? Answer yes or no.",
+Is this article specifically about {topic} with enough content to analyze? Answer yes or no.",
         article = article_text,
         topic = topic_name
-    )
-}
-
-pub fn threat_prompt(article_text: &str) -> String {
-    format!(
-        "{article} |
-Is this article about any ongoing or imminent life-threatening event or situation? Answer yes or no.",
-        article = article_text
     )
 }
