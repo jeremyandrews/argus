@@ -121,7 +121,7 @@ pub async fn send_to_slack(
             return;
         }
 
-        // Build individual blocks for each section
+        // Build individual blocks for each section with dividers
         let mut blocks = vec![json!({
             "type": "section",
             "text": {
@@ -131,43 +131,31 @@ pub async fn send_to_slack(
         })];
 
         if !relation_to_topic.is_empty() {
-            blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("*Relevance*\n{}\n\n_Generated with *{}* in {:.2} seconds._\n", relation_to_topic, model, elapsed_time)
-                }
-            }));
+            add_section_with_divider(
+                &mut blocks,
+                format!(
+                    "*Relevance*\n{}\n\n_Generated with *{}* in {:.2} seconds._\n",
+                    relation_to_topic, model, elapsed_time
+                ),
+            );
         }
 
         if !summary.is_empty() {
-            blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("*Summary*\n{}", summary)
-                }
-            }));
+            add_section_with_divider(&mut blocks, format!("*Summary*\n{}", summary));
         }
 
         if !critical_analysis.is_empty() {
-            blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("*Critical Analysis*\n{}", critical_analysis)
-                }
-            }));
+            add_section_with_divider(
+                &mut blocks,
+                format!("*Critical Analysis*\n{}", critical_analysis),
+            );
         }
 
         if !logical_fallacies.is_empty() {
-            blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("*Logical Fallacies*\n{}", logical_fallacies)
-                }
-            }));
+            add_section_with_divider(
+                &mut blocks,
+                format!("*Logical Fallacies*\n{}", logical_fallacies),
+            );
         }
 
         let second_payload = json!({
@@ -192,6 +180,20 @@ pub async fn send_to_slack(
     } else {
         error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to send first Slack message", worker_id);
     }
+}
+
+// Function to add a section followed by a divider
+fn add_section_with_divider(blocks: &mut Vec<serde_json::Value>, section_text: String) {
+    blocks.push(json!({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": section_text
+        }
+    }));
+    blocks.push(json!({
+        "type": "divider"
+    }));
 }
 
 // Helper function to send a Slack message with retries
