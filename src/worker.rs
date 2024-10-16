@@ -635,35 +635,6 @@ async fn summarize_and_send_article(
     }
 
     // For non-affected places
-    if !non_affected_people.is_empty() {
-        let non_affected_summary = format!(
-            "This article does not affect these people in {}: {}",
-            affected_regions
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
-            non_affected_people
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let non_affected_places_str = non_affected_places
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
-        let why_not_prompt = prompts::why_not_affect_prompt(article_text, &non_affected_places_str);
-        let why_not_response = generate_llm_response(&why_not_prompt, params)
-            .await
-            .unwrap_or_default();
-        relation_to_topic_response.push_str(&format!(
-            "\n\n{}\n\n{}",
-            non_affected_summary, why_not_response
-        ));
-    }
-
     let mut non_affected_summary = String::default();
     if !non_affected_people.is_empty() {
         non_affected_summary = format!(
