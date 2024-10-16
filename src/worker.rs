@@ -650,10 +650,13 @@ async fn summarize_and_send_article(
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        let why_not_prompt = format!(
-            "{} | Why does this article not affect the life and safety of people living in the following places: {}? Answer in a few sentences.",
+        let why_not_prompt = prompts::why_not_affect_prompt(
             article_text,
-            non_affected_places.iter().cloned().collect::<Vec<_>>().join(", ")
+            &non_affected_places
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
         );
         let why_not_response = generate_llm_response(&why_not_prompt, params)
             .await
