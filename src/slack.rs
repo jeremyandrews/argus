@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -96,16 +96,6 @@ pub async fn send_to_slack(
                     "text": format!("{}\n{}", article, tiny_summary),
                 }
             },
-            {
-                "type": "divider"
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": topic,
-                }
-            }
         ],
         "unfurl_links": false,
         "unfurl_media": false,
@@ -122,13 +112,7 @@ pub async fn send_to_slack(
         }
 
         // Build individual blocks for each section with dividers
-        let mut blocks = vec![json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": article
-            }
-        })];
+        let mut blocks: Vec<Value> = vec![];
 
         if !relation_to_topic.is_empty() {
             add_section_with_divider(
@@ -156,6 +140,10 @@ pub async fn send_to_slack(
                 &mut blocks,
                 format!("*Logical Fallacies*\n{}", logical_fallacies),
             );
+        }
+
+        if !article.is_empty() {
+            add_section_with_divider(&mut blocks, article.to_string());
         }
 
         let second_payload = json!({
