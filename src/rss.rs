@@ -39,10 +39,10 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
             let mut attempts = 0;
             debug!(target: TARGET_WEB_REQUEST, "Starting to process RSS URL: {}", rss_url);
 
-            let success = loop {
+            loop {
                 if attempts >= MAX_RETRIES {
-                    error!(target: TARGET_WEB_REQUEST, "Max retries reached for URL: {}", rss_url);
-                    break false;
+                    error!(target: TARGET_WEB_REQUEST, "Max retries reached for URL: {}, moving on", rss_url); // Added 'moving on' for clarity
+                    break; // Move to next RSS URL
                 }
 
                 debug!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
@@ -57,19 +57,19 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                 }
                                 Err(err) => {
                                     error!(target: TARGET_WEB_REQUEST, "Failed to read response body from {}: {}", rss_url, err);
+                                    attempts += 1;
+                                    sleep(RETRY_DELAY).await;
                                     continue;
                                 }
                             };
 
                             // Log the first few characters of the response body for debugging
                             debug!(target: TARGET_WEB_REQUEST, "First 500 characters of response body: {}", &body.chars().take(500).collect::<String>());
-
                             let reader = io::Cursor::new(body);
                             match parser::parse(reader) {
                                 Ok(feed) => {
                                     debug!(target: TARGET_WEB_REQUEST, "Parsed feed with {} entries", feed.entries.len());
 
-                                    // Initialize a counter for new articles
                                     let mut new_articles_count = 0;
 
                                     for entry in feed.entries {
@@ -90,7 +90,6 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                                 Ok(added) => {
                                                     if added {
                                                         new_articles_count += 1;
-                                                        // Increment counter if a new article was added
                                                     }
                                                 }
                                                 Err(err) => {
@@ -102,41 +101,44 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<(), Box<dyn std::error::E
                                         }
                                     }
 
-                                    // Log based on the number of new articles added
                                     if new_articles_count > 0 {
                                         info!(target: TARGET_WEB_REQUEST, "Added {} new articles from {}", new_articles_count, rss_url);
                                     } else {
                                         debug!(target: TARGET_WEB_REQUEST, "No new articles added from {}", rss_url);
                                     }
-                                    break true;
+                                    break; // Successfully processed, move on to next URL
                                 }
                                 Err(err) => {
                                     error!(target: TARGET_WEB_REQUEST, "Failed to parse feed from {}: {}", rss_url, err);
-                                    break false;
+                                    attempts += 1;
+                                    sleep(RETRY_DELAY).await;
+                                    continue;
                                 }
                             }
                         } else {
                             warn!(target: TARGET_WEB_REQUEST, "Non-success status {} from {}", response.status(), rss_url);
+                            attempts += 1;
+                            sleep(RETRY_DELAY).await;
+                            continue;
                         }
                     }
                     Ok(Err(err)) => {
                         error!(target: TARGET_WEB_REQUEST, "Request to {} failed: {}", rss_url, err);
+                        attempts += 1;
+                        sleep(RETRY_DELAY).await;
+                        continue;
                     }
                     Err(_) => {
                         error!(target: TARGET_WEB_REQUEST, "Request to {} timed out", rss_url);
+                        attempts += 1;
+                        sleep(RETRY_DELAY).await;
+                        continue;
                     }
                 }
-
-                attempts += 1;
-                warn!(target: TARGET_WEB_REQUEST, "Retrying {} in {:?}", rss_url, RETRY_DELAY);
-                sleep(RETRY_DELAY).await;
-            };
-
-            if !success {
-                error!(target: TARGET_WEB_REQUEST, "Failed to process URL: {}", rss_url);
             }
         }
+
         debug!(target: TARGET_WEB_REQUEST, "Sleeping for 10 minutes before next fetch");
-        sleep(Duration::from_secs(600)).await; // Sleep for 10 minutes before fetching again
+        sleep(Duration::from_secs(600)).await;
     }
 }
