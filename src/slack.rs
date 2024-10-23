@@ -205,7 +205,7 @@ async fn send_slack_message(
             Duration::from_secs(30),
             client
                 .post("https://slack.com/api/chat.postMessage")
-                .header("Content-Type", "application/json")
+                .header("Content-Type", "application/json; charset=utf-8")
                 .bearer_auth(slack_token)
                 .body(payload.to_string())
                 .send(),
