@@ -1,4 +1,4 @@
-use reqwest::Client;
+use reqwest::{header::HeaderValue, Client};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
@@ -100,6 +100,7 @@ pub async fn send_to_slack(
         "unfurl_links": false,
         "unfurl_media": false,
     });
+    info!(target: TARGET_WEB_REQUEST, "Worker {}: Payload size: {} characters", worker_id, first_payload.to_string().len());
 
     // Send the first message and get its 'ts' for threading
     if let Some(slack_response_json) =
@@ -107,8 +108,9 @@ pub async fn send_to_slack(
     {
         let ts = slack_response_json["ts"].as_str().unwrap_or("").to_string();
         if ts.is_empty() {
-            error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to get ts from Slack response", worker_id);
-            return;
+            error!(target: TARGET_WEB_REQUEST, "Worker {}: Invalid ts returned from Slack", worker_id);
+        } else {
+            debug!(target: TARGET_WEB_REQUEST, "Worker {}: Using thread ts: {}", worker_id, ts);
         }
 
         // Build individual blocks for each section with dividers
@@ -146,17 +148,18 @@ pub async fn send_to_slack(
             add_section_with_divider(&mut blocks, article.to_string());
         }
 
-        let second_payload = json!({
+        let thread_payload = json!({
             "channel": channel,
             "thread_ts": ts,
             "blocks": blocks,
             "unfurl_links": true,
             "unfurl_media": true,
         });
+        info!(target: TARGET_WEB_REQUEST, "Worker {}: Thread payload size: {} characters", worker_id, thread_payload.to_string().len());
 
         // Send the second message in the thread
         if let Some(slack_response_json) =
-            send_slack_message(&client, slack_token, &second_payload, &worker_id).await
+            send_slack_message(&client, slack_token, &thread_payload, &worker_id).await
         {
             info!(
                 "Worker {}: Slack accepted message: {}",
@@ -210,10 +213,28 @@ async fn send_slack_message(
         .await
         {
             Ok(Ok(response)) => {
+                let default_header = HeaderValue::from_static("unknown");
+                let limit = response
+                    .headers()
+                    .get("X-RateLimit-Limit")
+                    .unwrap_or(&default_header);
+                let remaining = response
+                    .headers()
+                    .get("X-RateLimit-Remaining")
+                    .unwrap_or(&default_header);
+                let reset = response
+                    .headers()
+                    .get("X-RateLimit-Reset")
+                    .unwrap_or(&default_header);
+                info!(target: TARGET_WEB_REQUEST, "Worker {}: Rate limit: {}, remaining: {}, reset: {}", worker_id, limit.to_str().unwrap_or("unknown"), remaining.to_str().unwrap_or("unknown"), reset.to_str().unwrap_or("unknown"));
+
                 if response.status().is_success() {
                     debug!(target: TARGET_WEB_REQUEST, "Worker {}: Slack notification sent successfully", worker_id);
                     match response.json::<serde_json::Value>().await {
-                        Ok(json) => return Some(json),
+                        Ok(json) => {
+                            info!(target: TARGET_WEB_REQUEST, "Worker {}: Slack response: {:?}", worker_id, json);
+                            return Some(json);
+                        }
                         Err(err) => {
                             error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to parse Slack response JSON: {:?}", worker_id, err);
                             return None;
