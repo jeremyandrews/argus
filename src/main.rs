@@ -123,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!(target: TARGET_LLM_REQUEST, "Worker {}: Starting with model '{}' at {}:{}.", worker_id, model_worker, host, port);
             // Log each step in the worker loop
             worker::worker_loop(
+                worker_id,
                 &topics_worker,
                 &ollama_worker,
                 &model_worker,

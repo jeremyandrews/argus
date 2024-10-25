@@ -70,6 +70,7 @@ pub struct FeedItem {
 }
 
 pub async fn worker_loop(
+    worker_id: i16,
     topics: &[String],
     ollama: &Ollama,
     model: &str,
@@ -80,7 +81,6 @@ pub async fn worker_loop(
 ) {
     let db = Database::instance().await;
     let mut rng = StdRng::from_entropy();
-    let worker_id = format!("{:?}", std::thread::current().id());
 
     info!(target: TARGET_LLM_REQUEST, "worker {}: Starting worker loop.", worker_id);
 
