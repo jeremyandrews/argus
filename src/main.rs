@@ -61,8 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let model = parts[2].to_string();
 
         info!(
-            "Connecting to Ollama at {}:{} with model {}",
-            host, port, model
+            "Configuring worker {} to connect to model '{}' at {}:{}",
+            count, model, host, port
         );
 
         // Store the worker configuration
@@ -73,7 +73,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Total workers configured: {}", worker_count);
 
     let urls = get_env_var_as_vec("URLS", ';');
-
     let topics = get_env_var_as_vec("TOPICS", ';');
     let slack_token = env::var(SLACK_TOKEN_ENV).expect("SLACK_TOKEN environment variable required");
     let slack_channel =
@@ -114,15 +113,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut worker_handles = Vec::new();
     for (worker_id, host, port, model_worker) in workers {
-        let ollama_worker = Ollama::new(host, port);
+        let ollama_worker = Ollama::new(host.clone(), port);
         let topics_worker = topics.clone();
         let slack_token_worker = slack_token.clone();
         let slack_channel_worker = slack_channel.clone();
         let places_worker = places.clone();
 
         let worker_handle = task::spawn(async move {
-            info!(target: TARGET_LLM_REQUEST, "worker thread {}: Starting worker loop.", worker_id);
-            // Assuming worker::worker_loop is infallible and only returns ()
+            info!(target: TARGET_LLM_REQUEST, "Worker {}: Starting with model '{}' at {}:{}.", worker_id, model_worker, host, port);
+            // Log each step in the worker loop
             worker::worker_loop(
                 &topics_worker,
                 &ollama_worker,
@@ -134,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .await;
 
-            info!(target: TARGET_LLM_REQUEST, "worker thread {}: Completed worker loop.", worker_id);
+            info!(target: TARGET_LLM_REQUEST, "Worker {}: Completed worker loop for model '{}'.", worker_id, model_worker);
         });
 
         worker_handles.push(worker_handle);
@@ -148,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let results = join_all(worker_handles).await;
     for (i, result) in results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "worker thread {} task failed: {}", i, e);
+            error!(target: TARGET_LLM_REQUEST, "Worker {}: Task failed with error: {}", i, e);
         }
     }
 
