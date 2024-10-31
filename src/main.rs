@@ -1,3 +1,4 @@
+use anyhow::Result;
 use futures::future::join_all;
 use ollama_rs::Ollama;
 use serde_json::Value;
@@ -30,7 +31,7 @@ mod worker;
 use environment::get_env_var_as_vec;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     logging::configure_logging();
 
     // Read the OLLAMA_CONFIGS environment variable

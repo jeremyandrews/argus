@@ -1,9 +1,10 @@
 [package]
 name = "argus"
-version = "0.7.6"
+version = "0.7.7"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0"
 chrono = "0.4"
 emailmessage = "0.2"
 feed-rs = "0.5"
