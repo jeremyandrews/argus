@@ -603,6 +603,16 @@ async fn summarize_and_send_article(
         .await
         .unwrap_or_default();
 
+    // Check again if the article hash already exists in the database before posting to Slack
+    if params.db.has_hash(&article_hash).await.unwrap_or(false) {
+        info!(
+            target: TARGET_LLM_REQUEST,
+            "Article with hash {} was already processed (second check), skipping Slack post.",
+            article_hash
+        );
+        return;
+    }
+
     // Generate relation to topic (affected and non-affected summary)
     let mut affected_summary = String::default();
 
@@ -745,6 +755,17 @@ async fn process_topics(
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Article is relevant to the topic
                 article_relevant = true;
+
+                // Perform a secondary check before posting to Slack
+                if params.db.has_hash(&article_hash).await.unwrap_or(false) {
+                    info!(
+                        target: TARGET_LLM_REQUEST,
+                        "Article with hash {} was already processed (second check), skipping Slack post for topic '{}'.",
+                        article_hash,
+                        topic_name
+                    );
+                    continue; // Skip to the next topic
+                }
 
                 // Generate summary
                 let summary_prompt = prompts::summary_prompt(article_text);
