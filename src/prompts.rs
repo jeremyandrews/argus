@@ -146,7 +146,7 @@ Why does this article not affect the life and safety of people in the following 
     )
 }
 
-pub fn source_analysis_prompt(article_text: &str) -> String {
+pub fn source_analysis_prompt(article_text: &str, source_url: &str) -> String {
     // Get today's date
     let today = Local::now();
     let day = today.format("%-d").to_string(); // Day without leading zero
@@ -155,6 +155,7 @@ pub fn source_analysis_prompt(article_text: &str) -> String {
 
     format!(
         "{article} |
+Source URL: {source_url}
 Provide an analysis of the source of this content. In two-to-three sentences, provide any background information on the source, including details such as ownership, general purpose, awards, scandals, and other relevant information. Next, are there any timestamps or dates in the article, what is the date they suggest, and compare it to today's date ({day} of {month}, {year}).
 
 {write_in_clear_english}
@@ -163,6 +164,7 @@ Provide an analysis of the source of this content. In two-to-three sentences, pr
 
 {format_instructions}",
         article = article_text,
+        source_url = source_url,
         day = day,
         month = month,
         year = year,

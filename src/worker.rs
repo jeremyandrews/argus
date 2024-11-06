@@ -606,8 +606,11 @@ async fn summarize_and_send_article(
         .await
         .unwrap_or_default();
 
-    // Generate source analysis
-    let source_analysis_prompt = prompts::source_analysis_prompt(page_content);
+    // Add additional variables
+    let source_url = &article_url;
+
+    // Call the updated prompt function with additional context
+    let source_analysis_prompt = prompts::source_analysis_prompt(page_content, source_url);
     let source_analysis_response = generate_llm_response(&source_analysis_prompt, params)
         .await
         .unwrap_or_default();
@@ -811,8 +814,12 @@ async fn process_topics(
                     .await
                     .unwrap_or_default();
 
-                // Generate source analysis
-                let source_analysis_prompt = prompts::source_analysis_prompt(page_content);
+                // Add additional variables
+                let source_url = &article_url;
+
+                // Call the updated prompt function with additional context
+                let source_analysis_prompt =
+                    prompts::source_analysis_prompt(page_content, source_url);
                 let source_analysis_response =
                     generate_llm_response(&source_analysis_prompt, params)
                         .await
