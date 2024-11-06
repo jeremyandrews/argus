@@ -1,10 +1,11 @@
 [package]
 name = "argus"
-version = "0.7.7"
+version = "0.8.0"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+async-openai = "0.25.0"
 chrono = "0.4"
 emailmessage = "0.2"
 feed-rs = "0.5"

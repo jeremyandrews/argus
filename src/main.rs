@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use futures::future::join_all;
 use ollama_rs::Ollama;
 use serde_json::Value;
@@ -13,6 +14,7 @@ const TARGET_LLM_REQUEST: &str = "llm_request";
 const TARGET_DB: &str = "db_query";
 
 const OLLAMA_CONFIGS_ENV: &str = "OLLAMA_CONFIGS";
+const OPENAI_CONFIGS_ENV: &str = "OPENAI_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
@@ -30,48 +32,64 @@ mod worker;
 
 use environment::get_env_var_as_vec;
 
+#[derive(Clone)]
+enum LLMClient {
+    Ollama(Ollama),
+    OpenAI(OpenAIClient<OpenAIConfig>),
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     logging::configure_logging();
 
-    // Read the OLLAMA_CONFIGS environment variable
-    let configs = env::var(OLLAMA_CONFIGS_ENV).unwrap_or_else(|_| {
-        error!("{} is not set", OLLAMA_CONFIGS_ENV);
-        String::new()
-    });
-
-    // Split the configurations
-    let config_entries: Vec<&str> = configs.split(';').collect();
-    let worker_count = config_entries.len();
+    // Read the OLLAMA_CONFIGS and OPENAI_CONFIGS environment variables
+    let ollama_configs = env::var(OLLAMA_CONFIGS_ENV).unwrap_or_default();
+    let openai_configs = env::var(OPENAI_CONFIGS_ENV).unwrap_or_default();
 
     let mut workers = Vec::new();
     let mut count: i16 = 0;
-    for config in config_entries {
-        // Split each configuration into host, port, and model
+
+    // Process Ollama configurations
+    for config in ollama_configs.split(';').filter(|c| !c.is_empty()) {
         let parts: Vec<&str> = config.split('|').collect();
         if parts.len() != 3 {
-            error!("Invalid configuration format: {}", config);
+            error!("Invalid Ollama configuration format: {}", config);
             continue;
         }
-
         let host = parts[0].to_string();
         let port: u16 = parts[1].parse().unwrap_or_else(|_| {
             error!("Invalid port in configuration: {}", parts[1]);
             11434 // Default port
         });
         let model = parts[2].to_string();
-
         info!(
-            "Configuring worker {} to connect to model '{}' at {}:{}",
+            "Configuring Ollama worker {} to connect to model '{}' at {}:{}",
             count, model, host, port
         );
-
-        // Store the worker configuration
-        workers.push((count, host, port, model));
+        workers.push((count, LLMClient::Ollama(Ollama::new(host, port)), model));
         count += 1;
     }
 
-    info!("Total workers configured: {}", worker_count);
+    // Process OpenAI configurations
+    for config in openai_configs.split(';').filter(|c| !c.is_empty()) {
+        let parts: Vec<&str> = config.split('|').collect();
+        if parts.len() != 2 {
+            error!("Invalid OpenAI configuration format: {}", config);
+            continue;
+        }
+        let api_key = parts[0].to_string();
+        let model = parts[1].to_string();
+        let config = OpenAIConfig::new().with_api_key(&api_key);
+        let client = OpenAIClient::with_config(config);
+        info!(
+            "Configuring OpenAI worker {} to connect to model '{}'",
+            count, model
+        );
+        workers.push((count, LLMClient::OpenAI(client), model));
+        count += 1;
+    }
+
+    info!("Total workers configured: {}", workers.len());
 
     let urls = get_env_var_as_vec("URLS", ';');
     let topics = get_env_var_as_vec("TOPICS", ';');
@@ -113,20 +131,21 @@ async fn main() -> Result<()> {
     });
 
     let mut worker_handles = Vec::new();
-    for (worker_id, host, port, model_worker) in workers {
-        let ollama_worker = Ollama::new(host.clone(), port);
+    for (worker_id, llm_client, model_worker) in workers.clone() {
         let topics_worker = topics.clone();
         let slack_token_worker = slack_token.clone();
         let slack_channel_worker = slack_channel.clone();
         let places_worker = places.clone();
-
         let worker_handle = task::spawn(async move {
-            info!(target: TARGET_LLM_REQUEST, "Worker {}: Starting with model '{}' at {}:{}.", worker_id, model_worker, host, port);
-            // Log each step in the worker loop
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "Worker {}: Starting with model '{}'",
+                worker_id, model_worker
+            );
             worker::worker_loop(
                 worker_id,
                 &topics_worker,
-                &ollama_worker,
+                &llm_client,
                 &model_worker,
                 temperature,
                 &slack_token_worker,
@@ -134,10 +153,12 @@ async fn main() -> Result<()> {
                 places_worker,
             )
             .await;
-
-            info!(target: TARGET_LLM_REQUEST, "Worker {}: Completed worker loop for model '{}'.", worker_id, model_worker);
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "Worker {}: Completed worker loop for model '{}'",
+                worker_id, model_worker
+            );
         });
-
         worker_handles.push(worker_handle);
     }
 

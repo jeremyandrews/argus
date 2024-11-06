@@ -1,4 +1,3 @@
-use ollama_rs::Ollama;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use readability::extractor;
 use serde_json::{json, Value};
@@ -13,12 +12,13 @@ use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::weighted_sleep;
+use crate::LLMClient;
 use crate::{TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 /// Parameters required for processing an item, including topics, database, and Slack channel information.
 pub struct ProcessItemParams<'a> {
     pub topics: &'a [String],
-    pub ollama: &'a Ollama,
+    pub llm_client: &'a LLMClient,
     pub model: &'a str,
     pub temperature: f32,
     pub db: &'a Database,
@@ -72,7 +72,7 @@ pub struct FeedItem {
 pub async fn worker_loop(
     worker_id: i16,
     topics: &[String],
-    ollama: &Ollama,
+    llm_client: &LLMClient,
     model: &str,
     temperature: f32,
     slack_token: &str,
@@ -110,7 +110,7 @@ pub async fn worker_loop(
 
                 let mut params = ProcessItemParams {
                     topics,
-                    ollama,
+                    llm_client,
                     model,
                     temperature,
                     db,
