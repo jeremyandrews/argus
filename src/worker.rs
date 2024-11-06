@@ -603,6 +603,12 @@ async fn summarize_and_send_article(
         .await
         .unwrap_or_default();
 
+    // Generate source analysis
+    let source_analysis_prompt = prompts::source_analysis_prompt(article_text);
+    let source_analysis_response = generate_llm_response(&source_analysis_prompt, params)
+        .await
+        .unwrap_or_default();
+
     // Check again if the article hash already exists in the database before posting to Slack
     if params.db.has_hash(&article_hash).await.unwrap_or(false) {
         info!(
@@ -681,6 +687,7 @@ async fn summarize_and_send_article(
         || !critical_analysis_response.is_empty()
         || !logical_fallacies_response.is_empty()
         || !relation_to_topic_response.is_empty()
+        || !source_analysis_response.is_empty()
     {
         let detailed_response_json = json!({
             "topic": format!("{} {}", affected_summary, non_affected_summary),
@@ -689,6 +696,7 @@ async fn summarize_and_send_article(
             "critical_analysis": critical_analysis_response,
             "logical_fallacies": logical_fallacies_response,
             "relation_to_topic": relation_to_topic_response,
+            "source_analysis": source_analysis_response,
             "elapsed_time": start_time.elapsed().as_secs_f64(),
             "model": params.model
         });
@@ -799,6 +807,13 @@ async fn process_topics(
                     .await
                     .unwrap_or_default();
 
+                // Generate source analysis
+                let source_analysis_prompt = prompts::source_analysis_prompt(article_text);
+                let source_analysis_response =
+                    generate_llm_response(&source_analysis_prompt, params)
+                        .await
+                        .unwrap_or_default();
+
                 // Confirm the article relevance
                 let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
                 if let Some(confirm_response) = generate_llm_response(&confirm_prompt, params).await
@@ -813,6 +828,7 @@ async fn process_topics(
                             "critical_analysis": critical_analysis_response,
                             "logical_fallacies": logical_fallacies_response,
                             "relation_to_topic": relation_response,
+                            "source_analysis": source_analysis_response,
                             "elapsed_time": start_time.elapsed().as_secs_f64(),
                             "model": params.model
                         });

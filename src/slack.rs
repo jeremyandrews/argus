@@ -82,6 +82,11 @@ pub async fn send_to_slack(
             .as_str()
             .unwrap_or("No relation to topic available"),
     );
+    let source_analysis = deduplicate_markdown(
+        response_json["source_analysis"]
+            .as_str()
+            .unwrap_or("No source analysis available"),
+    );
     let model = deduplicate_markdown(response_json["model"].as_str().unwrap_or("Unknown model"));
     let elapsed_time = response_json["elapsed_time"].as_f64().unwrap_or(0.0);
 
@@ -141,6 +146,13 @@ pub async fn send_to_slack(
             add_section_with_divider(
                 &mut blocks,
                 format!("*Logical Fallacies*\n{}", logical_fallacies),
+            );
+        }
+
+        if !source_analysis.is_empty() {
+            add_section_with_divider(
+                &mut blocks,
+                format!("*Source Analysis*\n{}", source_analysis),
             );
         }
 

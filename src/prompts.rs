@@ -1,3 +1,5 @@
+use chrono::Local;
+
 const DONT_TELL_ME: &str =
     "Do not tell me what you're doing, do not explain that you're writing in American English.";
 const FORMAT_INSTRUCTIONS: &str =
@@ -138,6 +140,32 @@ Why does this article not affect the life and safety of people in the following 
 {format_instructions}",
         article = article_text,
         places = non_affected_places,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
+        dont_tell_me = DONT_TELL_ME,
+        format_instructions = FORMAT_INSTRUCTIONS
+    )
+}
+
+pub fn source_analysis_prompt(article_text: &str) -> String {
+    // Get today's date
+    let today = Local::now();
+    let day = today.format("%-d").to_string(); // Day without leading zero
+    let month = today.format("%B").to_string(); // Full month name
+    let year = today.format("%Y").to_string(); // Full year
+
+    format!(
+        "{article} |
+Provide an analysis of the source of this content. In two-to-three sentences, provide any background information on the source, including details such as ownership, general purpose, awards, scandals, and other relevant information. Next, attempt to identify the date the content was written and compare it to today's date ({day} of {month}, {year}).
+
+{write_in_clear_english}
+
+{dont_tell_me}
+
+{format_instructions}",
+        article = article_text,
+        day = day,
+        month = month,
+        year = year,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
         format_instructions = FORMAT_INSTRUCTIONS
