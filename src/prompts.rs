@@ -155,7 +155,7 @@ pub fn source_analysis_prompt(article_text: &str) -> String {
 
     format!(
         "{article} |
-Provide an analysis of the source of this content. In two-to-three sentences, provide any background information on the source, including details such as ownership, general purpose, awards, scandals, and other relevant information. Next, attempt to identify the date the content was written and compare it to today's date ({day} of {month}, {year}).
+Provide an analysis of the source of this content. In two-to-three sentences, provide any background information on the source, including details such as ownership, general purpose, awards, scandals, and other relevant information. Next, are there any timestamps or dates in the article, what is the date they suggest, and compare it to today's date ({day} of {month}, {year}).
 
 {write_in_clear_english}
 
