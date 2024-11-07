@@ -184,7 +184,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
     }
 
     match extract_article_text(&article_url).await {
-        Ok((article_text, page_content)) => {
+        Ok((article_text, article_html)) => {
             let mut hasher = Sha256::new();
             hasher.update(article_text.as_bytes());
             let article_hash = format!("{:x}", hasher.finalize());
@@ -232,7 +232,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
                     &non_affected_places,
                     &article_hash,
                     &title_domain_hash,
-                    &page_content,
+                    &article_html,
                     params,
                 )
                 .await;
@@ -243,7 +243,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
                     &article_title,
                     &article_hash,
                     &title_domain_hash,
-                    &page_content,
+                    &article_html,
                     params,
                 )
                 .await;
@@ -572,7 +572,7 @@ async fn summarize_and_send_article(
     non_affected_places: &BTreeSet<String>,
     article_hash: &str,
     title_domain_hash: &str,
-    page_content: &str,
+    article_html: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let start_time = std::time::Instant::now();
@@ -610,7 +610,7 @@ async fn summarize_and_send_article(
     let source_url = &article_url;
 
     // Call the updated prompt function with additional context
-    let source_analysis_prompt = prompts::source_analysis_prompt(page_content, source_url);
+    let source_analysis_prompt = prompts::source_analysis_prompt(article_html, source_url);
     let source_analysis_response = generate_llm_response(&source_analysis_prompt, params)
         .await
         .unwrap_or_default();
@@ -745,7 +745,7 @@ async fn process_topics(
     article_title: &str,
     article_hash: &str,
     title_domain_hash: &str,
-    page_content: &str,
+    article_html: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
     let start_time = std::time::Instant::now();
@@ -819,7 +819,7 @@ async fn process_topics(
 
                 // Call the updated prompt function with additional context
                 let source_analysis_prompt =
-                    prompts::source_analysis_prompt(page_content, source_url);
+                    prompts::source_analysis_prompt(article_html, source_url);
                 let source_analysis_response =
                     generate_llm_response(&source_analysis_prompt, params)
                         .await
@@ -927,7 +927,7 @@ async fn process_topics(
 async fn extract_article_text(url: &str) -> Result<(String, String), bool> {
     let max_retries = 3;
     let article_text: String;
-    let full_page_content: String;
+    let article_html: String;
     let mut backoff = 2;
     let worker_id = format!("{:?}", std::thread::current().id());
 
@@ -941,10 +941,10 @@ async fn extract_article_text(url: &str) -> Result<(String, String), bool> {
                     break;
                 }
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
-                full_page_content = product.content.clone();
+                article_html = product.content.clone();
 
                 debug!(target: TARGET_WEB_REQUEST, "worker {}: Extraction succeeded for URL: {}", worker_id, url);
-                return Ok((article_text, full_page_content));
+                return Ok((article_text, article_html));
             }
             Ok(Err(e)) => {
                 warn!(target: TARGET_WEB_REQUEST, "worker {}: Error extracting page: {:?}", worker_id, e);
