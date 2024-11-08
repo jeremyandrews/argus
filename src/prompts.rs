@@ -8,6 +8,19 @@ const FORMAT_INSTRUCTIONS: &str =
      formatting, and \\n for newlines.";
 const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
 
+const CONTEXT_2024: &str = "
+- In January 2024, BRICS expanded, adding five nations and shifting global economic power. Record global temperatures highlighted the escalating climate crisis. A Supreme Court ruling on Trump’s immunity shaped U.S. legal precedents. Japan faced devastation from a 7.6 earthquake, and a U.S. winter storm exposed energy vulnerabilities.
+- In February 2024, significant events included devastating wildfires in Chile, the resignation of Hungary's president amid controversy, a deadly Israeli airstrike in Rafah, a severe U.S. winter storm disrupting energy production, and U.S. airstrikes targeting Iranian facilities in Iraq and Syria.
+- In March 2024, France enshrined abortion rights in its constitution, Sweden joined NATO, the U.S. Supreme Court ruled on ballot access for federal candidates, LeBron James reached 40,000 NBA points, and a Massachusetts Air National Guard member pleaded guilty to leaking security secrets.
+- In April 2024, a total solar eclipse united North America in awe. Concurrently, severe weather events highlighted the pressing issue of climate change. U.S. campuses saw pro-Palestinian protests, igniting debates on free speech. Donald Trump's criminal trial marked a historic legal moment, while UK local elections influenced political dynamics.
+- In May 2024, Vladimir Putin began his fifth term as Russian President; Chinese Premier Xi Jinping visited Europe, marking a significant diplomatic engagement; Israeli forces seized Gaza's Rafah crossing; Stormy Daniels testified in a trial involving Donald Trump; and severe floods in Brazil's Rio Grande do Sul state resulted in substantial loss of life and property.
+- In June 2024, the world faced record-breaking heatwaves, underscoring the urgent need for climate action. The 80th anniversary of D-Day was commemorated, honoring World War II sacrifices. The US Supreme Court's decision on homelessness influenced national policies. Apple announced a partnership with OpenAI to integrate generative AI into its devices, marking a significant technological advancement. G7 leaders committed $50 billion to support Ukraine, reflecting global geopolitical dynamics.
+- In July 2024, the Paris Olympics united nations in athletic competition; record-breaking heatwaves highlighted the climate crisis; President Biden withdrew from the US presidential race, endorsing Kamala Harris; the UK experienced a political shift with Labour's victory; and Israeli airstrikes in Gaza escalated regional tensions.
+- In August 2024, Earth experienced its hottest month on record, highlighting the urgent climate crisis. The Paris Olympics showcased global athletic talent, fostering unity. Financial markets faced volatility, with the IMF cautioning about future instability. The WHO declared mpox a public health emergency, urging international action. Escalating conflict in Gaza raised humanitarian and geopolitical concerns.
+- In September 2024, the UN's Summit of the Future led to a pivotal 'Pact for the Future.' A groundbreaking whole-eye and face transplant was declared successful. Hurricane Helene's unprecedented impact highlighted climate challenges. The Paris Olympics concluded, celebrated for inclusivity. Apple unveiled new products, influencing global technology trends.
+- In October 2024, the U.S. presidential campaign intensified ahead of the November election. Globally, the anniversary of the October 7 Hamas attack prompted widespread commemorations. Claudia Sheinbaum was inaugurated as Mexico's first female president. The BRICS summit in Russia focused on economic cooperation among emerging economies. Domestically, Hurricane Helene caused significant damage along the U.S. Gulf Coast, leading to extensive federal disaster response efforts.
+- In early November 2024, Donald J. Trump won the U.S. presidential election, marking a significant shift in domestic and global policies. The International Day to End Impunity for Crimes Against Journalists highlighted the importance of protecting press freedom. World Tsunami Awareness Day emphasized disaster preparedness and risk mitigation. The International Championship Snooker 2024 showcased top talent, drawing global attention. World Urbanism Day promoted sustainable urban development, addressing the challenges of urbanization and environmental impact.";
+
 pub fn summary_prompt(article_text: &str) -> String {
     format!(
         "{article} |
@@ -154,14 +167,16 @@ pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
     let year = today.format("%Y").to_string(); // Full year
 
     format!(
-        "{article} | Source URL: {source_url} |
-In two to four sentences, provide an analysis of the source of this content which includes any background information you know on the source, including details such as ownership, general purpose and goals, awards, scandals, and other relevant information.  Today is {month} {day} {year}, is the content likely recent or does it indicate otherwise?
+        " Context since your knowledge cutoff: `{context}` |
+Article to review: `{article}` | Source URL: `{source_url}` |
+In 2-4 sentences, provide an analysis of the source of this content which includes any background information you know on the source, including details such as ownership, general purpose and goals, awards, scandals, and other relevant information.  Today is {month} {day} {year}, is the content likely recent or does it indicate otherwise?
 
 {write_in_clear_english}
 
 {dont_tell_me}
 
 {format_instructions}",
+        context = CONTEXT_2024,
         article = article_html,
         source_url = source_url,
         day = day,
