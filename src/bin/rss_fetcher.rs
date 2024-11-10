@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
 
     let feed = fetch_rss_feed(rss_url).await?;
     let mut rng = rand::thread_rng();
-    let articles: Vec<_> = feed.entries.choose_multiple(&mut rng, 2).collect();
+    let articles: Vec<_> = feed.entries.choose_multiple(&mut rng, 5).collect();
 
     let output_dir = Path::new(TEST_DATA_DIR);
     create_dir_all(output_dir)?;
