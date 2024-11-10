@@ -10,12 +10,15 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time::timeout;
 
+use argus::llm;
+use argus::prompts;
+use argus::{LLMClient, LLMParams};
+
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const TEST_DATA_DIR: &str = "test_data";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Get the RSS URL from the command line arguments
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         eprintln!("Usage: rss_fetcher <RSS_URL>");
@@ -23,18 +26,13 @@ async fn main() -> Result<()> {
     }
     let rss_url = &args[1];
 
-    // Fetch and parse the RSS feed
     let feed = fetch_rss_feed(rss_url).await?;
-
-    // Select up to 2 random articles
     let mut rng = rand::thread_rng();
     let articles: Vec<_> = feed.entries.choose_multiple(&mut rng, 2).collect();
 
-    // Ensure the test data directory exists
     let output_dir = Path::new(TEST_DATA_DIR);
     create_dir_all(output_dir)?;
 
-    // Save each article to a file
     for entry in articles {
         if let Some(link) = entry.links.first() {
             let source = extract_source(rss_url);
@@ -51,8 +49,33 @@ async fn main() -> Result<()> {
 
             match extract_article_text(&link.href).await {
                 Ok(article) => {
-                    save_article_to_json_file(&file_path, &article.title, &article.body)
-                        .expect("Failed to save article");
+                    let mut relevance = json!({});
+                    for (topic_key, topic_name) in get_topics() {
+                        let prompt = crate::prompts::is_this_about(&article.body, topic_name);
+                        let llm_params = crate::LLMParams {
+                            llm_client: &LLMClient::Ollama(ollama_rs::Ollama::new(
+                                "http://10.20.100.103".to_string(),
+                                11434,
+                            )),
+                            model: "llama3.2-vision:90b-instruct-q8_0",
+                            temperature: 0.0,
+                        };
+                        if let Some(response) =
+                            crate::llm::generate_llm_response(&prompt, &llm_params).await
+                        {
+                            relevance[topic_key] =
+                                serde_json::Value::String(response.trim().to_string());
+                        } else {
+                            relevance[topic_key] = serde_json::Value::String("unknown".to_string());
+                        }
+                    }
+                    save_article_to_json_file(
+                        &file_path,
+                        &article.title,
+                        &article.body,
+                        &relevance,
+                    )
+                    .expect("Failed to save article");
                     println!("Saved article to {}", file_path.display());
                 }
                 Err(_) => {
@@ -131,10 +154,16 @@ async fn extract_article_text(url: &str) -> Result<Article> {
     ))
 }
 
-fn save_article_to_json_file(file_path: &Path, title: &str, body: &str) -> Result<()> {
+fn save_article_to_json_file(
+    file_path: &Path,
+    title: &str,
+    body: &str,
+    relevance: &serde_json::Value,
+) -> Result<()> {
     let article_json = json!({
         "title": title,
         "body": body,
+        "relevance": relevance,
     });
 
     let mut file = File::create(file_path)?;
@@ -146,4 +175,20 @@ fn save_article_to_json_file(file_path: &Path, title: &str, body: &str) -> Resul
 struct Article {
     title: String,
     body: String,
+}
+
+fn get_topics() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("apple", "New Apple products, like new versions of iPhone, iPad and MacBooks, or newly announced products"),
+        ("space", "Space and Space Exploration"),
+        ("longevity", "Advancements in health practices and technologies that enhance human longevity"),
+        ("llm", "significant new developments in Large Language Models, or anything about the Llama LLM"),
+        ("ev", "Electric vehicles"),
+        ("rust", "the Rust programming language"),
+        ("bitcoin", "Bitcoins, the cryptocurrency"),
+        ("drupal", "the Drupal Content Management System"),
+        ("linux_vuln", "a major new vulnerability in Linux, macOS, or iOS"),
+        ("global_vuln", "a global vulnerability bringing down significant infrastructure worldwide"),
+        ("tuscany", "Tuscany, the famous region in Italy"),
+    ]
 }

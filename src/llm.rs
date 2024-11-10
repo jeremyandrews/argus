@@ -5,11 +5,10 @@ use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
-use crate::worker::ProcessItemParams;
-use crate::LLMClient;
 use crate::TARGET_LLM_REQUEST;
+use crate::{LLMClient, LLMParams};
 
-pub async fn generate_llm_response(prompt: &str, params: &ProcessItemParams<'_>) -> Option<String> {
+pub async fn generate_llm_response(prompt: &str, params: &LLMParams<'_>) -> Option<String> {
     let max_retries = 5;
     let mut response_text = String::new();
     let mut backoff = 2;

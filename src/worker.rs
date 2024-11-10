@@ -12,7 +12,7 @@ use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::weighted_sleep;
-use crate::LLMClient;
+use crate::{LLMClient, LLMParams};
 use crate::{TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 /// Parameters required for processing an item, including topics, database, and Slack channel information.
@@ -67,6 +67,14 @@ struct CityProcessingParams<'a> {
 pub struct FeedItem {
     pub url: String,
     pub title: Option<String>,
+}
+
+fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams<'a> {
+    LLMParams {
+        llm_client: params.llm_client,
+        model: params.model,
+        temperature: params.temperature,
+    }
 }
 
 pub async fn worker_loop(
@@ -269,7 +277,8 @@ async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemPara
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
 
-    match generate_llm_response(&threat_prompt, params).await {
+    let llm_params = extract_llm_params(params);
+    match generate_llm_response(&threat_prompt, &llm_params).await {
         Some(response) => response.trim().to_lowercase().starts_with("yes"),
         None => false,
     }
@@ -323,7 +332,8 @@ async fn process_continent(
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
 
-    let continent_response = match generate_llm_response(&continent_prompt, params).await {
+    let llm_params = extract_llm_params(params);
+    let continent_response = match generate_llm_response(&continent_prompt, &llm_params).await {
         Some(response) => response,
         None => return false,
     };
@@ -378,7 +388,8 @@ async fn process_country(
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
 
-    let country_response = match generate_llm_response(&country_prompt, params).await {
+    let llm_params = extract_llm_params(params);
+    let country_response = match generate_llm_response(&country_prompt, &llm_params).await {
         Some(response) => response,
         None => return false,
     };
@@ -446,7 +457,8 @@ async fn process_region(
     let worker_id = format!("{:?}", std::thread::current().id());
     debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
 
-    let region_response = match generate_llm_response(&region_prompt, proc_params).await {
+    let llm_params = extract_llm_params(proc_params);
+    let region_response = match generate_llm_response(&region_prompt, &llm_params).await {
         Some(response) => response,
         None => return false,
     };
@@ -525,7 +537,8 @@ async fn process_city(
     let city_prompt =
         prompts::city_threat_prompt(article_text, city_name, region, country, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
-    let city_response = match generate_llm_response(&city_prompt, proc_params).await {
+    let llm_params = extract_llm_params(proc_params);
+    let city_response = match generate_llm_response(&city_prompt, &llm_params).await {
         Some(response) => response,
         None => return false,
     };
@@ -584,25 +597,26 @@ async fn summarize_and_send_article(
 
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);
-    let summary_response = generate_llm_response(&summary_prompt, params)
+    let llm_params = extract_llm_params(params);
+    let summary_response = generate_llm_response(&summary_prompt, &llm_params)
         .await
         .unwrap_or_default();
 
     // Generate tiny summary
     let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
-    let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
+    let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, &llm_params)
         .await
         .unwrap_or_default();
 
     // Generate critical analysis
     let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
-    let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, params)
+    let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, &llm_params)
         .await
         .unwrap_or_default();
 
     // Generate logical fallacies
     let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
-    let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, params)
+    let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, &llm_params)
         .await
         .unwrap_or_default();
 
@@ -611,7 +625,7 @@ async fn summarize_and_send_article(
 
     // Call the updated prompt function with additional context
     let source_analysis_prompt = prompts::source_analysis_prompt(article_html, source_url);
-    let source_analysis_response = generate_llm_response(&source_analysis_prompt, params)
+    let source_analysis_response = generate_llm_response(&source_analysis_prompt, &llm_params)
         .await
         .unwrap_or_default();
 
@@ -649,7 +663,7 @@ async fn summarize_and_send_article(
             .collect::<Vec<_>>()
             .join(", ");
         let how_prompt = prompts::how_does_it_affect_prompt(article_text, &affected_places_str);
-        let how_response = generate_llm_response(&how_prompt, params)
+        let how_response = generate_llm_response(&how_prompt, &llm_params)
             .await
             .unwrap_or_default();
         relation_to_topic_response
@@ -680,7 +694,7 @@ async fn summarize_and_send_article(
                 .collect::<Vec<_>>()
                 .join(", "),
         );
-        let why_not_response = generate_llm_response(&why_not_prompt, params)
+        let why_not_response = generate_llm_response(&why_not_prompt, &llm_params)
             .await
             .unwrap_or_default();
         relation_to_topic_response.push_str(&format!(
@@ -766,7 +780,8 @@ async fn process_topics(
         debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
 
         let yes_no_prompt = prompts::is_this_about(article_text, topic_name);
-        if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, params).await {
+        let llm_params = extract_llm_params(params);
+        if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, &llm_params).await {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Article is relevant to the topic
                 article_relevant = true;
@@ -784,33 +799,34 @@ async fn process_topics(
 
                 // Generate summary
                 let summary_prompt = prompts::summary_prompt(article_text);
-                let summary_response = generate_llm_response(&summary_prompt, params)
+                let summary_response = generate_llm_response(&summary_prompt, &llm_params)
                     .await
                     .unwrap_or_default();
 
                 // Generate tiny summary
                 let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
-                let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, params)
-                    .await
-                    .unwrap_or_default();
+                let tiny_summary_response =
+                    generate_llm_response(&tiny_summary_prompt, &llm_params)
+                        .await
+                        .unwrap_or_default();
 
                 // Generate critical analysis
                 let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
                 let critical_analysis_response =
-                    generate_llm_response(&critical_analysis_prompt, params)
+                    generate_llm_response(&critical_analysis_prompt, &llm_params)
                         .await
                         .unwrap_or_default();
 
                 // Generate logical fallacies
                 let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
                 let logical_fallacies_response =
-                    generate_llm_response(&logical_fallacies_prompt, params)
+                    generate_llm_response(&logical_fallacies_prompt, &llm_params)
                         .await
                         .unwrap_or_default();
 
                 // Generate relation to topic
                 let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic_name);
-                let relation_response = generate_llm_response(&relation_prompt, params)
+                let relation_response = generate_llm_response(&relation_prompt, &llm_params)
                     .await
                     .unwrap_or_default();
 
@@ -821,13 +837,14 @@ async fn process_topics(
                 let source_analysis_prompt =
                     prompts::source_analysis_prompt(article_html, source_url);
                 let source_analysis_response =
-                    generate_llm_response(&source_analysis_prompt, params)
+                    generate_llm_response(&source_analysis_prompt, &llm_params)
                         .await
                         .unwrap_or_default();
 
                 // Confirm the article relevance
                 let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
-                if let Some(confirm_response) = generate_llm_response(&confirm_prompt, params).await
+                if let Some(confirm_response) =
+                    generate_llm_response(&confirm_prompt, &llm_params).await
                 {
                     if confirm_response.trim().to_lowercase().starts_with("yes") {
                         let formatted_article = format!("*<{}|{}>*", article_url, article_title);

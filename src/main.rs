@@ -20,23 +20,13 @@ const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
 const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
-mod db;
-mod environment;
-mod llm;
-mod logging;
-mod prompts;
-mod rss;
-mod slack;
-mod util;
-mod worker;
+use argus::environment;
+use argus::logging;
+use argus::rss;
+use argus::worker;
+use argus::LLMClient;
 
 use environment::get_env_var_as_vec;
-
-#[derive(Clone)]
-enum LLMClient {
-    Ollama(Ollama),
-    OpenAI(OpenAIClient<OpenAIConfig>),
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
