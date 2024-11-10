@@ -9,6 +9,8 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 use tokio::time::timeout;
+use tracing::{debug, error, info, warn};
+use tracing_subscriber;
 
 use argus::llm;
 use argus::prompts;
@@ -19,12 +21,22 @@ const TEST_DATA_DIR: &str = "test_data";
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+    info!("Starting RSS fetcher...");
+
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         eprintln!("Usage: rss_fetcher <RSS_URL>");
         std::process::exit(1);
     }
     let rss_url = &args[1];
+
+    debug!(target: "config", "Environment Variables - LLM_BASE_URL: {}, LLM_MODEL: {}",
+        std::env::var("LLM_BASE_URL").unwrap_or_default(),
+        std::env::var("LLM_MODEL").unwrap_or_default()
+    );
 
     let feed = fetch_rss_feed(rss_url).await?;
     let mut rng = rand::thread_rng();
@@ -34,7 +46,13 @@ async fn main() -> Result<()> {
     create_dir_all(output_dir)?;
 
     for entry in articles {
+        debug!(target: "article", "Selected article metadata - Title: {:?}, Link: {}",
+            entry.title.clone(),
+            entry.links.first().map(|l| l.href.clone()).unwrap_or_default()
+        );
+
         if let Some(link) = entry.links.first() {
+            info!(target: "article", "Processing article from link: {}", link.href);
             let source = extract_source(rss_url);
             let random_blob: String = (0..8)
                 .map(|_| rng.sample(rand::distributions::Alphanumeric) as char)
@@ -46,16 +64,20 @@ async fn main() -> Result<()> {
                 random_blob
             );
             let file_path = output_dir.join(filename);
+            debug!(target: "file", "Generated filename: {}", file_path.display());
 
             match extract_article_text(&link.href).await {
                 Ok(article) => {
+                    info!(target: "article", "Extracted article titled: {}", article.title);
                     let mut relevance = json!({});
                     for (topic_key, topic_name) in get_topics() {
                         let prompt = crate::prompts::is_this_about(&article.body, topic_name);
+                        debug!(target: "prompt", "Generated prompt for topic '{}': {}", topic_name, prompt);
 
                         // Get environment variables
                         let llm_base_url = std::env::var("LLM_BASE_URL")
                             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                        info!(target: "config", "Using LLM base URL: {}", llm_base_url);
                         let url =
                             url::Url::parse(&llm_base_url).expect("Invalid LLM_BASE_URL format");
                         let llm_host_with_scheme = format!(
@@ -64,8 +86,10 @@ async fn main() -> Result<()> {
                             url.host_str().expect("Missing host in LLM_BASE_URL")
                         );
                         let llm_port = url.port().unwrap_or(11434); // Default to 11434 if no port is specified
+                        info!(target: "config", "LLM host with scheme: {}, port: {}", llm_host_with_scheme, llm_port);
                         let llm_model =
                             std::env::var("LLM_MODEL").unwrap_or_else(|_| "llama3.1".to_string());
+                        info!(target: "config", "Using LLM model: {}", llm_model);
 
                         let llm_params = crate::LLMParams {
                             llm_client: &LLMClient::Ollama(ollama_rs::Ollama::new(
@@ -81,8 +105,10 @@ async fn main() -> Result<()> {
                         {
                             relevance[topic_key] =
                                 serde_json::Value::String(response.trim().to_string());
+                            info!(target: "llm", "Received response for topic '{}': {}", topic_key, response.trim());
                         } else {
                             relevance[topic_key] = serde_json::Value::String("unknown".to_string());
+                            warn!(target: "llm", "No response for topic '{}'", topic_key);
                         }
                     }
                     save_article_to_json_file(
@@ -91,13 +117,18 @@ async fn main() -> Result<()> {
                         &article.body,
                         &relevance,
                     )
-                    .expect("Failed to save article");
-                    println!("Saved article to {}", file_path.display());
+                    .unwrap_or_else(|e| {
+                        error!(target: "file", "Failed to save article to {}: {}", file_path.display(), e);
+                        panic!("Failed to save article");
+                    });
+                    info!(target: "file", "Saved article to {}", file_path.display());
                 }
-                Err(_) => {
-                    eprintln!("Failed to extract article from {}", link.href);
+                Err(e) => {
+                    error!(target: "article", "Failed to extract article from {}: {}", link.href, e);
                 }
             }
+        } else {
+            warn!(target: "article", "No valid link found in feed entry.");
         }
     }
 
@@ -105,10 +136,16 @@ async fn main() -> Result<()> {
 }
 
 async fn fetch_rss_feed(rss_url: &str) -> Result<feed_rs::model::Feed> {
+    info!(target: "feed", "Fetching RSS feed from URL: {}", rss_url);
     let response = timeout(REQUEST_TIMEOUT, reqwest::get(rss_url)).await??;
     let body = response.text().await?;
+    debug!(target: "feed", "Received RSS feed content of length: {}", body.len());
+
     let reader = std::io::Cursor::new(body);
     let feed = parser::parse(reader)?;
+    info!(target: "feed", "Parsed RSS feed successfully with {} entries.", feed.entries.len());
+    debug!(target: "feed", "First entry title: {:?}", feed.entries.first().and_then(|e| e.title.clone()));
+
     Ok(feed)
 }
 
