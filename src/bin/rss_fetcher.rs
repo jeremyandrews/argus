@@ -52,14 +52,30 @@ async fn main() -> Result<()> {
                     let mut relevance = json!({});
                     for (topic_key, topic_name) in get_topics() {
                         let prompt = crate::prompts::is_this_about(&article.body, topic_name);
+
+                        // Get environment variables
+                        let llm_base_url = std::env::var("LLM_BASE_URL")
+                            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                        let url =
+                            url::Url::parse(&llm_base_url).expect("Invalid LLM_BASE_URL format");
+                        let llm_host_with_scheme = format!(
+                            "{}://{}",
+                            url.scheme(),
+                            url.host_str().expect("Missing host in LLM_BASE_URL")
+                        );
+                        let llm_port = url.port().unwrap_or(11434); // Default to 11434 if no port is specified
+                        let llm_model =
+                            std::env::var("LLM_MODEL").unwrap_or_else(|_| "llama3.1".to_string());
+
                         let llm_params = crate::LLMParams {
                             llm_client: &LLMClient::Ollama(ollama_rs::Ollama::new(
-                                "http://10.20.100.103".to_string(),
-                                11434,
+                                llm_host_with_scheme.clone(),
+                                llm_port,
                             )),
-                            model: "llama3.2-vision:90b-instruct-q8_0",
+                            model: &llm_model, // Borrow the model as a &str
                             temperature: 0.0,
                         };
+
                         if let Some(response) =
                             crate::llm::generate_llm_response(&prompt, &llm_params).await
                         {
