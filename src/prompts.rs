@@ -167,7 +167,7 @@ pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
     let year = today.format("%Y").to_string(); // Full year
 
     format!(
-        " Context since your knowledge cutoff: `{context}` |
+        " A small sampling of events in 2024 since your knowledge cutoff: `{context}` |
 Article to review: `{article}` | Source URL: `{source_url}` |
 In 2-4 sentences, provide an analysis of the source of this content which includes any background information you know on the source, including details such as ownership, general purpose and goals, awards, scandals, and other relevant information.  Today is {month} {day} {year}, is the content likely recent or does it indicate otherwise?
 
