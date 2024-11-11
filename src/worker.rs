@@ -573,31 +573,14 @@ async fn process_city(
     true
 }
 
-/// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
-async fn summarize_and_send_article(
-    article_url: &str,
-    article_title: &str,
+async fn get_llm_responses(
     article_text: &str,
-    affected_regions: &BTreeSet<String>,
-    affected_people: &BTreeSet<String>,
-    affected_places: &BTreeSet<String>,
-    non_affected_people: &BTreeSet<String>,
-    non_affected_places: &BTreeSet<String>,
-    article_hash: &str,
-    title_domain_hash: &str,
     article_html: &str,
-    params: &mut ProcessItemParams<'_>,
-) {
-    let start_time = std::time::Instant::now();
-
-    let worker_id = format!("{:?}", std::thread::current().id());
-    let formatted_article = format!("*<{}|{}>*", article_url, article_title);
-
-    let mut relation_to_topic_response = String::new();
-
+    article_url: &str,
+    llm_params: &mut LLMParams<'_>,
+) -> (String, String, String, String, String) {
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);
-    let llm_params = extract_llm_params(params);
     let summary_response = generate_llm_response(&summary_prompt, &llm_params)
         .await
         .unwrap_or_default();
@@ -628,6 +611,46 @@ async fn summarize_and_send_article(
     let source_analysis_response = generate_llm_response(&source_analysis_prompt, &llm_params)
         .await
         .unwrap_or_default();
+
+    return (
+        summary_response,
+        tiny_summary_response,
+        critical_analysis_response,
+        logical_fallacies_response,
+        source_analysis_response,
+    );
+}
+
+/// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
+async fn summarize_and_send_article(
+    article_url: &str,
+    article_title: &str,
+    article_text: &str,
+    affected_regions: &BTreeSet<String>,
+    affected_people: &BTreeSet<String>,
+    affected_places: &BTreeSet<String>,
+    non_affected_people: &BTreeSet<String>,
+    non_affected_places: &BTreeSet<String>,
+    article_hash: &str,
+    title_domain_hash: &str,
+    article_html: &str,
+    params: &mut ProcessItemParams<'_>,
+) {
+    let start_time = std::time::Instant::now();
+
+    let worker_id = format!("{:?}", std::thread::current().id());
+    let formatted_article = format!("*<{}|{}>*", article_url, article_title);
+
+    let mut relation_to_topic_response = String::new();
+
+    let mut llm_params = extract_llm_params(params);
+    let (
+        summary_response,
+        tiny_summary_response,
+        critical_analysis_response,
+        logical_fallacies_response,
+        source_analysis_response,
+    ) = get_llm_responses(article_text, article_html, article_url, &mut llm_params).await;
 
     // Check again if the article hash already exists in the database before posting to Slack
     if params.db.has_hash(&article_hash).await.unwrap_or(false) {
@@ -797,49 +820,21 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                // Generate summary
-                let summary_prompt = prompts::summary_prompt(article_text);
-                let summary_response = generate_llm_response(&summary_prompt, &llm_params)
-                    .await
-                    .unwrap_or_default();
-
-                // Generate tiny summary
-                let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
-                let tiny_summary_response =
-                    generate_llm_response(&tiny_summary_prompt, &llm_params)
-                        .await
-                        .unwrap_or_default();
-
-                // Generate critical analysis
-                let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
-                let critical_analysis_response =
-                    generate_llm_response(&critical_analysis_prompt, &llm_params)
-                        .await
-                        .unwrap_or_default();
-
-                // Generate logical fallacies
-                let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
-                let logical_fallacies_response =
-                    generate_llm_response(&logical_fallacies_prompt, &llm_params)
-                        .await
-                        .unwrap_or_default();
+                let mut llm_params = extract_llm_params(params);
+                let (
+                    summary_response,
+                    tiny_summary_response,
+                    critical_analysis_response,
+                    logical_fallacies_response,
+                    source_analysis_response,
+                ) = get_llm_responses(article_text, article_html, article_url, &mut llm_params)
+                    .await;
 
                 // Generate relation to topic
                 let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic_name);
                 let relation_response = generate_llm_response(&relation_prompt, &llm_params)
                     .await
                     .unwrap_or_default();
-
-                // Add additional variables
-                let source_url = &article_url;
-
-                // Call the updated prompt function with additional context
-                let source_analysis_prompt =
-                    prompts::source_analysis_prompt(article_html, source_url);
-                let source_analysis_response =
-                    generate_llm_response(&source_analysis_prompt, &llm_params)
-                        .await
-                        .unwrap_or_default();
 
                 // Confirm the article relevance
                 let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
