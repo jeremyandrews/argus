@@ -317,7 +317,7 @@ impl Database {
     }
 
     #[instrument(target = "db", level = "info", skip(self))]
-    pub async fn fetch_and_delete_url_from_queue(
+    pub async fn fetch_and_delete_url_from_rss_queue(
         &self,
         order: &str,
     ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
@@ -379,6 +379,59 @@ impl Database {
             Ok(Some((url, title)))
         } else {
             debug!(target: TARGET_DB, "No new URLs found in queue");
+            transaction.rollback().await?;
+            Ok(None)
+        }
+    }
+
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn fetch_and_delete_from_matched_topics_queue(
+        &self,
+    ) -> Result<Option<(String, String, String, String, String)>, sqlx::Error> {
+        debug!(target: TARGET_DB, "Fetching and deleting item from matched topics queue");
+
+        let mut transaction = self.pool.begin().await?;
+        let row = sqlx::query(
+            r#"
+        SELECT 
+            id, 
+            article_text, 
+            article_html, 
+            article_url, 
+            article_summary, 
+            topic_matched 
+        FROM matched_topics_queue 
+        ORDER BY timestamp ASC 
+        LIMIT 1
+        "#,
+        )
+        .fetch_optional(&mut transaction)
+        .await?;
+
+        if let Some(row) = row {
+            let id: i64 = row.get("id");
+            let article_text: String = row.get("article_text");
+            let article_html: String = row.get("article_html");
+            let article_url: String = row.get("article_url");
+            let article_summary: String = row.get("article_summary");
+            let topic_matched: String = row.get("topic_matched");
+
+            sqlx::query("DELETE FROM matched_topics_queue WHERE id = ?1")
+                .bind(id)
+                .execute(&mut transaction)
+                .await?;
+            transaction.commit().await?;
+            debug!(target: TARGET_DB, "Fetched and deleted item from matched topics queue: {}", article_url);
+
+            Ok(Some((
+                article_text,
+                article_html,
+                article_url,
+                article_summary,
+                topic_matched,
+            )))
+        } else {
+            debug!(target: TARGET_DB, "No new items found in matched topics queue");
             transaction.rollback().await?;
             Ok(None)
         }

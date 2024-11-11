@@ -106,7 +106,7 @@ pub async fn decision_loop(
             "random"
         };
 
-        match db.fetch_and_delete_url_from_queue(order).await {
+        match db.fetch_and_delete_url_from_rss_queue(order).await {
             Ok(Some((url, title))) => {
                 if url.trim().is_empty() {
                     error!(target: TARGET_LLM_REQUEST, "worker {}: Found an empty URL in the queue, skipping...", worker_id);
