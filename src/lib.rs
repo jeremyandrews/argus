@@ -1,3 +1,4 @@
+pub mod analysis_worker;
 pub mod db;
 pub mod decision_worker;
 pub mod environment;
@@ -15,7 +16,7 @@ pub const TARGET_WEB_REQUEST: &str = "web_request";
 pub const TARGET_LLM_REQUEST: &str = "llm_request";
 pub const TARGET_DB: &str = "db_query";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LLMClient {
     Ollama(Ollama),
     OpenAI(OpenAIClient<OpenAIConfig>),

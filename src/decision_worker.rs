@@ -90,7 +90,11 @@ pub async fn decision_loop(
     let db = Database::instance().await;
     let mut rng = StdRng::from_entropy();
 
-    info!(target: TARGET_LLM_REQUEST, "worker {}: Starting worker loop.", worker_id);
+    info!(target: TARGET_LLM_REQUEST, "Decision worker {}: starting decision_loop.", worker_id);
+    debug!(
+        "Decision worker {} is running with model '{}' using {:?}.",
+        worker_id, model, llm_client
+    );
 
     loop {
         let roll = rng.gen_range(0..100);

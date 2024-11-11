@@ -22,6 +22,7 @@ const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
 const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
+use argus::analysis_worker;
 use argus::decision_worker;
 use argus::environment;
 use argus::logging;
@@ -41,7 +42,10 @@ async fn main() -> Result<()> {
     let analysis_openai_configs = env::var(ANALYSIS_OPENAI_CONFIGS_ENV).unwrap_or_default();
 
     let mut decision_workers = Vec::new();
-    let mut count: i16 = 0;
+    let mut decision_count: i16 = 0;
+
+    let mut analysis_workers = Vec::new();
+    let mut analysis_count: i16 = 0;
 
     // Helper function to process configurations
     fn process_ollama_configs(
@@ -95,17 +99,39 @@ async fn main() -> Result<()> {
     }
 
     // Process DECISION configurations
-    process_ollama_configs(&decision_ollama_configs, &mut decision_workers, &mut count);
-    process_openai_configs(&decision_openai_configs, &mut decision_workers, &mut count);
+    process_ollama_configs(
+        &decision_ollama_configs,
+        &mut decision_workers,
+        &mut decision_count,
+    );
+    process_openai_configs(
+        &decision_openai_configs,
+        &mut decision_workers,
+        &mut decision_count,
+    );
 
-    // Load ANALYSIS configurations (for now, just logging)
-    process_ollama_configs(&analysis_ollama_configs, &mut decision_workers, &mut count);
-    process_openai_configs(&analysis_openai_configs, &mut decision_workers, &mut count);
-
-    // Log total workers
+    // Log DECISION workers
     info!(
         "Total decision workers configured: {}",
         decision_workers.len()
+    );
+
+    // Load ANALYSIS configurations (for now, just logging)
+    process_ollama_configs(
+        &analysis_ollama_configs,
+        &mut analysis_workers,
+        &mut analysis_count,
+    );
+    process_openai_configs(
+        &analysis_openai_configs,
+        &mut analysis_workers,
+        &mut analysis_count,
+    );
+
+    // Log ANALYSIS workers
+    info!(
+        "Total analysis workers configured: {}",
+        analysis_workers.len()
     );
 
     // Determine number of decision workers to launch
@@ -156,6 +182,7 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Launch DECISION workers
     let mut decision_handles = Vec::new();
     for (decision_id, llm_client, decision_model) in
         decision_workers.into_iter().take(decision_worker_count)
@@ -190,15 +217,43 @@ async fn main() -> Result<()> {
         decision_handles.push(decision_worker_handle);
     }
 
+    // Launch ANALYSIS workers
+    let mut analysis_handles = Vec::new();
+    for (analysis_id, llm_client, analysis_model) in analysis_workers.into_iter() {
+        let analysis_worker_handle = task::spawn(async move {
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "Analysis worker {}: starting with model '{}'",
+                analysis_id, analysis_model
+            );
+            analysis_worker::analysis_loop(analysis_id, &llm_client, &analysis_model).await;
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "Analysis worker {}: completed analysis_loop for model '{}'",
+                analysis_id, analysis_model
+            );
+        });
+        analysis_handles.push(analysis_worker_handle);
+    }
+
     // Await task completions
     if let Err(e) = rss_handle.await {
         error!(target: TARGET_WEB_REQUEST, "RSS task encountered an error: {}", e);
     }
 
+    // Await decision worker tasks
     let results = join_all(decision_handles).await;
     for (i, result) in results.into_iter().enumerate() {
         if let Err(e) = result {
             error!(target: TARGET_LLM_REQUEST, "Decision worker {}: task failed with error: {}", i, e);
+        }
+    }
+
+    // Await analysis worker tasks
+    let analysis_results = join_all(analysis_handles).await;
+    for (i, result) in analysis_results.into_iter().enumerate() {
+        if let Err(e) = result {
+            error!(target: TARGET_LLM_REQUEST, "Analysis worker {}: task failed with error: {}", i, e);
         }
     }
 
