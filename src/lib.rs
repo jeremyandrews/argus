@@ -1,4 +1,5 @@
 pub mod db;
+pub mod decision_worker;
 pub mod environment;
 pub mod llm;
 pub mod logging;
@@ -6,7 +7,6 @@ pub mod prompts;
 pub mod rss;
 pub mod slack;
 pub mod util;
-pub mod worker;
 
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;

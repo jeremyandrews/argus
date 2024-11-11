@@ -77,7 +77,7 @@ fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams<'a> {
     }
 }
 
-pub async fn worker_loop(
+pub async fn decision_loop(
     worker_id: i16,
     topics: &[String],
     llm_client: &LLMClient,
@@ -943,7 +943,7 @@ async fn process_topics(
                 } else {
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: Article is not about '{}' or is a promotion/advertisement",
+                        "worker {}: Article is not about '{}' or is a promotion/",
                         worker_id,
                         topic_name,
                     );

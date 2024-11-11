@@ -22,10 +22,10 @@ const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
 const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
+use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::worker;
 use argus::LLMClient;
 
 use environment::get_env_var_as_vec;
@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     let decision_openai_configs = env::var(DECISION_OPENAI_CONFIGS_ENV).unwrap_or_default();
     let analysis_openai_configs = env::var(ANALYSIS_OPENAI_CONFIGS_ENV).unwrap_or_default();
 
-    let mut workers = Vec::new();
+    let mut decision_workers = Vec::new();
     let mut count: i16 = 0;
 
     // Helper function to process configurations
@@ -95,17 +95,20 @@ async fn main() -> Result<()> {
     }
 
     // Process DECISION configurations
-    process_ollama_configs(&decision_ollama_configs, &mut workers, &mut count);
-    process_openai_configs(&decision_openai_configs, &mut workers, &mut count);
+    process_ollama_configs(&decision_ollama_configs, &mut decision_workers, &mut count);
+    process_openai_configs(&decision_openai_configs, &mut decision_workers, &mut count);
 
     // Load ANALYSIS configurations (for now, just logging)
-    process_ollama_configs(&analysis_ollama_configs, &mut workers, &mut count);
-    process_openai_configs(&analysis_openai_configs, &mut workers, &mut count);
+    process_ollama_configs(&analysis_ollama_configs, &mut decision_workers, &mut count);
+    process_openai_configs(&analysis_openai_configs, &mut decision_workers, &mut count);
 
     // Log total workers
-    info!("Total workers configured: {}", workers.len());
+    info!(
+        "Total decision workers configured: {}",
+        decision_workers.len()
+    );
 
-    // Determine number of workers to launch (based on DECISION configurations for now)
+    // Determine number of decision workers to launch
     let decision_worker_count = decision_ollama_configs
         .split(';')
         .filter(|c| !c.is_empty())
@@ -153,36 +156,38 @@ async fn main() -> Result<()> {
         }
     });
 
-    let mut worker_handles = Vec::new();
-    for (worker_id, llm_client, model_worker) in workers.into_iter().take(decision_worker_count) {
-        let topics_worker = topics.clone();
-        let slack_token_worker = slack_token.clone();
-        let slack_channel_worker = slack_channel.clone();
-        let places_worker = places.clone();
-        let worker_handle = task::spawn(async move {
+    let mut decision_handles = Vec::new();
+    for (decision_id, llm_client, decision_model) in
+        decision_workers.into_iter().take(decision_worker_count)
+    {
+        let decision_worker_topics = topics.clone();
+        let decision_worker_slack_token = slack_token.clone();
+        let decision_worker_slack_channel = slack_channel.clone();
+        let decision_worker_places = places.clone();
+        let decision_worker_handle = task::spawn(async move {
             info!(
                 target: TARGET_LLM_REQUEST,
-                "Worker {}: Starting with model '{}'",
-                worker_id, model_worker
+                "Decision worker {}: starting with model '{}'",
+                decision_id, decision_model
             );
-            worker::worker_loop(
-                worker_id,
-                &topics_worker,
+            decision_worker::decision_loop(
+                decision_id,
+                &decision_worker_topics,
                 &llm_client,
-                &model_worker,
+                &decision_model,
                 temperature,
-                &slack_token_worker,
-                &slack_channel_worker,
-                places_worker,
+                &decision_worker_slack_token,
+                &decision_worker_slack_channel,
+                decision_worker_places,
             )
             .await;
             info!(
                 target: TARGET_LLM_REQUEST,
-                "Worker {}: Completed worker loop for model '{}'",
-                worker_id, model_worker
+                "Decision worker {}: completed decision_loop for model '{}'",
+                decision_id, decision_model
             );
         });
-        worker_handles.push(worker_handle);
+        decision_handles.push(decision_worker_handle);
     }
 
     // Await task completions
@@ -190,10 +195,10 @@ async fn main() -> Result<()> {
         error!(target: TARGET_WEB_REQUEST, "RSS task encountered an error: {}", e);
     }
 
-    let results = join_all(worker_handles).await;
+    let results = join_all(decision_handles).await;
     for (i, result) in results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "Worker {}: Task failed with error: {}", i, e);
+            error!(target: TARGET_LLM_REQUEST, "Decision worker {}: task failed with error: {}", i, e);
         }
     }
 
