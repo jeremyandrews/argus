@@ -70,6 +70,17 @@ impl Database {
                 seen_at TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url);
+
+            CREATE TABLE IF NOT EXISTS matched_topics_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article_text TEXT NOT NULL,
+                article_html TEXT NOT NULL,
+                article_url TEXT NOT NULL UNIQUE,
+                article_summary TEXT NOT NULL,
+                topic_matched TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_matched_topics_article_url ON matched_topics_queue (article_url);
             "#,
         )
         .execute(&mut conn)
@@ -160,6 +171,60 @@ impl Database {
         debug!(target: TARGET_DB, "URL added to queue: {}", normalized_url);
 
         Ok(true) // Return true since a new article was added
+    }
+
+    /// Add an entry to the matched topics queue
+    #[instrument(
+        target = "db",
+        level = "info",
+        skip(self, article_text, article_html, article_url, topic_matched)
+    )]
+    pub async fn add_to_matched_topics_queue(
+        &self,
+        article_text: &str,
+        article_html: &str,
+        article_url: &str,
+        article_summary: &str,
+        topic_matched: &str,
+    ) -> Result<(), sqlx::Error> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time travel")
+            .as_secs()
+            .to_string();
+
+        let result = sqlx::query(
+        r#"
+        INSERT INTO matched_topics_queue (article_text, article_html, article_url, article_summary, topic_matched, timestamp)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        ON CONFLICT(article_url) DO NOTHING
+        "#,
+    )
+    .bind(article_text)
+    .bind(article_html)
+    .bind(article_url)
+    .bind(article_summary)
+    .bind(topic_matched)
+    .bind(timestamp)
+    .execute(&self.pool)
+    .await;
+
+        match result {
+            Ok(_) => {
+                debug!(target: TARGET_DB, "Successfully added to matched topics queue: article_url={}, topic_matched={}", article_url, topic_matched);
+            }
+            Err(sqlx::Error::Database(db_err))
+                if db_err.message().contains("UNIQUE constraint failed") =>
+            {
+                debug!(target: TARGET_DB, "Duplicate article_url detected, skipping insert: {}", article_url);
+            }
+            Err(e) => {
+                error!(target: TARGET_DB, "Failed to add to matched topics queue: {:?}", e);
+                return Err(e);
+            }
+        }
+
+        Ok(())
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, category, analysis))]

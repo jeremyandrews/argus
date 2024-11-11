@@ -573,18 +573,34 @@ async fn process_city(
     true
 }
 
-async fn get_llm_responses(
+async fn get_llm_summary_response(
     article_text: &str,
-    article_html: &str,
-    article_url: &str,
+    topic_name: &str,
     llm_params: &mut LLMParams<'_>,
-) -> (String, String, String, String, String) {
+) -> Option<String> {
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);
     let summary_response = generate_llm_response(&summary_prompt, &llm_params)
         .await
         .unwrap_or_default();
 
+    // Confirm the article relevance
+    let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
+    if let Some(confirm_response) = generate_llm_response(&confirm_prompt, &llm_params).await {
+        if confirm_response.trim().to_lowercase().starts_with("yes") {
+            return Some(summary_response);
+        }
+    }
+    return None;
+}
+
+async fn get_llm_responses(
+    summary_response: &str,
+    article_text: &str,
+    article_html: &str,
+    article_url: &str,
+    llm_params: &mut LLMParams<'_>,
+) -> (String, String, String, String) {
     // Generate tiny summary
     let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
     let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, &llm_params)
@@ -613,7 +629,6 @@ async fn get_llm_responses(
         .unwrap_or_default();
 
     return (
-        summary_response,
         tiny_summary_response,
         critical_analysis_response,
         logical_fallacies_response,
@@ -644,132 +659,147 @@ async fn summarize_and_send_article(
     let mut relation_to_topic_response = String::new();
 
     let mut llm_params = extract_llm_params(params);
-    let (
-        summary_response,
-        tiny_summary_response,
-        critical_analysis_response,
-        logical_fallacies_response,
-        source_analysis_response,
-    ) = get_llm_responses(article_text, article_html, article_url, &mut llm_params).await;
 
-    // Check again if the article hash already exists in the database before posting to Slack
-    if params.db.has_hash(&article_hash).await.unwrap_or(false) {
-        info!(
-            target: TARGET_LLM_REQUEST,
-            "Article with hash {} was already processed (second check), skipping Slack post.",
-            article_hash
-        );
-        return;
-    }
-
-    // Generate relation to topic (affected and non-affected summary)
-    let mut affected_summary = String::default();
-
-    // For affected places
-    if !affected_people.is_empty() {
-        affected_summary = format!(
-            "This article affects these people in {}: {}",
-            affected_regions
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
-            affected_people
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let affected_places_str = affected_places
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
-        let how_prompt = prompts::how_does_it_affect_prompt(article_text, &affected_places_str);
-        let how_response = generate_llm_response(&how_prompt, &llm_params)
-            .await
-            .unwrap_or_default();
-        relation_to_topic_response
-            .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
-    }
-
-    // For non-affected places
-    let mut non_affected_summary = String::default();
-    if !non_affected_people.is_empty() {
-        non_affected_summary = format!(
-            "This article does not affect these people in {}: {}",
-            affected_regions
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
-            non_affected_people
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        let why_not_prompt = prompts::why_not_affect_prompt(
-            article_text,
-            &non_affected_places
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        let why_not_response = generate_llm_response(&why_not_prompt, &llm_params)
-            .await
-            .unwrap_or_default();
-        relation_to_topic_response.push_str(&format!(
-            "\n\n{}\n\n{}",
-            non_affected_summary, why_not_response
-        ));
-    }
-
-    if !summary_response.is_empty()
-        || !critical_analysis_response.is_empty()
-        || !logical_fallacies_response.is_empty()
-        || !relation_to_topic_response.is_empty()
-        || !source_analysis_response.is_empty()
+    if let Some(summary_response) = get_llm_summary_response(
+        article_text,
+        "an ongoing or imminent life-threatening event",
+        &mut llm_params,
+    )
+    .await
     {
-        let detailed_response_json = json!({
-            "topic": format!("{} {}", affected_summary, non_affected_summary),
-            "summary": summary_response,
-            "tiny_summary": tiny_summary_response,
-            "critical_analysis": critical_analysis_response,
-            "logical_fallacies": logical_fallacies_response,
-            "relation_to_topic": relation_to_topic_response,
-            "source_analysis": source_analysis_response,
-            "elapsed_time": start_time.elapsed().as_secs_f64(),
-            "model": params.model
-        });
-
-        send_to_slack(
-            &formatted_article,
-            &detailed_response_json.to_string(),
-            params.slack_token,
-            params.slack_channel,
+        let (
+            tiny_summary_response,
+            critical_analysis_response,
+            logical_fallacies_response,
+            source_analysis_response,
+        ) = get_llm_responses(
+            &summary_response,
+            article_text,
+            article_html,
+            article_url,
+            &mut llm_params,
         )
         .await;
 
-        match params
-            .db
-            .add_article(
-                article_url,
-                true,
-                None,
-                Some(&detailed_response_json.to_string()),
-                Some(&tiny_summary_response),
-                Some(&article_hash),
-                Some(&title_domain_hash),
-            )
-            .await
+        // Check again if the article hash already exists in the database before posting to Slack
+        if params.db.has_hash(&article_hash).await.unwrap_or(false) {
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "Article with hash {} was already processed (second check), skipping Slack post.",
+                article_hash
+            );
+            return;
+        }
+
+        // Generate relation to topic (affected and non-affected summary)
+        let mut affected_summary = String::default();
+
+        // For affected places
+        if !affected_people.is_empty() {
+            affected_summary = format!(
+                "This article affects these people in {}: {}",
+                affected_regions
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                affected_people
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let affected_places_str = affected_places
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            let how_prompt = prompts::how_does_it_affect_prompt(article_text, &affected_places_str);
+            let how_response = generate_llm_response(&how_prompt, &llm_params)
+                .await
+                .unwrap_or_default();
+            relation_to_topic_response
+                .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
+        }
+
+        // For non-affected places
+        let mut non_affected_summary = String::default();
+        if !non_affected_people.is_empty() {
+            non_affected_summary = format!(
+                "This article does not affect these people in {}: {}",
+                affected_regions
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                non_affected_people
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let why_not_prompt = prompts::why_not_affect_prompt(
+                article_text,
+                &non_affected_places
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            let why_not_response = generate_llm_response(&why_not_prompt, &llm_params)
+                .await
+                .unwrap_or_default();
+            relation_to_topic_response.push_str(&format!(
+                "\n\n{}\n\n{}",
+                non_affected_summary, why_not_response
+            ));
+        }
+
+        if !summary_response.is_empty()
+            || !critical_analysis_response.is_empty()
+            || !logical_fallacies_response.is_empty()
+            || !relation_to_topic_response.is_empty()
+            || !source_analysis_response.is_empty()
         {
-            Ok(_) => {
-                debug!(target: TARGET_DB, "worker {}: Successfully added article to database", worker_id)
-            }
-            Err(e) => {
-                error!(target: TARGET_DB, "worker {}: Failed to add article to database: {:?}", worker_id, e)
+            let detailed_response_json = json!({
+                "topic": format!("{} {}", affected_summary, non_affected_summary),
+                "summary": summary_response,
+                "tiny_summary": tiny_summary_response,
+                "critical_analysis": critical_analysis_response,
+                "logical_fallacies": logical_fallacies_response,
+                "relation_to_topic": relation_to_topic_response,
+                "source_analysis": source_analysis_response,
+                "elapsed_time": start_time.elapsed().as_secs_f64(),
+                "model": params.model
+            });
+
+            send_to_slack(
+                &formatted_article,
+                &detailed_response_json.to_string(),
+                params.slack_token,
+                params.slack_channel,
+            )
+            .await;
+
+            match params
+                .db
+                .add_article(
+                    article_url,
+                    true,
+                    None,
+                    Some(&detailed_response_json.to_string()),
+                    Some(&tiny_summary_response),
+                    Some(&article_hash),
+                    Some(&title_domain_hash),
+                )
+                .await
+            {
+                Ok(_) => {
+                    debug!(target: TARGET_DB, "worker {}: Successfully added article to database", worker_id)
+                }
+                Err(e) => {
+                    error!(target: TARGET_DB, "worker {}: Failed to add article to database: {:?}", worker_id, e)
+                }
             }
         }
     }
@@ -820,81 +850,104 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                let (
-                    summary_response,
-                    tiny_summary_response,
-                    critical_analysis_response,
-                    logical_fallacies_response,
-                    source_analysis_response,
-                ) = get_llm_responses(article_text, article_html, article_url, &mut llm_params)
-                    .await;
-
-                // Generate relation to topic
-                let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic_name);
-                let relation_response = generate_llm_response(&relation_prompt, &llm_params)
-                    .await
-                    .unwrap_or_default();
-
-                // Confirm the article relevance
-                let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
-                if let Some(confirm_response) =
-                    generate_llm_response(&confirm_prompt, &llm_params).await
+                if let Some(summary_response) =
+                    get_llm_summary_response(article_text, topic_name, &mut llm_params).await
                 {
-                    if confirm_response.trim().to_lowercase().starts_with("yes") {
-                        let formatted_article = format!("*<{}|{}>*", article_url, article_title);
-
-                        let detailed_response_json = json!({
-                            "topic": topic_name,
-                            "summary": summary_response,
-                            "tiny_summary": tiny_summary_response,
-                            "critical_analysis": critical_analysis_response,
-                            "logical_fallacies": logical_fallacies_response,
-                            "relation_to_topic": relation_response,
-                            "source_analysis": source_analysis_response,
-                            "elapsed_time": start_time.elapsed().as_secs_f64(),
-                            "model": params.model
-                        });
-
-                        send_to_slack(
-                            &formatted_article,
-                            &detailed_response_json.to_string(),
-                            params.slack_token,
-                            params.slack_channel,
+                    // Add to matched topics queue
+                    if let Err(e) = params
+                        .db
+                        .add_to_matched_topics_queue(
+                            article_text,
+                            article_html,
+                            article_url,
+                            &summary_response,
+                            topic_name,
                         )
-                        .await;
-
-                        match params
-                            .db
-                            .add_article(
-                                article_url,
-                                true,
-                                Some(topic_name),
-                                Some(&detailed_response_json.to_string()),
-                                Some(&tiny_summary_response),
-                                Some(&article_hash),
-                                Some(&title_domain_hash),
-                            )
-                            .await
-                        {
-                            Ok(_) => {
-                                debug!(target: TARGET_DB, "worker {}: Successfully added article about '{}' to database", worker_id, topic_name)
-                            }
-                            Err(e) => {
-                                error!(target: TARGET_DB, "worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic_name, e)
-                            }
-                        }
-
-                        return; // No need to continue checking other topics
+                        .await
+                    {
+                        error!(target: TARGET_DB, "Failed to add to matched topics queue: {:?}", e);
                     } else {
                         debug!(
-                            target: TARGET_LLM_REQUEST,
-                            "worker {}: Article is not about '{}' or is a promotion/advertisement: {}",
+                            target: TARGET_DB,
+                            "worker {}: Successfully added to matched topics queue: topic '{}'",
                             worker_id,
-                            topic_name,
-                            confirm_response.trim()
+                            topic_name
                         );
-                        weighted_sleep().await;
                     }
+
+                    let (
+                        tiny_summary_response,
+                        critical_analysis_response,
+                        logical_fallacies_response,
+                        source_analysis_response,
+                    ) = get_llm_responses(
+                        &summary_response,
+                        article_text,
+                        article_html,
+                        article_url,
+                        &mut llm_params,
+                    )
+                    .await;
+
+                    // Generate relation to topic
+                    let relation_prompt =
+                        prompts::relation_to_topic_prompt(article_text, topic_name);
+                    let relation_response = generate_llm_response(&relation_prompt, &llm_params)
+                        .await
+                        .unwrap_or_default();
+
+                    let formatted_article = format!("*<{}|{}>*", article_url, article_title);
+
+                    let detailed_response_json = json!({
+                        "topic": topic_name,
+                        "summary": summary_response,
+                        "tiny_summary": tiny_summary_response,
+                        "critical_analysis": critical_analysis_response,
+                        "logical_fallacies": logical_fallacies_response,
+                        "relation_to_topic": relation_response,
+                        "source_analysis": source_analysis_response,
+                        "elapsed_time": start_time.elapsed().as_secs_f64(),
+                        "model": params.model
+                    });
+
+                    send_to_slack(
+                        &formatted_article,
+                        &detailed_response_json.to_string(),
+                        params.slack_token,
+                        params.slack_channel,
+                    )
+                    .await;
+
+                    match params
+                        .db
+                        .add_article(
+                            article_url,
+                            true,
+                            Some(topic_name),
+                            Some(&detailed_response_json.to_string()),
+                            Some(&tiny_summary_response),
+                            Some(&article_hash),
+                            Some(&title_domain_hash),
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            debug!(target: TARGET_DB, "worker {}: Successfully added article about '{}' to database", worker_id, topic_name)
+                        }
+                        Err(e) => {
+                            error!(target: TARGET_DB, "worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic_name, e)
+                        }
+                    }
+
+                    return; // No need to continue checking other topics
+                } else {
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "worker {}: Article is not about '{}' or is a promotion/advertisement",
+                        worker_id,
+                        topic_name,
+                    );
+                    weighted_sleep().await;
                 }
             } else {
                 debug!(
