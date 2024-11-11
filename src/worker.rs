@@ -803,7 +803,7 @@ async fn process_topics(
         debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
 
         let yes_no_prompt = prompts::is_this_about(article_text, topic_name);
-        let llm_params = extract_llm_params(params);
+        let mut llm_params = extract_llm_params(params);
         if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, &llm_params).await {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Article is relevant to the topic
@@ -820,7 +820,6 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                let mut llm_params = extract_llm_params(params);
                 let (
                     summary_response,
                     tiny_summary_response,
