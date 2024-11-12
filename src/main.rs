@@ -220,13 +220,24 @@ async fn main() -> Result<()> {
     // Launch ANALYSIS workers
     let mut analysis_handles = Vec::new();
     for (analysis_id, llm_client, analysis_model) in analysis_workers.into_iter() {
+        let analysis_worker_slack_token = slack_token.clone();
+        let analysis_worker_slack_channel = slack_channel.clone();
         let analysis_worker_handle = task::spawn(async move {
             info!(
                 target: TARGET_LLM_REQUEST,
                 "Analysis worker {}: starting with model '{}'",
                 analysis_id, analysis_model
             );
-            analysis_worker::analysis_loop(analysis_id, &llm_client, &analysis_model).await;
+            analysis_worker::analysis_loop(
+                analysis_id,
+                &llm_client,
+                &analysis_model,
+                &analysis_worker_slack_token,
+                &analysis_worker_slack_channel,
+                // @TODO: allow different temperatures for Decision and Analysis workers.
+                temperature,
+            )
+            .await;
             info!(
                 target: TARGET_LLM_REQUEST,
                 "Analysis worker {}: completed analysis_loop for model '{}'",

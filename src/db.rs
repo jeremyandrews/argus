@@ -76,7 +76,7 @@ impl Database {
                 article_text TEXT NOT NULL,
                 article_html TEXT NOT NULL,
                 article_url TEXT NOT NULL UNIQUE,
-                article_summary TEXT NOT NULL,
+                article_title TEXT NOT NULL,
                 topic_matched TEXT NOT NULL,
                 timestamp TEXT NOT NULL
             );
@@ -184,7 +184,7 @@ impl Database {
         article_text: &str,
         article_html: &str,
         article_url: &str,
-        article_summary: &str,
+        article_title: &str,
         topic_matched: &str,
     ) -> Result<(), sqlx::Error> {
         let timestamp = SystemTime::now()
@@ -195,7 +195,7 @@ impl Database {
 
         let result = sqlx::query(
         r#"
-        INSERT INTO matched_topics_queue (article_text, article_html, article_url, article_summary, topic_matched, timestamp)
+        INSERT INTO matched_topics_queue (article_text, article_html, article_url, article_title, topic_matched, timestamp)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ON CONFLICT(article_url) DO NOTHING
         "#,
@@ -203,7 +203,7 @@ impl Database {
     .bind(article_text)
     .bind(article_html)
     .bind(article_url)
-    .bind(article_summary)
+    .bind(article_title)
     .bind(topic_matched)
     .bind(timestamp)
     .execute(&self.pool)
@@ -398,7 +398,7 @@ impl Database {
             article_text, 
             article_html, 
             article_url, 
-            article_summary, 
+            article_title, 
             topic_matched 
         FROM matched_topics_queue 
         ORDER BY timestamp ASC 
@@ -413,7 +413,7 @@ impl Database {
             let article_text: String = row.get("article_text");
             let article_html: String = row.get("article_html");
             let article_url: String = row.get("article_url");
-            let article_summary: String = row.get("article_summary");
+            let article_title: String = row.get("article_title");
             let topic_matched: String = row.get("topic_matched");
 
             sqlx::query("DELETE FROM matched_topics_queue WHERE id = ?1")
@@ -427,7 +427,7 @@ impl Database {
                 article_text,
                 article_html,
                 article_url,
-                article_summary,
+                article_title,
                 topic_matched,
             )))
         } else {

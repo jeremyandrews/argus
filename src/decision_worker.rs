@@ -577,11 +577,11 @@ async fn process_city(
     true
 }
 
-async fn get_llm_summary_response(
+async fn article_is_relevant(
     article_text: &str,
     topic_name: &str,
     llm_params: &mut LLMParams<'_>,
-) -> Option<String> {
+) -> bool {
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);
     let summary_response = generate_llm_response(&summary_prompt, &llm_params)
@@ -592,10 +592,10 @@ async fn get_llm_summary_response(
     let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
     if let Some(confirm_response) = generate_llm_response(&confirm_prompt, &llm_params).await {
         if confirm_response.trim().to_lowercase().starts_with("yes") {
-            return Some(summary_response);
+            return true;
         }
     }
-    return None;
+    return false;
 }
 
 async fn get_llm_responses(
@@ -664,13 +664,18 @@ async fn summarize_and_send_article(
 
     let mut llm_params = extract_llm_params(params);
 
-    if let Some(summary_response) = get_llm_summary_response(
+    if article_is_relevant(
         article_text,
         "an ongoing or imminent life-threatening event",
         &mut llm_params,
     )
     .await
     {
+        let summary_prompt = prompts::summary_prompt(&article_text);
+        let summary_response = generate_llm_response(&summary_prompt, &llm_params)
+            .await
+            .unwrap_or_default();
+
         let (
             tiny_summary_response,
             critical_analysis_response,
@@ -819,8 +824,6 @@ async fn process_topics(
     article_html: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
-    let start_time = std::time::Instant::now();
-
     let worker_id = format!("{:?}", std::thread::current().id());
     let mut article_relevant = false;
 
@@ -854,9 +857,7 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                if let Some(summary_response) =
-                    get_llm_summary_response(article_text, topic_name, &mut llm_params).await
-                {
+                if article_is_relevant(article_text, topic_name, &mut llm_params).await {
                     // Add to matched topics queue
                     if let Err(e) = params
                         .db
@@ -864,7 +865,7 @@ async fn process_topics(
                             article_text,
                             article_html,
                             article_url,
-                            &summary_response,
+                            article_title,
                             topic_name,
                         )
                         .await
@@ -877,70 +878,6 @@ async fn process_topics(
                             worker_id,
                             topic_name
                         );
-                    }
-
-                    let (
-                        tiny_summary_response,
-                        critical_analysis_response,
-                        logical_fallacies_response,
-                        source_analysis_response,
-                    ) = get_llm_responses(
-                        &summary_response,
-                        article_text,
-                        article_html,
-                        article_url,
-                        &mut llm_params,
-                    )
-                    .await;
-
-                    // Generate relation to topic
-                    let relation_prompt =
-                        prompts::relation_to_topic_prompt(article_text, topic_name);
-                    let relation_response = generate_llm_response(&relation_prompt, &llm_params)
-                        .await
-                        .unwrap_or_default();
-
-                    let formatted_article = format!("*<{}|{}>*", article_url, article_title);
-
-                    let detailed_response_json = json!({
-                        "topic": topic_name,
-                        "summary": summary_response,
-                        "tiny_summary": tiny_summary_response,
-                        "critical_analysis": critical_analysis_response,
-                        "logical_fallacies": logical_fallacies_response,
-                        "relation_to_topic": relation_response,
-                        "source_analysis": source_analysis_response,
-                        "elapsed_time": start_time.elapsed().as_secs_f64(),
-                        "model": params.model
-                    });
-
-                    send_to_slack(
-                        &formatted_article,
-                        &detailed_response_json.to_string(),
-                        params.slack_token,
-                        params.slack_channel,
-                    )
-                    .await;
-
-                    match params
-                        .db
-                        .add_article(
-                            article_url,
-                            true,
-                            Some(topic_name),
-                            Some(&detailed_response_json.to_string()),
-                            Some(&tiny_summary_response),
-                            Some(&article_hash),
-                            Some(&title_domain_hash),
-                        )
-                        .await
-                    {
-                        Ok(_) => {
-                            debug!(target: TARGET_DB, "worker {}: Successfully added article about '{}' to database", worker_id, topic_name)
-                        }
-                        Err(e) => {
-                            error!(target: TARGET_DB, "worker {}: Failed to add article about '{}' to database: {:?}", worker_id, topic_name, e)
-                        }
                     }
 
                     return; // No need to continue checking other topics
