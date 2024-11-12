@@ -2,6 +2,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Pool, Row, Sqlite,
 };
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -81,6 +82,21 @@ impl Database {
                 timestamp TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_matched_topics_article_url ON matched_topics_queue (article_url);
+
+            CREATE TABLE IF NOT EXISTS life_safety_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article_url TEXT NOT NULL UNIQUE,
+                article_title TEXT NOT NULL,
+                article_text TEXT NOT NULL,
+                article_html TEXT NOT NULL,
+                affected_regions TEXT,
+                affected_people TEXT,
+                affected_places TEXT,
+                non_affected_people TEXT,
+                non_affected_places TEXT,
+                timestamp TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_life_safety_article_url ON life_safety_queue (article_url);
             "#,
         )
         .execute(&mut conn)
@@ -220,6 +236,73 @@ impl Database {
             }
             Err(e) => {
                 error!(target: TARGET_DB, "Failed to add to matched topics queue: {:?}", e);
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn add_to_life_safety_queue(
+        &self,
+        article_url: &str,
+        article_title: &str,
+        article_text: &str,
+        article_html: &str,
+        affected_regions: &BTreeSet<String>,
+        affected_people: &BTreeSet<String>,
+        affected_places: &BTreeSet<String>,
+        non_affected_people: &BTreeSet<String>,
+        non_affected_places: &BTreeSet<String>,
+    ) -> Result<(), sqlx::Error> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time travel")
+            .as_secs()
+            .to_string();
+
+        let result = sqlx::query(
+            r#"
+        INSERT INTO life_safety_queue (
+            article_url, article_title, article_text, article_html,
+            affected_regions, affected_people, affected_places,
+            non_affected_people, non_affected_places, timestamp
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        ON CONFLICT(article_url) DO NOTHING
+        "#,
+        )
+        .bind(article_url)
+        .bind(article_title)
+        .bind(article_text)
+        .bind(article_html)
+        .bind(serde_json::to_string(affected_regions).expect("failed to encode affected_regions"))
+        .bind(serde_json::to_string(affected_people).expect("failed to encode affected_people"))
+        .bind(serde_json::to_string(affected_places).expect("failed to encode affected_places"))
+        .bind(
+            serde_json::to_string(non_affected_people)
+                .expect("failed to encode non_affected_people"),
+        )
+        .bind(
+            serde_json::to_string(non_affected_places)
+                .expect("failed to encode non_affected_places"),
+        )
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => {
+                debug!(target: TARGET_DB, "Successfully added to life safety queue: {}", article_url);
+            }
+            Err(sqlx::Error::Database(db_err))
+                if db_err.message().contains("UNIQUE constraint failed") =>
+            {
+                debug!(target: TARGET_DB, "Duplicate article_url detected, skipping insert: {}", article_url);
+            }
+            Err(e) => {
+                error!(target: TARGET_DB, "Failed to add to life safety queue: {:?}", e);
                 return Err(e);
             }
         }

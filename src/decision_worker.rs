@@ -671,6 +671,27 @@ async fn summarize_and_send_article(
     )
     .await
     {
+        params
+            .db
+            .add_to_life_safety_queue(
+                article_url,
+                article_title,
+                article_text,
+                article_html,
+                affected_regions,
+                affected_people,
+                affected_places,
+                non_affected_people,
+                non_affected_places,
+            )
+            .await
+            .unwrap_or_else(|e| {
+                error!(
+                    target: TARGET_DB,
+                    "Failed to add article to life safety queue: {:?}", e
+                )
+            });
+
         let summary_prompt = prompts::summary_prompt(&article_text);
         let summary_response = generate_llm_response(&summary_prompt, &llm_params)
             .await
