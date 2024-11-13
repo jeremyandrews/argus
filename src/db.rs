@@ -310,6 +310,96 @@ impl Database {
         Ok(())
     }
 
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn fetch_and_delete_from_life_safety_queue(
+        &self,
+    ) -> Result<
+        Option<(
+            String,           // article_url
+            String,           // article_title
+            String,           // article_text
+            String,           // article_html
+            BTreeSet<String>, // affected_regions
+            BTreeSet<String>, // affected_people
+            BTreeSet<String>, // affected_places
+            BTreeSet<String>, // non_affected_people
+            BTreeSet<String>, // non_affected_places
+        )>,
+        sqlx::Error,
+    > {
+        debug!(target: TARGET_DB, "Fetching and deleting item from life safety queue");
+
+        let mut transaction = self.pool.begin().await?;
+        let row = sqlx::query(
+            r#"
+        SELECT 
+            id,
+            article_url,
+            article_title,
+            article_text,
+            article_html,
+            affected_regions,
+            affected_people,
+            affected_places,
+            non_affected_people,
+            non_affected_places
+        FROM life_safety_queue
+        ORDER BY timestamp ASC
+        LIMIT 1
+        "#,
+        )
+        .fetch_optional(&mut transaction)
+        .await?;
+
+        if let Some(row) = row {
+            let id: i64 = row.get("id");
+            let article_url: String = row.get("article_url");
+            let article_title: String = row.get("article_title");
+            let article_text: String = row.get("article_text");
+            let article_html: String = row.get("article_html");
+
+            // Deserialize JSON strings into BTreeSet<String>
+            let affected_regions: BTreeSet<String> =
+                serde_json::from_str(&row.get::<String, _>("affected_regions"))
+                    .expect("failed to deserialize affected_regions");
+            let affected_people: BTreeSet<String> =
+                serde_json::from_str(&row.get::<String, _>("affected_people"))
+                    .expect("failed to deserialize affected_regions");
+            let affected_places: BTreeSet<String> =
+                serde_json::from_str(&row.get::<String, _>("affected_places"))
+                    .expect("failed to deserialize affected_regions");
+            let non_affected_people: BTreeSet<String> =
+                serde_json::from_str(&row.get::<String, _>("non_affected_people"))
+                    .expect("failed to deserialize affected_regions");
+            let non_affected_places: BTreeSet<String> =
+                serde_json::from_str(&row.get::<String, _>("non_affected_places"))
+                    .expect("failed to deserialize affected_regions");
+
+            sqlx::query("DELETE FROM life_safety_queue WHERE id = ?1")
+                .bind(id)
+                .execute(&mut transaction)
+                .await?;
+            transaction.commit().await?;
+            debug!(target: TARGET_DB, "Fetched and deleted item from life safety queue: {}", article_url);
+
+            Ok(Some((
+                article_url,
+                article_title,
+                article_text,
+                article_html,
+                affected_regions,
+                affected_people,
+                affected_places,
+                non_affected_people,
+                non_affected_places,
+            )))
+        } else {
+            debug!(target: TARGET_DB, "No new items found in life safety queue");
+            transaction.rollback().await?;
+            Ok(None)
+        }
+    }
+
     #[instrument(target = "db", level = "info", skip(self, url, category, analysis))]
     pub async fn add_article(
         &self,

@@ -25,94 +25,137 @@ pub async fn analysis_loop(
     );
 
     loop {
-        match db.fetch_and_delete_from_matched_topics_queue().await {
-            Ok(Some((article_text, article_html, article_url, article_title, topic))) => {
-                let mut llm_params = LLMParams {
-                    llm_client,
-                    model,
-                    temperature,
-                };
-
-                let start_time = std::time::Instant::now();
-
+        // Process items from the life safety queue first
+        match db.fetch_and_delete_from_life_safety_queue().await {
+            Ok(Some((
+                article_url,
+                article_title,
+                article_text,
+                article_html,
+                affected_regions,
+                affected_people,
+                affected_places,
+                non_affected_people,
+                non_affected_places,
+            ))) => {
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "worker {}: Analyzing article from matched topics queue: {}",
-                    worker_id,
-                    article_url
+                    "worker {}: Pulled item from life safety queue: {}",
+                    worker_id, article_url
                 );
-
-                let (
-                    summary,
-                    tiny_summary,
-                    critical_analysis,
-                    logical_fallacies,
-                    source_analysis,
-                    relation,
-                ) = process_analysis(
-                    &article_text,
-                    &article_html,
-                    &article_url,
-                    &topic,
-                    &mut llm_params,
-                )
-                .await;
-
-                let response_json = json!({
-                    "topic": topic,
-                    "summary": summary,
-                    "tiny_summary": tiny_summary,
-                    "critical_analysis": critical_analysis,
-                    "logical_fallacies": logical_fallacies,
-                    "relation_to_topic": relation,
-                    "source_analysis": source_analysis,
-                    "elapsed_time": start_time.elapsed().as_secs_f64(),
-                    "model": model
-                });
-
-                send_to_slack(
-                    &format!("*<{}|{}>*", article_url, article_title),
-                    &response_json.to_string(),
-                    slack_token,
-                    default_slack_channel,
-                )
-                .await;
-
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "worker {}: Successfully analyzed article and sent to Slack: {}",
-                    worker_id,
-                    article_url
+                    "Details: title={}, regions={:?}, people={:?}, places={:?}",
+                    article_title, affected_regions, affected_people, affected_places
                 );
 
-                // Optionally, update the database with additional analysis details
-                if let Err(e) = db
-                    .add_article(
-                        &article_url,
-                        true,
-                        Some(&topic),
-                        Some(&response_json.to_string()),
-                        Some(&tiny_summary),
-                        None,
-                        None,
-                    )
-                    .await
-                {
-                    error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
-                }
+                // Currently just logging the pulled data. Further processing can be added here.
             }
             Ok(None) => {
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "worker {}: No items in matched topics queue. Sleeping 10 seconds...",
+                    "worker {}: No items in life safety queue. Moving to matched topics queue.",
                     worker_id
                 );
-                sleep(Duration::from_secs(10)).await;
+
+                // Process matched topics queue as before
+                match db.fetch_and_delete_from_matched_topics_queue().await {
+                    Ok(Some((article_text, article_html, article_url, article_title, topic))) => {
+                        let mut llm_params = LLMParams {
+                            llm_client,
+                            model,
+                            temperature,
+                        };
+
+                        let start_time = std::time::Instant::now();
+
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "worker {}: Analyzing article from matched topics queue: {}",
+                            worker_id,
+                            article_url
+                        );
+
+                        let (
+                            summary,
+                            tiny_summary,
+                            critical_analysis,
+                            logical_fallacies,
+                            source_analysis,
+                            relation,
+                        ) = process_analysis(
+                            &article_text,
+                            &article_html,
+                            &article_url,
+                            &topic,
+                            &mut llm_params,
+                        )
+                        .await;
+
+                        let response_json = json!({
+                            "topic": topic,
+                            "summary": summary,
+                            "tiny_summary": tiny_summary,
+                            "critical_analysis": critical_analysis,
+                            "logical_fallacies": logical_fallacies,
+                            "relation_to_topic": relation,
+                            "source_analysis": source_analysis,
+                            "elapsed_time": start_time.elapsed().as_secs_f64(),
+                            "model": model
+                        });
+
+                        send_to_slack(
+                            &format!("*<{}|{}>*", article_url, article_title),
+                            &response_json.to_string(),
+                            slack_token,
+                            default_slack_channel,
+                        )
+                        .await;
+
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "worker {}: Successfully analyzed article and sent to Slack: {}",
+                            worker_id,
+                            article_url
+                        );
+
+                        // Optionally, update the database with additional analysis details
+                        if let Err(e) = db
+                            .add_article(
+                                &article_url,
+                                true,
+                                Some(&topic),
+                                Some(&response_json.to_string()),
+                                Some(&tiny_summary),
+                                None,
+                                None,
+                            )
+                            .await
+                        {
+                            error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
+                        }
+                    }
+                    Ok(None) => {
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "worker {}: No items in matched topics queue. Sleeping 10 seconds...",
+                            worker_id
+                        );
+                        sleep(Duration::from_secs(10)).await;
+                    }
+                    Err(e) => {
+                        error!(
+                            target: TARGET_LLM_REQUEST,
+                            "worker {}: Error fetching from matched topics queue: {:?}", worker_id, e
+                        );
+                        sleep(Duration::from_secs(5)).await;
+                    }
+                }
             }
             Err(e) => {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "worker {}: Error fetching from matched topics queue: {:?}", worker_id, e
+                    "worker {}: Error fetching from life safety queue: {:?}", worker_id, e
                 );
                 sleep(Duration::from_secs(5)).await;
             }
