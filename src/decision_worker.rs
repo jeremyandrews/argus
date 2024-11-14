@@ -1,6 +1,6 @@
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use readability::extractor;
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use tokio::time::{sleep, timeout, Duration};
@@ -10,7 +10,6 @@ use url::Url;
 use crate::db::Database;
 use crate::llm::generate_llm_response;
 use crate::prompts;
-use crate::slack::send_to_slack;
 use crate::util::weighted_sleep;
 use crate::{LLMClient, LLMParams};
 use crate::{TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
@@ -598,48 +597,6 @@ async fn article_is_relevant(
     return false;
 }
 
-async fn get_llm_responses(
-    summary_response: &str,
-    article_text: &str,
-    article_html: &str,
-    article_url: &str,
-    llm_params: &mut LLMParams<'_>,
-) -> (String, String, String, String) {
-    // Generate tiny summary
-    let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary_response);
-    let tiny_summary_response = generate_llm_response(&tiny_summary_prompt, &llm_params)
-        .await
-        .unwrap_or_default();
-
-    // Generate critical analysis
-    let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
-    let critical_analysis_response = generate_llm_response(&critical_analysis_prompt, &llm_params)
-        .await
-        .unwrap_or_default();
-
-    // Generate logical fallacies
-    let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
-    let logical_fallacies_response = generate_llm_response(&logical_fallacies_prompt, &llm_params)
-        .await
-        .unwrap_or_default();
-
-    // Add additional variables
-    let source_url = &article_url;
-
-    // Call the updated prompt function with additional context
-    let source_analysis_prompt = prompts::source_analysis_prompt(article_html, source_url);
-    let source_analysis_response = generate_llm_response(&source_analysis_prompt, &llm_params)
-        .await
-        .unwrap_or_default();
-
-    return (
-        tiny_summary_response,
-        critical_analysis_response,
-        logical_fallacies_response,
-        source_analysis_response,
-    );
-}
-
 /// Summarizes and sends the article to the Slack channel, and updates the database with the article data.
 async fn summarize_and_send_article(
     article_url: &str,
@@ -655,13 +612,6 @@ async fn summarize_and_send_article(
     article_html: &str,
     params: &mut ProcessItemParams<'_>,
 ) {
-    let start_time = std::time::Instant::now();
-
-    let worker_id = format!("{:?}", std::thread::current().id());
-    let formatted_article = format!("*<{}|{}>*", article_url, article_title);
-
-    let mut relation_to_topic_response = String::new();
-
     let mut llm_params = extract_llm_params(params);
 
     if article_is_relevant(
@@ -678,6 +628,8 @@ async fn summarize_and_send_article(
                 article_title,
                 article_text,
                 article_html,
+                article_hash,
+                title_domain_hash,
                 affected_regions,
                 affected_people,
                 affected_places,
@@ -691,147 +643,6 @@ async fn summarize_and_send_article(
                     "Failed to add article to life safety queue: {:?}", e
                 )
             });
-
-        let summary_prompt = prompts::summary_prompt(&article_text);
-        let summary_response = generate_llm_response(&summary_prompt, &llm_params)
-            .await
-            .unwrap_or_default();
-
-        let (
-            tiny_summary_response,
-            critical_analysis_response,
-            logical_fallacies_response,
-            source_analysis_response,
-        ) = get_llm_responses(
-            &summary_response,
-            article_text,
-            article_html,
-            article_url,
-            &mut llm_params,
-        )
-        .await;
-
-        // Check again if the article hash already exists in the database before posting to Slack
-        if params.db.has_hash(&article_hash).await.unwrap_or(false) {
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "Article with hash {} was already processed (second check), skipping Slack post.",
-                article_hash
-            );
-            return;
-        }
-
-        // Generate relation to topic (affected and non-affected summary)
-        let mut affected_summary = String::default();
-
-        // For affected places
-        if !affected_people.is_empty() {
-            affected_summary = format!(
-                "This article affects these people in {}: {}",
-                affected_regions
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                affected_people
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let affected_places_str = affected_places
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ");
-            let how_prompt = prompts::how_does_it_affect_prompt(article_text, &affected_places_str);
-            let how_response = generate_llm_response(&how_prompt, &llm_params)
-                .await
-                .unwrap_or_default();
-            relation_to_topic_response
-                .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
-        }
-
-        // For non-affected places
-        let mut non_affected_summary = String::default();
-        if !non_affected_people.is_empty() {
-            non_affected_summary = format!(
-                "This article does not affect these people in {}: {}",
-                affected_regions
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                non_affected_people
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            let why_not_prompt = prompts::why_not_affect_prompt(
-                article_text,
-                &non_affected_places
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            );
-            let why_not_response = generate_llm_response(&why_not_prompt, &llm_params)
-                .await
-                .unwrap_or_default();
-            relation_to_topic_response.push_str(&format!(
-                "\n\n{}\n\n{}",
-                non_affected_summary, why_not_response
-            ));
-        }
-
-        if !summary_response.is_empty()
-            || !critical_analysis_response.is_empty()
-            || !logical_fallacies_response.is_empty()
-            || !relation_to_topic_response.is_empty()
-            || !source_analysis_response.is_empty()
-        {
-            let detailed_response_json = json!({
-                "topic": format!("{} {}", affected_summary, non_affected_summary),
-                "summary": summary_response,
-                "tiny_summary": tiny_summary_response,
-                "critical_analysis": critical_analysis_response,
-                "logical_fallacies": logical_fallacies_response,
-                "relation_to_topic": relation_to_topic_response,
-                "source_analysis": source_analysis_response,
-                "elapsed_time": start_time.elapsed().as_secs_f64(),
-                "model": params.model
-            });
-
-            send_to_slack(
-                &formatted_article,
-                &detailed_response_json.to_string(),
-                params.slack_token,
-                params.slack_channel,
-            )
-            .await;
-
-            match params
-                .db
-                .add_article(
-                    article_url,
-                    true,
-                    None,
-                    Some(&detailed_response_json.to_string()),
-                    Some(&tiny_summary_response),
-                    Some(&article_hash),
-                    Some(&title_domain_hash),
-                )
-                .await
-            {
-                Ok(_) => {
-                    debug!(target: TARGET_DB, "worker {}: Successfully added article to database", worker_id)
-                }
-                Err(e) => {
-                    error!(target: TARGET_DB, "worker {}: Failed to add article to database: {:?}", worker_id, e)
-                }
-            }
-        }
     }
 }
 
@@ -887,6 +698,8 @@ async fn process_topics(
                             article_html,
                             article_url,
                             article_title,
+                            article_hash,
+                            title_domain_hash,
                             topic_name,
                         )
                         .await

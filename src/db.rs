@@ -79,6 +79,8 @@ impl Database {
                 article_url TEXT NOT NULL UNIQUE,
                 article_title TEXT NOT NULL,
                 topic_matched TEXT NOT NULL,
+                article_hash TEXT NOT NULL,
+                title_domain_hash TEXT NOT NULL,
                 timestamp TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_matched_topics_article_url ON matched_topics_queue (article_url);
@@ -89,6 +91,8 @@ impl Database {
                 article_title TEXT NOT NULL,
                 article_text TEXT NOT NULL,
                 article_html TEXT NOT NULL,
+                article_hash TEXT NOT NULL,
+                title_domain_hash TEXT NOT NULL,
                 affected_regions TEXT,
                 affected_people TEXT,
                 affected_places TEXT,
@@ -201,6 +205,8 @@ impl Database {
         article_html: &str,
         article_url: &str,
         article_title: &str,
+        article_hash: &str,
+        title_domain_hash: &str,
         topic_matched: &str,
     ) -> Result<(), sqlx::Error> {
         let timestamp = SystemTime::now()
@@ -211,8 +217,8 @@ impl Database {
 
         let result = sqlx::query(
         r#"
-        INSERT INTO matched_topics_queue (article_text, article_html, article_url, article_title, topic_matched, timestamp)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        INSERT INTO matched_topics_queue (article_text, article_html, article_url, article_title, article_hash, title_domain_hash, topic_matched, timestamp)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(article_url) DO NOTHING
         "#,
     )
@@ -220,6 +226,8 @@ impl Database {
     .bind(article_html)
     .bind(article_url)
     .bind(article_title)
+    .bind(article_hash)
+    .bind(title_domain_hash)
     .bind(topic_matched)
     .bind(timestamp)
     .execute(&self.pool)
@@ -250,6 +258,8 @@ impl Database {
         article_title: &str,
         article_text: &str,
         article_html: &str,
+        article_hash: &str,
+        title_domain_hash: &str,
         affected_regions: &BTreeSet<String>,
         affected_people: &BTreeSet<String>,
         affected_places: &BTreeSet<String>,
@@ -265,11 +275,11 @@ impl Database {
         let result = sqlx::query(
             r#"
         INSERT INTO life_safety_queue (
-            article_url, article_title, article_text, article_html,
+            article_url, article_title, article_text, article_html, article_hash, title_domain_hash,
             affected_regions, affected_people, affected_places,
             non_affected_people, non_affected_places, timestamp
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
         ON CONFLICT(article_url) DO NOTHING
         "#,
         )
@@ -277,6 +287,8 @@ impl Database {
         .bind(article_title)
         .bind(article_text)
         .bind(article_html)
+        .bind(article_hash)
+        .bind(title_domain_hash)
         .bind(serde_json::to_string(affected_regions).expect("failed to encode affected_regions"))
         .bind(serde_json::to_string(affected_people).expect("failed to encode affected_people"))
         .bind(serde_json::to_string(affected_places).expect("failed to encode affected_places"))
@@ -319,6 +331,8 @@ impl Database {
             String,           // article_title
             String,           // article_text
             String,           // article_html
+            String,           // article_hash
+            String,           // title_domain_hash
             BTreeSet<String>, // affected_regions
             BTreeSet<String>, // affected_people
             BTreeSet<String>, // affected_places
@@ -338,6 +352,8 @@ impl Database {
             article_title,
             article_text,
             article_html,
+            article_hash,
+            title_domain_hash,
             affected_regions,
             affected_people,
             affected_places,
@@ -357,6 +373,8 @@ impl Database {
             let article_title: String = row.get("article_title");
             let article_text: String = row.get("article_text");
             let article_html: String = row.get("article_html");
+            let article_hash: String = row.get("article_hash");
+            let title_domain_hash: String = row.get("title_domain_hash");
 
             // Deserialize JSON strings into BTreeSet<String>
             let affected_regions: BTreeSet<String> =
@@ -387,6 +405,8 @@ impl Database {
                 article_title,
                 article_text,
                 article_html,
+                article_hash,
+                title_domain_hash,
                 affected_regions,
                 affected_people,
                 affected_places,
@@ -560,7 +580,7 @@ impl Database {
     #[instrument(target = "db", level = "info", skip(self))]
     pub async fn fetch_and_delete_from_matched_topics_queue(
         &self,
-    ) -> Result<Option<(String, String, String, String, String)>, sqlx::Error> {
+    ) -> Result<Option<(String, String, String, String, String, String, String)>, sqlx::Error> {
         debug!(target: TARGET_DB, "Fetching and deleting item from matched topics queue");
 
         let mut transaction = self.pool.begin().await?;
@@ -572,6 +592,8 @@ impl Database {
             article_html, 
             article_url, 
             article_title, 
+            article_hash,
+            title_domain_hash,
             topic_matched 
         FROM matched_topics_queue 
         ORDER BY timestamp ASC 
@@ -587,6 +609,8 @@ impl Database {
             let article_html: String = row.get("article_html");
             let article_url: String = row.get("article_url");
             let article_title: String = row.get("article_title");
+            let article_hash: String = row.get("article_hash");
+            let title_domain_hash: String = row.get("title_domain_hash");
             let topic_matched: String = row.get("topic_matched");
 
             sqlx::query("DELETE FROM matched_topics_queue WHERE id = ?1")
@@ -601,6 +625,8 @@ impl Database {
                 article_html,
                 article_url,
                 article_title,
+                article_hash,
+                title_domain_hash,
                 topic_matched,
             )))
         } else {
