@@ -55,7 +55,7 @@ pub async fn analysis_loop(
                         "Article with hash {} was already processed (second check).",
                         article_hash
                     );
-                    return;
+                    continue;
                 }
 
                 // Check again if the title_domain_hash already exists in the database before reviewing with LLM.
@@ -69,7 +69,7 @@ pub async fn analysis_loop(
                         "Article with title_domain_hash {} already processed (second check), skipping.",
                         title_domain_hash
                     );
-                    return;
+                    continue;
                 }
 
                 let mut llm_params = LLMParams {
@@ -186,7 +186,7 @@ pub async fn analysis_loop(
                             "Article with hash {} was already processed (third check), skipping Slack post.",
                             article_hash
                         );
-                        return;
+                        continue;
                     }
                     // Check again if the title_domain_hash already exists in the database before posting to Slack
                     if db
@@ -199,7 +199,7 @@ pub async fn analysis_loop(
                             "Article with title_domain_hash {} already processed (third check), skipping.",
                             title_domain_hash
                         );
-                        return;
+                        continue;
                     }
 
                     send_to_slack(
