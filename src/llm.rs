@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 use crate::TARGET_LLM_REQUEST;
 use crate::{LLMClient, LLMParams};
 
-pub async fn generate_llm_response(prompt: &str, params: &LLMParams<'_>) -> Option<String> {
+pub async fn generate_llm_response(prompt: &str, params: &LLMParams) -> Option<String> {
     let max_retries = 5;
     let mut response_text = String::new();
     let mut backoff = 2;
@@ -42,7 +42,7 @@ pub async fn generate_llm_response(prompt: &str, params: &LLMParams<'_>) -> Opti
             }
             LLMClient::OpenAI(ref openai_client) => {
                 let request = CreateCompletionRequestArgs::default()
-                    .model(params.model)
+                    .model(params.model.to_string())
                     .prompt(prompt)
                     .temperature(params.temperature)
                     .build()

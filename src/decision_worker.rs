@@ -68,10 +68,10 @@ pub struct FeedItem {
     pub title: Option<String>,
 }
 
-fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams<'a> {
+fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
     LLMParams {
-        llm_client: params.llm_client,
-        model: params.model,
+        llm_client: params.llm_client.clone(),
+        model: params.model.to_string(),
         temperature: params.temperature,
     }
 }
@@ -579,7 +579,7 @@ async fn process_city(
 async fn article_is_relevant(
     article_text: &str,
     topic_name: &str,
-    llm_params: &mut LLMParams<'_>,
+    llm_params: &mut LLMParams,
 ) -> bool {
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);

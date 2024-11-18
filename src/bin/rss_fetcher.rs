@@ -92,11 +92,11 @@ async fn main() -> Result<()> {
                         info!(target: "config", "Using LLM model: {}", llm_model);
 
                         let llm_params = crate::LLMParams {
-                            llm_client: &LLMClient::Ollama(ollama_rs::Ollama::new(
+                            llm_client: LLMClient::Ollama(ollama_rs::Ollama::new(
                                 llm_host_with_scheme.clone(),
                                 llm_port,
                             )),
-                            model: &llm_model, // Borrow the model as a &str
+                            model: llm_model, // Borrow the model as a &str
                             temperature: 0.0,
                         };
 
