@@ -35,3 +35,12 @@ pub struct FallbackConfig {
     pub llm_client: LLMClient,
     pub model: String,
 }
+
+#[derive(Clone, Debug)]
+pub struct WorkerDetail {
+    pub name: String,
+    pub id: i16,
+    pub model: String,
+    // @TODO: Ollama or OpenAI
+    //pub client: String,
+}
