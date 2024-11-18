@@ -42,11 +42,11 @@ pub async fn analysis_loop(
 
     info!(
         target: TARGET_LLM_REQUEST,
-        "Analysis worker {}: starting analysis_loop in Analysis mode with model '{}'.",
+        "analysis worker {}: starting analysis_loop in Analysis mode with model '{}'.",
         worker_id, model
     );
     debug!(
-        "Analysis worker {} is running with model '{}' using {:?}.",
+        "analysis worker {} is running with model '{}' using {:?}.",
         worker_id, model, llm_client
     );
 
@@ -73,7 +73,7 @@ pub async fn analysis_loop(
                     if let Some(fallback_config) = fallback.clone() {
                         info!(
                             target: TARGET_LLM_REQUEST,
-                            "Analysis worker {}: Idle for over 2 minutes. Switching to Decision mode with fallback model '{}'.",
+                            "analysis worker {}: Idle for over 2 minutes. Switching to Decision mode with fallback model '{}'.",
                             worker_id, fallback_config.model
                         );
                         mode = Mode::FallbackDecision;
@@ -98,7 +98,7 @@ pub async fn analysis_loop(
                         if start_time.elapsed() > Duration::from_secs(900) {
                             info!(
                                 target: TARGET_LLM_REQUEST,
-                                "Analysis worker {}: Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with model '{}'.",
+                                "analysis worker {}: Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with model '{}'.",
                                 worker_id, model
                             );
                             mode = Mode::Analysis;
@@ -117,7 +117,7 @@ pub async fn analysis_loop(
                     // Run Decision loop logic with fallback model
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "Analysis worker {}: Running in Decision mode with model '{}'.",
+                        "analysis worker {}: Running in Decision mode with model '{}'.",
                         worker_id, fallback_config.model
                     );
 
@@ -138,7 +138,7 @@ pub async fn analysis_loop(
                     // No fallback configured; remain in Analysis mode
                     warn!(
                         target: TARGET_LLM_REQUEST,
-                        "Analysis worker {}: No fallback configuration provided. Remaining in Analysis mode.",
+                        "analysis worker {}: No fallback configuration provided. Remaining in Analysis mode.",
                         worker_id
                     );
                     mode = Mode::Analysis;
@@ -152,7 +152,7 @@ pub async fn analysis_loop(
                 if start_time.elapsed() > Duration::from_secs(900) {
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "Analysis worker {}: Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with model '{}'.",
+                        "analysis worker {}: Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with model '{}'.",
                         worker_id, model
                     );
                     mode = Mode::Analysis;
