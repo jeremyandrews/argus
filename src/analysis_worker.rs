@@ -199,7 +199,7 @@ async fn process_analysis_item(
 
             info!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: Pulled item from life safety queue: {}",
+                "analysis worker {}: Pulled item from life safety queue: {}",
                 worker_id, article_url
             );
 
@@ -368,7 +368,7 @@ async fn process_analysis_item(
         Ok(None) => {
             debug!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: No items in life safety queue.",
+                "analysis worker {}: No items in life safety queue.",
                 worker_id
             );
 
@@ -389,7 +389,7 @@ async fn process_analysis_item(
 
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: Pulled item from matched topics queue: {}",
+                        "analysis worker {}: Pulled item from matched topics queue: {}",
                         worker_id, article_url
                     );
 
@@ -431,7 +431,7 @@ async fn process_analysis_item(
 
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: Successfully analyzed article and sent to Slack: {}",
+                        "analysis worker {}: Successfully analyzed article and sent to Slack: {}",
                         worker_id,
                         article_url
                     );
@@ -454,7 +454,7 @@ async fn process_analysis_item(
                 Ok(None) => {
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: No items in matched topics queue. Sleeping 10 seconds...",
+                        "analysis worker {}: No items in matched topics queue. Sleeping 10 seconds...",
                         worker_id
                     );
                     // Log success, and go to next queue item.
@@ -463,7 +463,7 @@ async fn process_analysis_item(
                 Err(e) => {
                     error!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: Error fetching from matched topics queue: {:?}", worker_id, e
+                        "analysis worker {}: Error fetching from matched topics queue: {:?}", worker_id, e
                     );
                     // Sleep after a database error.
                     sleep(Duration::from_secs(5)).await;
@@ -475,7 +475,7 @@ async fn process_analysis_item(
         Err(e) => {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: Error fetching from life safety queue: {:?}",
+                "analysis worker {}: Error fetching from life safety queue: {:?}",
                 worker_id, e
             );
             // Sleep after a database error.
@@ -502,14 +502,14 @@ async fn process_decision_item(
             if url.trim().is_empty() {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "worker {}: Found an empty URL in the queue, skipping...",
+                    "analysis worker {}: Found an empty URL in the queue, skipping...",
                     worker_id
                 );
             }
 
             info!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: Moving on to a new URL: {} ({:?})",
+                "analysis worker {}: Moving on to a new URL: {} ({:?})",
                 worker_id, url, title
             );
 
@@ -535,7 +535,7 @@ async fn process_decision_item(
         Ok(None) => {
             debug!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: No URLs to process in rss_queue. Sleeping for 1 minute before retrying.",
+                "analysis worker {}: No URLs to process in rss_queue. Sleeping for 1 minute before retrying.",
                 worker_id
             );
             sleep(Duration::from_secs(60)).await;
@@ -543,7 +543,7 @@ async fn process_decision_item(
         Err(e) => {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: Error fetching URL from rss_queue: {:?}",
+                "analysis worker {}: Error fetching URL from rss_queue: {:?}",
                 worker_id, e
             );
             sleep(Duration::from_secs(5)).await; // Wait and retry

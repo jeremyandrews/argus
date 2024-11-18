@@ -108,11 +108,11 @@ pub async fn decision_loop(
         match db.fetch_and_delete_url_from_rss_queue(order).await {
             Ok(Some((url, title))) => {
                 if url.trim().is_empty() {
-                    error!(target: TARGET_LLM_REQUEST, "worker {}: Found an empty URL in the queue, skipping...", worker_id);
+                    error!(target: TARGET_LLM_REQUEST, "decision worker {}: Found an empty URL in the queue, skipping...", worker_id);
                     continue;
                 }
 
-                info!(target: TARGET_LLM_REQUEST, "worker {}: Moving on to a new URL: {} ({:?})", worker_id, url, title);
+                info!(target: TARGET_LLM_REQUEST, "decision worker {}: Moving on to a new URL: {} ({:?})", worker_id, url, title);
 
                 let item = FeedItem {
                     url: url.clone(),
@@ -133,12 +133,12 @@ pub async fn decision_loop(
                 process_item(item, &mut params).await;
             }
             Ok(None) => {
-                debug!(target: TARGET_LLM_REQUEST, "worker {}: No URLs to process. Sleeping for 1 minute before retrying.", worker_id);
+                debug!(target: TARGET_LLM_REQUEST, "decision worker {}: No URLs to process. Sleeping for 1 minute before retrying.", worker_id);
                 sleep(Duration::from_secs(60)).await;
                 continue;
             }
             Err(e) => {
-                error!(target: TARGET_LLM_REQUEST, "worker {}: Error fetching URL from queue: {:?}", worker_id, e);
+                error!(target: TARGET_LLM_REQUEST, "decision worker {}: Error fetching URL from queue: {:?}", worker_id, e);
                 sleep(Duration::from_secs(5)).await; // Wait and retry
                 continue;
             }
@@ -151,7 +151,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
 
     debug!(
         target: TARGET_LLM_REQUEST,
-        "worker {}: Reviewing => {} ({})",
+        "decision worker {}: Reviewing => {} ({})",
         worker_id,
         item.title.clone().unwrap_or_default(),
         item.url
@@ -227,7 +227,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
                 if check_if_threat_at_all(&article_text, params).await {
                     process_places(place_params, &places, params).await;
                 } else {
-                    debug!(target: TARGET_LLM_REQUEST, "worker {}: Article is not about an ongoing or imminent threat.", worker_id);
+                    debug!(target: TARGET_LLM_REQUEST, "decision worker {}: Article is not about an ongoing or imminent threat.", worker_id);
                 }
             }
 
@@ -278,7 +278,7 @@ pub async fn process_item(item: FeedItem, params: &mut ProcessItemParams<'_>) {
 async fn check_if_threat_at_all(article_text: &str, params: &mut ProcessItemParams<'_>) -> bool {
     let threat_prompt = prompts::threat_prompt(&article_text);
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
+    debug!(target: TARGET_LLM_REQUEST, "decision worker {}: Asking LLM: is this article about an ongoing or imminent and potentially life-threatening event", worker_id);
 
     let llm_params = extract_llm_params(params);
     match generate_llm_response(&threat_prompt, &llm_params).await {
@@ -300,7 +300,7 @@ async fn process_places(
             article_about_any_area = true;
             debug!(
                 target: TARGET_LLM_REQUEST,
-                "worker {}: Article is not about something affecting life or safety on '{}'",
+                "decision worker {}: Article is not about something affecting life or safety on '{}'",
                 worker_id,
                 continent
             );
@@ -333,7 +333,7 @@ async fn process_continent(
 
     let continent_prompt = prompts::continent_threat_prompt(article_text, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
+    debug!(target: TARGET_LLM_REQUEST, "decision worker {}: Asking LLM: is this article about ongoing or imminent threat on {}", worker_id, continent);
 
     let llm_params = extract_llm_params(params);
     let continent_response = match generate_llm_response(&continent_prompt, &llm_params).await {
@@ -347,7 +347,7 @@ async fn process_continent(
 
     debug!(
         target: TARGET_LLM_REQUEST,
-        "worker {}: Article is about something affecting life or safety on '{}'",
+        "decision worker {}: Article is about something affecting life or safety on '{}'",
         worker_id,
         continent
     );
@@ -389,7 +389,7 @@ async fn process_country(
 ) -> bool {
     let country_prompt = prompts::country_threat_prompt(article_text, country, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
+    debug!(target: TARGET_LLM_REQUEST, "decision worker {}: Asking LLM: is this article about ongoing or imminent threat in {} on {}", worker_id, country, continent);
 
     let llm_params = extract_llm_params(params);
     let country_response = match generate_llm_response(&country_prompt, &llm_params).await {
@@ -400,7 +400,7 @@ async fn process_country(
     if !country_response.trim().to_lowercase().starts_with("yes") {
         debug!(
             target: TARGET_LLM_REQUEST,
-            "worker {}: Article is not about something affecting life or safety in '{}' on '{}'",
+            "decision worker {}: Article is not about something affecting life or safety in '{}' on '{}'",
             worker_id,
             country,
             continent
@@ -410,7 +410,7 @@ async fn process_country(
 
     debug!(
         target: TARGET_LLM_REQUEST,
-        "worker {}: Article is about something affecting life or safety in '{}' on '{}'",
+        "decision worker {}: Article is about something affecting life or safety in '{}' on '{}'",
         worker_id,
         country,
         continent
@@ -458,7 +458,7 @@ async fn process_region(
 
     let region_prompt = prompts::region_threat_prompt(article_text, region, country, continent);
     let worker_id = format!("{:?}", std::thread::current().id());
-    debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
+    debug!(target: TARGET_LLM_REQUEST, "decision worker {}: Asking LLM: is this article about ongoing or imminent threat in {} in {} on {}", worker_id, region, country, continent);
 
     let llm_params = extract_llm_params(proc_params);
     let region_response = match generate_llm_response(&region_prompt, &llm_params).await {
@@ -469,7 +469,7 @@ async fn process_region(
     if !region_response.trim().to_lowercase().starts_with("yes") {
         debug!(
             target: TARGET_LLM_REQUEST,
-            "worker {}: Article is not about something affecting life or safety in '{}', '{}'",
+            "decision worker {}: Article is not about something affecting life or safety in '{}', '{}'",
             worker_id,
             region,
             country
@@ -479,7 +479,7 @@ async fn process_region(
 
     debug!(
         target: TARGET_LLM_REQUEST,
-        "worker {}: Article is about something affecting life or safety in '{}', '{}'",
+        "decision worker {}: Article is about something affecting life or safety in '{}', '{}'",
         worker_id,
         region,
         country
@@ -549,7 +549,7 @@ async fn process_city(
     if !city_response.trim().to_lowercase().starts_with("yes") {
         debug!(
             target: TARGET_LLM_REQUEST,
-            "worker {}: Article is not about something affecting life or safety in '{}, {}, {}'",
+            "decision worker {}: Article is not about something affecting life or safety in '{}, {}, {}'",
             worker_id,
             city_name,
             region,
@@ -560,7 +560,7 @@ async fn process_city(
 
     info!(
         target: TARGET_LLM_REQUEST,
-        "worker {}: Article is about something affecting life or safety in '{}, {}, {}'",
+        "decision worker {}: Article is about something affecting life or safety in '{}, {}, {}'",
         worker_id,
         city_name,
         region,
@@ -669,7 +669,7 @@ async fn process_topics(
             continue;
         }
 
-        debug!(target: TARGET_LLM_REQUEST, "worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
+        debug!(target: TARGET_LLM_REQUEST, "decision worker {}: Asking LLM: is this article specifically about {}", worker_id, topic_name);
 
         let yes_no_prompt = prompts::is_this_about(article_text, topic_name);
         let mut llm_params = extract_llm_params(params);
@@ -708,7 +708,7 @@ async fn process_topics(
                     } else {
                         debug!(
                             target: TARGET_DB,
-                            "worker {}: Successfully added to matched topics queue: topic '{}'",
+                            "decision worker {}: Successfully added to matched topics queue: topic '{}'",
                             worker_id,
                             topic_name
                         );
@@ -718,7 +718,7 @@ async fn process_topics(
                 } else {
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: Article is not about '{}' or is a promotion/",
+                        "decision worker {}: Article is not about '{}' or is a promotion/",
                         worker_id,
                         topic_name,
                     );
@@ -727,7 +727,7 @@ async fn process_topics(
             } else {
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "worker {}: Article is not about '{}': {}",
+                    "decision worker {}: Article is not about '{}': {}",
                     worker_id,
                     topic_name,
                     yes_no_response.trim()
@@ -753,10 +753,10 @@ async fn process_topics(
             .await
         {
             Ok(_) => {
-                debug!(target: TARGET_DB, "worker {}: Successfully added non-relevant article to database", worker_id)
+                debug!(target: TARGET_DB, "decision worker {}: Successfully added non-relevant article to database", worker_id)
             }
             Err(e) => {
-                error!(target: TARGET_DB, "worker {}: Failed to add non-relevant article to database: {:?}", worker_id, e)
+                error!(target: TARGET_DB, "decision worker {}: Failed to add non-relevant article to database: {:?}", worker_id, e)
             }
         }
     }
@@ -772,36 +772,36 @@ async fn extract_article_text(url: &str) -> Result<(String, String), bool> {
 
     for retry_count in 0..max_retries {
         let scrape_future = async { extractor::scrape(url) };
-        debug!(target: TARGET_WEB_REQUEST, "worker {}: Requesting extraction for URL: {}", worker_id, url);
+        debug!(target: TARGET_WEB_REQUEST, "decision worker {}: Requesting extraction for URL: {}", worker_id, url);
         match timeout(Duration::from_secs(60), scrape_future).await {
             Ok(Ok(product)) => {
                 if product.text.is_empty() {
-                    warn!(target: TARGET_WEB_REQUEST, "worker {}: Extracted article is empty for URL: {}", worker_id, url);
+                    warn!(target: TARGET_WEB_REQUEST, "decision worker {}: Extracted article is empty for URL: {}", worker_id, url);
                     break;
                 }
                 article_text = format!("Title: {}\nBody: {}\n", product.title, product.text);
                 article_html = product.content.clone();
 
-                debug!(target: TARGET_WEB_REQUEST, "worker {}: Extraction succeeded for URL: {}", worker_id, url);
+                debug!(target: TARGET_WEB_REQUEST, "decision worker {}: Extraction succeeded for URL: {}", worker_id, url);
                 return Ok((article_text, article_html));
             }
             Ok(Err(e)) => {
-                warn!(target: TARGET_WEB_REQUEST, "worker {}: Error extracting page: {:?}", worker_id, e);
+                warn!(target: TARGET_WEB_REQUEST, "decision worker {}: Error extracting page: {:?}", worker_id, e);
                 if retry_count < max_retries - 1 {
-                    debug!(target: TARGET_WEB_REQUEST, "worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
+                    debug!(target: TARGET_WEB_REQUEST, "decision worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
                 } else {
-                    error!(target: TARGET_WEB_REQUEST, "worker {}: Failed to extract article after {} retries", worker_id, max_retries);
+                    error!(target: TARGET_WEB_REQUEST, "decision worker {}: Failed to extract article after {} retries", worker_id, max_retries);
                 }
                 if e.to_string().contains("Access Denied") || e.to_string().contains("Unexpected") {
                     return Err(true);
                 }
             }
             Err(_) => {
-                warn!(target: TARGET_WEB_REQUEST, "worker {}: Operation timed out", worker_id);
+                warn!(target: TARGET_WEB_REQUEST, "decision worker {}: Operation timed out", worker_id);
                 if retry_count < max_retries - 1 {
-                    debug!(target: TARGET_WEB_REQUEST, "worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
+                    debug!(target: TARGET_WEB_REQUEST, "decision worker {}: Retrying... ({}/{})", worker_id, retry_count + 1, max_retries);
                 } else {
-                    error!(target: TARGET_WEB_REQUEST, "worker {}: Failed to extract article after {} retries", worker_id, max_retries);
+                    error!(target: TARGET_WEB_REQUEST, "decision worker {}: Failed to extract article after {} retries", worker_id, max_retries);
                 }
             }
         }
@@ -812,7 +812,7 @@ async fn extract_article_text(url: &str) -> Result<(String, String), bool> {
         }
     }
 
-    warn!(target: TARGET_WEB_REQUEST, "worker {}: Article text extraction failed for URL: {}", worker_id, url);
+    warn!(target: TARGET_WEB_REQUEST, "decision worker {}: Article text extraction failed for URL: {}", worker_id, url);
     Err(false)
 }
 
@@ -840,10 +840,10 @@ async fn handle_access_denied(
             .await
         {
             Ok(_) => {
-                warn!(target: TARGET_WEB_REQUEST, "worker {}: Access denied for URL: {} ({})", worker_id, article_url, article_title)
+                warn!(target: TARGET_WEB_REQUEST, "decision worker {}: Access denied for URL: {} ({})", worker_id, article_url, article_title)
             }
             Err(e) => {
-                error!(target: TARGET_WEB_REQUEST, "worker {}: Failed to add access denied URL '{}' ({}) to database: {:?}", worker_id, article_url, article_title, e)
+                error!(target: TARGET_WEB_REQUEST, "decision worker {}: Failed to add access denied URL '{}' ({}) to database: {:?}", worker_id, article_url, article_title, e)
             }
         }
     }
