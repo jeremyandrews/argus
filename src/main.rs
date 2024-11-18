@@ -76,8 +76,12 @@ async fn main() -> Result<()> {
             });
             let model = parts[2].to_string();
             info!(
-                "Configuring Ollama worker {} to connect to model '{}' at {}:{}",
-                *count, model, host, port
+                target: TARGET_LLM_REQUEST,
+                worker_id = *count,
+                llm_model = model,
+                api_host = host,
+                api_port = port,
+                "Configuring Ollama worker"
             );
             workers.push((*count, LLMClient::Ollama(Ollama::new(host, port)), model));
             *count += 1;
@@ -100,8 +104,10 @@ async fn main() -> Result<()> {
             let config = OpenAIConfig::new().with_api_key(&api_key);
             let client = OpenAIClient::with_config(config);
             info!(
-                "Configuring OpenAI worker {} to connect to model '{}'",
-                *count, model
+                target: TARGET_LLM_REQUEST,
+                worker_id = *count,
+                llm_model = model,
+                "Configuring OpenAI worker"
             );
             workers.push((*count, LLMClient::OpenAI(client), model));
             *count += 1;
@@ -137,7 +143,7 @@ async fn main() -> Result<()> {
                 11434 // Default port
             });
             let main_model = main_parts[2].to_string();
-            let main_llm_client = LLMClient::Ollama(Ollama::new(main_host, main_port));
+            let main_llm_client = LLMClient::Ollama(Ollama::new(main_host.clone(), main_port));
 
             // Process fallback configuration if present
             let fallback = if parts.len() > 1 {
@@ -159,7 +165,10 @@ async fn main() -> Result<()> {
                     });
                     let fallback_model = fallback_parts[2].to_string();
                     Some(FallbackConfig {
-                        llm_client: LLMClient::Ollama(Ollama::new(fallback_host, fallback_port)),
+                        llm_client: LLMClient::Ollama(Ollama::new(
+                            fallback_host.clone(),
+                            fallback_port,
+                        )),
                         model: fallback_model,
                     })
                 }
@@ -168,8 +177,12 @@ async fn main() -> Result<()> {
             };
 
             info!(
-                "Configuring Analysis worker {} to connect to model '{}' at host:{}",
-                *count, main_model, main_parts[0]
+                target: TARGET_LLM_REQUEST,
+                worker_id = *count,
+                llm_model = main_model,
+                api_host = main_host,
+                api_port = main_port,
+                "Configuring Analysis worker"
             );
             workers.push(AnalysisWorkerConfig {
                 id: *count,
@@ -233,8 +246,10 @@ async fn main() -> Result<()> {
             };
 
             info!(
-                "Configuring Analysis worker {} to connect to model '{}' with API key.",
-                *count, main_model
+                target: TARGET_LLM_REQUEST,
+                worker_id = *count,
+                llm_model = main_model,
+                "Configuring Analysis worker"
             );
             workers.push(AnalysisWorkerConfig {
                 id: *count,
@@ -262,8 +277,9 @@ async fn main() -> Result<()> {
 
     // Log DECISION workers
     info!(
-        "Total decision workers configured: {}",
-        decision_workers.len()
+        target: TARGET_LLM_REQUEST,
+        total_decision_workers = decision_workers.len(),
+        "Total decision workers configured"
     );
 
     // Load ANALYSIS configurations with possible fallback
@@ -280,8 +296,9 @@ async fn main() -> Result<()> {
 
     // Log ANALYSIS workers
     info!(
-        "Total analysis workers configured: {}",
-        analysis_workers.len()
+        target: TARGET_LLM_REQUEST,
+        total_analysis_workers = analysis_workers.len(),
+        "Total analysis workers configured"
     );
 
     // Determine number of decision workers to launch
@@ -303,7 +320,10 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "0.0".to_string())
         .parse()
         .unwrap_or_else(|_| {
-            warn!("Invalid LLM_TEMPERATURE; defaulting to 0.0");
+            warn!(
+                target: TARGET_LLM_REQUEST,
+                "Invalid LLM_TEMPERATURE; defaulting to 0.0"
+            );
             0.0
         });
 
@@ -312,14 +332,26 @@ async fn main() -> Result<()> {
         if Path::new(&json_path).exists() {
             let json_data = fs::read_to_string(&json_path)?;
             let places: Value = serde_json::from_str(&json_data)?;
-            info!(target: TARGET_DB, "Loaded places data from {}: {:?}", json_path, places);
+            info!(
+                target: TARGET_DB,
+                "Loaded places data from {}: {:?}",
+                json_path,
+                places
+            );
             Some(places)
         } else {
-            warn!(target: TARGET_DB, "Specified PLACES_JSON_PATH does not exist: {}", json_path);
+            warn!(
+                target: TARGET_DB,
+                "Specified PLACES_JSON_PATH does not exist: {}",
+                json_path
+            );
             None
         }
     } else {
-        debug!(target: TARGET_DB, "PLACES_JSON_PATH environment variable not set.");
+        debug!(
+            target: TARGET_DB,
+            "PLACES_JSON_PATH environment variable not set."
+        );
         None
     };
 
@@ -327,8 +359,14 @@ async fn main() -> Result<()> {
     let rss_handle = task::spawn(async move {
         info!(target: TARGET_WEB_REQUEST, "Starting RSS feed parsing.");
         match rss::rss_loop(urls.clone()).await {
-            Ok(_) => info!(target: TARGET_WEB_REQUEST, "RSS feed parsing completed successfully."),
-            Err(e) => error!(target: TARGET_WEB_REQUEST, "RSS feed parsing failed: {}", e),
+            Ok(_) => info!(
+                target: TARGET_WEB_REQUEST,
+                "RSS feed parsing completed successfully."
+            ),
+            Err(e) => error!(
+                target: TARGET_WEB_REQUEST,
+                "RSS feed parsing failed: {}", e
+            ),
         }
     });
 
@@ -344,8 +382,9 @@ async fn main() -> Result<()> {
         let decision_worker_handle = task::spawn(async move {
             info!(
                 target: TARGET_LLM_REQUEST,
-                "Decision worker {}: starting with model '{}'",
-                decision_id, decision_model
+                worker_id = decision_id,
+                llm_model = decision_model,
+                "Decision worker starting decision_loop"
             );
             decision_worker::decision_loop(
                 decision_id,
@@ -360,8 +399,9 @@ async fn main() -> Result<()> {
             .await;
             info!(
                 target: TARGET_LLM_REQUEST,
-                "Decision worker {}: completed decision_loop for model '{}'",
-                decision_id, decision_model
+                worker_id = decision_id,
+                llm_model = decision_model,
+                "Decision worker completed decision_loop"
             );
         });
         decision_handles.push(decision_worker_handle);
@@ -376,8 +416,9 @@ async fn main() -> Result<()> {
         let analysis_handle = task::spawn(async move {
             info!(
                 target: TARGET_LLM_REQUEST,
-                "Analysis worker {}: starting with model '{}'",
-                worker_config.id, worker_config.model
+                worker_id = worker_config.id,
+                llm_model = worker_config.model,
+                "Analysis worker starting with model"
             );
             analysis_worker::analysis_loop(
                 worker_config.id,
@@ -392,8 +433,9 @@ async fn main() -> Result<()> {
             .await;
             info!(
                 target: TARGET_LLM_REQUEST,
-                "Analysis worker {}: completed analysis_loop for model '{}'",
-                worker_config.id, worker_config.model
+                worker_id = worker_config.id,
+                llm_model = worker_config.model,
+                "Analysis worker completed analysis_loop"
             );
         });
         analysis_handles.push(analysis_handle);
@@ -401,14 +443,21 @@ async fn main() -> Result<()> {
 
     // Await task completions
     if let Err(e) = rss_handle.await {
-        error!(target: TARGET_WEB_REQUEST, "RSS task encountered an error: {}", e);
+        error!(
+            target: TARGET_WEB_REQUEST,
+            "RSS task encountered an error: {}", e
+        );
     }
 
     // Await decision worker tasks
     let results = join_all(decision_handles).await;
     for (i, result) in results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "Decision worker {}: task failed with error: {}", i, e);
+            error!(
+                target: TARGET_LLM_REQUEST,
+                worker_id = i as i16,
+                "Decision worker task failed with error: {}", e
+            );
         }
     }
 
@@ -416,7 +465,11 @@ async fn main() -> Result<()> {
     let analysis_results = join_all(analysis_handles).await;
     for (i, result) in analysis_results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "Analysis worker {}: task failed with error: {}", i, e);
+            error!(
+                target: TARGET_LLM_REQUEST,
+                worker_id = i as i16,
+                "Analysis worker task failed with error: {}", e
+            );
         }
     }
 

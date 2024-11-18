@@ -42,12 +42,15 @@ pub async fn analysis_loop(
 
     info!(
         target: TARGET_LLM_REQUEST,
-        "analysis worker {}: starting analysis_loop in Analysis mode with model '{}'.",
-        worker_id, model
+        worker_id = worker_id,
+        llm_model = model,
+        "Analysis worker starting analysis_loop in Analysis mode"
     );
     debug!(
-        "analysis worker {} is running with model '{}' using {:?}.",
-        worker_id, model, llm_client
+        target: TARGET_LLM_REQUEST,
+        worker_id = worker_id,
+        llm_model = model,
+        "Analysis worker is running"
     );
 
     loop {
@@ -73,8 +76,9 @@ pub async fn analysis_loop(
                     if let Some(fallback_config) = fallback.clone() {
                         info!(
                             target: TARGET_LLM_REQUEST,
-                            "analysis worker {}: Idle for over 2 minutes. Switching to Decision mode with fallback model '{}'.",
-                            worker_id, fallback_config.model
+                            worker_id = worker_id,
+                            llm_model = fallback_config.model,
+                            "Idle for over 2 minutes. Switching to Decision mode with fallback model."
                         );
                         mode = Mode::FallbackDecision;
                         fallback_start_time = Some(Instant::now());
@@ -98,8 +102,9 @@ pub async fn analysis_loop(
                         if start_time.elapsed() > Duration::from_secs(900) {
                             info!(
                                 target: TARGET_LLM_REQUEST,
-                                "analysis worker {}: Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with model '{}'.",
-                                worker_id, model
+                                worker_id = worker_id,
+                                llm_model = model,
+                                "Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with original model."
                             );
                             mode = Mode::Analysis;
                             fallback_start_time = None;
@@ -117,8 +122,9 @@ pub async fn analysis_loop(
                     // Run Decision loop logic with fallback model
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: Running in Decision mode with model '{}'.",
-                        worker_id, fallback_config.model
+                        worker_id = worker_id,
+                        llm_model = fallback_config.model,
+                        "Running in Decision mode with fallback model"
                     );
 
                     // Process a single Decision task
@@ -138,8 +144,9 @@ pub async fn analysis_loop(
                     // No fallback configured; remain in Analysis mode
                     warn!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: No fallback configuration provided. Remaining in Analysis mode.",
-                        worker_id
+                        worker_id = worker_id,
+                        llm_model = model,
+                        "No fallback configuration provided. Remaining in Analysis mode."
                     );
                     mode = Mode::Analysis;
                 }
@@ -152,8 +159,9 @@ pub async fn analysis_loop(
                 if start_time.elapsed() > Duration::from_secs(900) {
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with model '{}'.",
-                        worker_id, model
+                        worker_id = worker_id,
+                        llm_model = model,
+                        "Fallback Decision mode for 15 minutes completed. Switching back to Analysis mode with original model."
                     );
                     mode = Mode::Analysis;
                     fallback_start_time = None;
@@ -199,8 +207,10 @@ async fn process_analysis_item(
 
             info!(
                 target: TARGET_LLM_REQUEST,
-                "analysis worker {}: Pulled item from life safety queue: {}",
-                worker_id, article_url
+                worker_id = worker_id,
+                llm_model = llm_params.model,
+                article_url = article_url,
+                "Pulled item from life safety queue"
             );
 
             // Check if the article has already been processed
@@ -212,8 +222,11 @@ async fn process_analysis_item(
             {
                 info!(
                     target: TARGET_LLM_REQUEST,
-                    "Article with hash {} or title_domain_hash {} was already processed. Skipping.",
-                    article_hash, title_domain_hash
+                    worker_id = worker_id,
+                    llm_model = llm_params.model,
+                    article_hash = article_hash,
+                    title_domain_hash = title_domain_hash,
+                    "Article already processed, skipping."
                 );
                 return true;
             }
@@ -330,8 +343,11 @@ async fn process_analysis_item(
                 {
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "Article with hash {} or title_domain_hash {} was already processed (third check). Skipping Slack post.",
-                        article_hash, title_domain_hash
+                        worker_id = worker_id,
+                        llm_model = llm_params.model,
+                        article_hash = article_hash,
+                        title_domain_hash = title_domain_hash,
+                        "Article already processed (third check). Skipping Slack post."
                     );
                     return true;
                 }
@@ -358,7 +374,10 @@ async fn process_analysis_item(
                 {
                     error!(
                         target: TARGET_LLM_REQUEST,
-                        "Failed to update database: {:?}", e
+                        worker_id = worker_id,
+                        llm_model = llm_params.model,
+                        error = ?e,
+                        "Failed to update database"
                     );
                 }
             }
@@ -368,8 +387,9 @@ async fn process_analysis_item(
         Ok(None) => {
             debug!(
                 target: TARGET_LLM_REQUEST,
-                "analysis worker {}: No items in life safety queue.",
-                worker_id
+                worker_id = worker_id,
+                llm_model = llm_params.model,
+                "No items in life safety queue."
             );
 
             // Process matched topics queue as before
@@ -389,8 +409,10 @@ async fn process_analysis_item(
 
                     info!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: Pulled item from matched topics queue: {}",
-                        worker_id, article_url
+                        worker_id = worker_id,
+                        llm_model = llm_params.model,
+                        article_url = article_url,
+                        "Pulled item from matched topics queue"
                     );
 
                     let (
@@ -431,9 +453,10 @@ async fn process_analysis_item(
 
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: Successfully analyzed article and sent to Slack: {}",
-                        worker_id,
-                        article_url
+                        worker_id = worker_id,
+                        llm_model = llm_params.model,
+                        article_url = article_url,
+                        "Successfully analyzed article and sent to Slack"
                     );
 
                     if let Err(e) = db
@@ -448,14 +471,21 @@ async fn process_analysis_item(
                         )
                         .await
                     {
-                        error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
+                        error!(
+                            target: TARGET_LLM_REQUEST,
+                            worker_id = worker_id,
+                            llm_model = llm_params.model,
+                            error = ?e,
+                            "Failed to update database"
+                        );
                     }
                 }
                 Ok(None) => {
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: No items in matched topics queue. Sleeping 10 seconds...",
-                        worker_id
+                        worker_id = worker_id,
+                        llm_model = llm_params.model,
+                        "No items in matched topics queue. Sleeping 10 seconds..."
                     );
                     // Log success, and go to next queue item.
                     return true;
@@ -463,7 +493,10 @@ async fn process_analysis_item(
                 Err(e) => {
                     error!(
                         target: TARGET_LLM_REQUEST,
-                        "analysis worker {}: Error fetching from matched topics queue: {:?}", worker_id, e
+                        worker_id = worker_id,
+                        llm_model = llm_params.model,
+                        error = ?e,
+                        "Error fetching from matched topics queue"
                     );
                     // Sleep after a database error.
                     sleep(Duration::from_secs(5)).await;
@@ -475,8 +508,10 @@ async fn process_analysis_item(
         Err(e) => {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "analysis worker {}: Error fetching from life safety queue: {:?}",
-                worker_id, e
+                worker_id = worker_id,
+                llm_model = llm_params.model,
+                error = ?e,
+                "Error fetching from life safety queue"
             );
             // Sleep after a database error.
             sleep(Duration::from_secs(5)).await; // Wait and retry
@@ -502,15 +537,19 @@ async fn process_decision_item(
             if url.trim().is_empty() {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "analysis worker {}: Found an empty URL in the queue, skipping...",
-                    worker_id
+                    worker_id = worker_id,
+                    llm_model = llm_params.model,
+                    "Found an empty URL in the queue, skipping..."
                 );
             }
 
             info!(
                 target: TARGET_LLM_REQUEST,
-                "analysis worker {}: Moving on to a new URL: {} ({:?})",
-                worker_id, url, title
+                worker_id = worker_id,
+                llm_model = llm_params.model,
+                article_url = url,
+                article_title = title,
+                "Moving on to a new URL"
             );
 
             let item = FeedItem {
@@ -535,16 +574,19 @@ async fn process_decision_item(
         Ok(None) => {
             debug!(
                 target: TARGET_LLM_REQUEST,
-                "analysis worker {}: No URLs to process in rss_queue. Sleeping for 1 minute before retrying.",
-                worker_id
+                worker_id = worker_id,
+                llm_model = llm_params.model,
+                "No URLs to process in rss_queue. Sleeping for 1 minute before retrying."
             );
             sleep(Duration::from_secs(60)).await;
         }
         Err(e) => {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "analysis worker {}: Error fetching URL from rss_queue: {:?}",
-                worker_id, e
+                worker_id = worker_id,
+                llm_model = llm_params.model,
+                error = ?e,
+                "Error fetching URL from rss_queue"
             );
             sleep(Duration::from_secs(5)).await; // Wait and retry
         }
@@ -585,10 +627,10 @@ async fn process_analysis(
         .await
         .unwrap_or_default();
 
-    let relation_response = if let Some(topic) = topic {
+    let relation_to_topic_str = if let Some(topic) = topic {
         let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic);
         Some(
-            generate_llm_response(&relation_prompt, &llm_params)
+            generate_llm_response(&relation_prompt, llm_params)
                 .await
                 .unwrap_or_default(),
         )
@@ -602,6 +644,6 @@ async fn process_analysis(
         critical_analysis,
         logical_fallacies,
         source_analysis,
-        relation_response,
+        relation_to_topic_str,
     )
 }
