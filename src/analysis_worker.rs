@@ -197,7 +197,7 @@ async fn process_analysis_item(
         ))) => {
             let start_time = Instant::now();
 
-            debug!(
+            info!(
                 target: TARGET_LLM_REQUEST,
                 "worker {}: Pulled item from life safety queue: {}",
                 worker_id, article_url
@@ -387,11 +387,10 @@ async fn process_analysis_item(
 
                     let start_time = std::time::Instant::now();
 
-                    debug!(
+                    info!(
                         target: TARGET_LLM_REQUEST,
-                        "worker {}: Analyzing article from matched topics queue: {}",
-                        worker_id,
-                        article_url
+                        "worker {}: Pulled item from matched topics queue: {}",
+                        worker_id, article_url
                     );
 
                     let (
