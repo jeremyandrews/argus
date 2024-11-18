@@ -90,11 +90,11 @@ async fn main() -> Result<()> {
             let llm_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "llama3.1".to_string());
 
             let llm_params = crate::LLMParams {
-                llm_client: &LLMClient::Ollama(ollama_rs::Ollama::new(
+                llm_client: LLMClient::Ollama(ollama_rs::Ollama::new(
                     llm_host_with_scheme.clone(),
                     llm_port,
                 )),
-                model: &llm_model,
+                model: llm_model,
                 temperature: 0.0,
             };
 

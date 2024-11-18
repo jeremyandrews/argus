@@ -27,9 +27,18 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::LLMClient;
+use argus::{FallbackConfig, LLMClient};
 
 use environment::get_env_var_as_vec;
+
+// New: Struct to hold Analysis Worker configuration including optional fallback
+#[derive(Clone, Debug)]
+struct AnalysisWorkerConfig {
+    id: i16,
+    llm_client: LLMClient,
+    model: String,
+    fallback: Option<FallbackConfig>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -44,10 +53,11 @@ async fn main() -> Result<()> {
     let mut decision_workers = Vec::new();
     let mut decision_count: i16 = 0;
 
-    let mut analysis_workers = Vec::new();
+    // Change: Use AnalysisWorkerConfig for analysis_workers
+    let mut analysis_workers: Vec<AnalysisWorkerConfig> = Vec::new();
     let mut analysis_count: i16 = 0;
 
-    // Helper function to process configurations
+    // Existing helper functions remain unchanged
     fn process_ollama_configs(
         configs: &str,
         workers: &mut Vec<(i16, LLMClient, String)>,
@@ -98,6 +108,146 @@ async fn main() -> Result<()> {
         }
     }
 
+    // New: Function to process Analysis Ollama configurations with optional fallback
+    fn process_analysis_ollama_configs(
+        configs: &str,
+        workers: &mut Vec<AnalysisWorkerConfig>,
+        count: &mut i16,
+    ) {
+        for config in configs.split(';').filter(|c| !c.is_empty()) {
+            // Split main and fallback configurations
+            let parts: Vec<&str> = config.split("||").collect();
+            if parts.is_empty() {
+                error!("Invalid Analysis Ollama configuration format: {}", config);
+                continue;
+            }
+
+            // Process main configuration
+            let main_parts: Vec<&str> = parts[0].split('|').collect();
+            if main_parts.len() != 3 {
+                error!(
+                    "Invalid main Ollama configuration format for Analysis worker: {}",
+                    parts[0]
+                );
+                continue;
+            }
+            let main_host = main_parts[0].to_string();
+            let main_port: u16 = main_parts[1].parse().unwrap_or_else(|_| {
+                error!("Invalid port in main configuration: {}", main_parts[1]);
+                11434 // Default port
+            });
+            let main_model = main_parts[2].to_string();
+            let main_llm_client = LLMClient::Ollama(Ollama::new(main_host, main_port));
+
+            // Process fallback configuration if present
+            let fallback = if parts.len() > 1 {
+                let fallback_parts: Vec<&str> = parts[1].split('|').collect();
+                if fallback_parts.len() != 3 {
+                    error!(
+                        "Invalid fallback Ollama configuration format for Analysis worker: {}",
+                        parts[1]
+                    );
+                    None
+                } else {
+                    let fallback_host = fallback_parts[0].to_string();
+                    let fallback_port: u16 = fallback_parts[1].parse().unwrap_or_else(|_| {
+                        error!(
+                            "Invalid port in fallback configuration: {}",
+                            fallback_parts[1]
+                        );
+                        11434 // Default port
+                    });
+                    let fallback_model = fallback_parts[2].to_string();
+                    Some(FallbackConfig {
+                        llm_client: LLMClient::Ollama(Ollama::new(fallback_host, fallback_port)),
+                        model: fallback_model,
+                    })
+                }
+            } else {
+                None
+            };
+
+            info!(
+                "Configuring Analysis worker {} to connect to model '{}' at host:{}",
+                *count, main_model, main_parts[0]
+            );
+            workers.push(AnalysisWorkerConfig {
+                id: *count,
+                llm_client: main_llm_client,
+                model: main_model,
+                fallback,
+            });
+            *count += 1;
+        }
+    }
+
+    // New: Function to process Analysis OpenAI configurations with optional fallback
+    fn process_analysis_openai_configs(
+        configs: &str,
+        workers: &mut Vec<AnalysisWorkerConfig>,
+        count: &mut i16,
+    ) {
+        for config in configs.split(';').filter(|c| !c.is_empty()) {
+            // Split main and fallback configurations
+            let parts: Vec<&str> = config.split("||").collect();
+            if parts.is_empty() {
+                error!("Invalid Analysis OpenAI configuration format: {}", config);
+                continue;
+            }
+
+            // Process main configuration
+            let main_parts: Vec<&str> = parts[0].split('|').collect();
+            if main_parts.len() != 2 {
+                error!(
+                    "Invalid main OpenAI configuration format for Analysis worker: {}",
+                    parts[0]
+                );
+                continue;
+            }
+            let main_api_key = main_parts[0].to_string();
+            let main_model = main_parts[1].to_string();
+            let main_config = OpenAIConfig::new().with_api_key(&main_api_key);
+            let main_client = OpenAIClient::with_config(main_config);
+            let main_llm_client = LLMClient::OpenAI(main_client);
+
+            // Process fallback configuration if present
+            let fallback = if parts.len() > 1 {
+                let fallback_parts: Vec<&str> = parts[1].split('|').collect();
+                if fallback_parts.len() != 2 {
+                    error!(
+                        "Invalid fallback OpenAI configuration format for Analysis worker: {}",
+                        parts[1]
+                    );
+                    None
+                } else {
+                    let fallback_api_key = fallback_parts[0].to_string();
+                    let fallback_model = fallback_parts[1].to_string();
+                    let fallback_config = OpenAIConfig::new().with_api_key(&fallback_api_key);
+                    Some(FallbackConfig {
+                        llm_client: LLMClient::OpenAI(OpenAIClient::with_config(fallback_config)),
+                        model: fallback_model,
+                    })
+                }
+            } else {
+                None
+            };
+
+            info!(
+                "Configuring Analysis worker {} to connect to model '{}' with API key.",
+                *count, main_model
+            );
+            workers.push(AnalysisWorkerConfig {
+                id: *count,
+                llm_client: main_llm_client,
+                model: main_model,
+                fallback,
+            });
+            *count += 1;
+        }
+    }
+
+    // Existing process_*_configs functions are unchanged
+
     // Process DECISION configurations
     process_ollama_configs(
         &decision_ollama_configs,
@@ -116,13 +266,13 @@ async fn main() -> Result<()> {
         decision_workers.len()
     );
 
-    // Load ANALYSIS configurations (for now, just logging)
-    process_ollama_configs(
+    // Load ANALYSIS configurations with possible fallback
+    process_analysis_ollama_configs(
         &analysis_ollama_configs,
         &mut analysis_workers,
         &mut analysis_count,
     );
-    process_openai_configs(
+    process_analysis_openai_configs(
         &analysis_openai_configs,
         &mut analysis_workers,
         &mut analysis_count,
@@ -217,34 +367,36 @@ async fn main() -> Result<()> {
         decision_handles.push(decision_worker_handle);
     }
 
-    // Launch ANALYSIS workers
+    // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
-    for (analysis_id, llm_client, analysis_model) in analysis_workers.into_iter() {
+    for worker_config in analysis_workers.into_iter() {
         let analysis_worker_slack_token = slack_token.clone();
         let analysis_worker_slack_channel = slack_channel.clone();
-        let analysis_worker_handle = task::spawn(async move {
+        let analysis_worker_places = places.clone();
+        let analysis_handle = task::spawn(async move {
             info!(
                 target: TARGET_LLM_REQUEST,
                 "Analysis worker {}: starting with model '{}'",
-                analysis_id, analysis_model
+                worker_config.id, worker_config.model
             );
             analysis_worker::analysis_loop(
-                analysis_id,
-                &llm_client,
-                &analysis_model,
+                worker_config.id,
+                &worker_config.llm_client,
+                &worker_config.model,
                 &analysis_worker_slack_token,
                 &analysis_worker_slack_channel,
-                // @TODO: allow different temperatures for Decision and Analysis workers.
                 temperature,
+                worker_config.fallback,
+                analysis_worker_places,
             )
             .await;
             info!(
                 target: TARGET_LLM_REQUEST,
                 "Analysis worker {}: completed analysis_loop for model '{}'",
-                analysis_id, analysis_model
+                worker_config.id, worker_config.model
             );
         });
-        analysis_handles.push(analysis_worker_handle);
+        analysis_handles.push(analysis_handle);
     }
 
     // Await task completions

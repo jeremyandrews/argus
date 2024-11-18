@@ -23,8 +23,15 @@ pub enum LLMClient {
 }
 
 #[derive(Clone)]
-pub struct LLMParams<'a> {
-    pub llm_client: &'a LLMClient,
-    pub model: &'a str,
+pub struct LLMParams {
+    pub llm_client: LLMClient,
+    pub model: String,
     pub temperature: f32,
+}
+
+// New: Struct to hold fallback configuration for Analysis Workers
+#[derive(Clone, Debug)]
+pub struct FallbackConfig {
+    pub llm_client: LLMClient,
+    pub model: String,
 }
