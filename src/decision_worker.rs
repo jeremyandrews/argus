@@ -244,6 +244,7 @@ pub async fn process_item(
                     &title_domain_hash,
                     &article_html,
                     params,
+                    worker_detail,
                 )
                 .await;
             } else {
@@ -285,7 +286,7 @@ async fn check_if_threat_at_all(
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking LLM if about something affecting life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
 
     let llm_params = extract_llm_params(params);
-    match generate_llm_response(&threat_prompt, &llm_params).await {
+    match generate_llm_response(&threat_prompt, &llm_params, worker_detail).await {
         Some(response) => response.trim().to_lowercase().starts_with("yes"),
         None => false,
     }
@@ -343,10 +344,11 @@ async fn process_continent(
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if affecting life or safety on {}.", worker_detail.name, worker_detail.id, worker_detail.model, continent);
 
     let llm_params = extract_llm_params(params);
-    let continent_response = match generate_llm_response(&continent_prompt, &llm_params).await {
-        Some(response) => response,
-        None => return false,
-    };
+    let continent_response =
+        match generate_llm_response(&continent_prompt, &llm_params, worker_detail).await {
+            Some(response) => response,
+            None => return false,
+        };
 
     if !continent_response.trim().to_lowercase().starts_with("yes") {
         return false;
@@ -395,10 +397,11 @@ async fn process_country(
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if affecting life or safety in {} on {}.", worker_detail.name, worker_detail.id, worker_detail.model, country, continent);
 
     let llm_params = extract_llm_params(params);
-    let country_response = match generate_llm_response(&country_prompt, &llm_params).await {
-        Some(response) => response,
-        None => return false,
-    };
+    let country_response =
+        match generate_llm_response(&country_prompt, &llm_params, worker_detail).await {
+            Some(response) => response,
+            None => return false,
+        };
 
     if !country_response.trim().to_lowercase().starts_with("yes") {
         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: not affecting life or safety in {} on {}.", worker_detail.name, worker_detail.id, worker_detail.model, country, continent);
@@ -452,10 +455,11 @@ async fn process_region(
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if affecting life or safety in {}, {} on {}.", worker_detail.name, worker_detail.id, worker_detail.model, region, country, continent);
 
     let llm_params = extract_llm_params(proc_params);
-    let region_response = match generate_llm_response(&region_prompt, &llm_params).await {
-        Some(response) => response,
-        None => return false,
-    };
+    let region_response =
+        match generate_llm_response(&region_prompt, &llm_params, worker_detail).await {
+            Some(response) => response,
+            None => return false,
+        };
 
     if !region_response.trim().to_lowercase().starts_with("yes") {
         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: not affecting life or safety in {}, {} on {}.", worker_detail.name, worker_detail.id, worker_detail.model, region, country, continent);
@@ -520,7 +524,8 @@ async fn process_city(
     let city_prompt =
         prompts::city_threat_prompt(article_text, city_name, region, country, continent);
     let llm_params = extract_llm_params(proc_params);
-    let city_response = match generate_llm_response(&city_prompt, &llm_params).await {
+    let city_response = match generate_llm_response(&city_prompt, &llm_params, worker_detail).await
+    {
         Some(response) => response,
         None => return false,
     };
@@ -545,16 +550,19 @@ async fn article_is_relevant(
     article_text: &str,
     topic_name: &str,
     llm_params: &mut LLMParams,
+    worker_detail: &WorkerDetail,
 ) -> bool {
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);
-    let summary_response = generate_llm_response(&summary_prompt, &llm_params)
+    let summary_response = generate_llm_response(&summary_prompt, &llm_params, worker_detail)
         .await
         .unwrap_or_default();
 
     // Confirm the article relevance
     let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
-    if let Some(confirm_response) = generate_llm_response(&confirm_prompt, &llm_params).await {
+    if let Some(confirm_response) =
+        generate_llm_response(&confirm_prompt, &llm_params, worker_detail).await
+    {
         if confirm_response.trim().to_lowercase().starts_with("yes") {
             return true;
         }
@@ -576,6 +584,7 @@ async fn summarize_and_send_article(
     title_domain_hash: &str,
     article_html: &str,
     params: &mut ProcessItemParams<'_>,
+    worker_detail: &WorkerDetail,
 ) {
     let mut llm_params = extract_llm_params(params);
 
@@ -583,6 +592,7 @@ async fn summarize_and_send_article(
         article_text,
         "an ongoing or imminent life-threatening event",
         &mut llm_params,
+        worker_detail,
     )
     .await
     {
@@ -638,7 +648,9 @@ async fn process_topics(
 
         let yes_no_prompt = prompts::is_this_about(article_text, topic_name);
         let mut llm_params = extract_llm_params(params);
-        if let Some(yes_no_response) = generate_llm_response(&yes_no_prompt, &llm_params).await {
+        if let Some(yes_no_response) =
+            generate_llm_response(&yes_no_prompt, &llm_params, worker_detail).await
+        {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Article is relevant to the topic
                 article_relevant = true;
@@ -654,7 +666,9 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                if article_is_relevant(article_text, topic_name, &mut llm_params).await {
+                if article_is_relevant(article_text, topic_name, &mut llm_params, worker_detail)
+                    .await
+                {
                     // Add to matched topics queue
                     if let Err(e) = params
                         .db

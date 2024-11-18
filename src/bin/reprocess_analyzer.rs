@@ -7,7 +7,7 @@ use tracing_subscriber;
 
 use argus::llm;
 use argus::prompts;
-use argus::{LLMClient, LLMParams};
+use argus::{LLMClient, LLMParams, WorkerDetail};
 
 const TEST_DATA_DIR: &str = "test_data";
 
@@ -17,6 +17,12 @@ async fn main() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
     info!("Starting JSON re-analyzer...");
+
+    let worker_detail = WorkerDetail {
+        name: "todo".to_string(),
+        id: 0,
+        model: "todo".to_string(),
+    };
 
     // Load JSON files from the `test_data` directory
     let json_files = fs::read_dir(TEST_DATA_DIR)?
@@ -98,7 +104,7 @@ async fn main() -> Result<()> {
                 temperature: 0.0,
             };
 
-            match crate::llm::generate_llm_response(&prompt, &llm_params).await {
+            match crate::llm::generate_llm_response(&prompt, &llm_params, &worker_detail).await {
                 Some(response) => {
                     new_relevance.insert(
                         topic_key.to_string(),

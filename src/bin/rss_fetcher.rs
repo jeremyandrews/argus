@@ -14,7 +14,7 @@ use tracing_subscriber;
 
 use argus::llm;
 use argus::prompts;
-use argus::{LLMClient, LLMParams};
+use argus::{LLMClient, LLMParams, WorkerDetail};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const TEST_DATA_DIR: &str = "test_data";
@@ -37,6 +37,12 @@ async fn main() -> Result<()> {
         std::env::var("LLM_BASE_URL").unwrap_or_default(),
         std::env::var("LLM_MODEL").unwrap_or_default()
     );
+
+    let worker_detail = WorkerDetail {
+        name: "todo".to_string(),
+        id: 0,
+        model: "todo".to_string(),
+    };
 
     let feed = fetch_rss_feed(rss_url).await?;
     let mut rng = rand::thread_rng();
@@ -101,7 +107,8 @@ async fn main() -> Result<()> {
                         };
 
                         if let Some(response) =
-                            crate::llm::generate_llm_response(&prompt, &llm_params).await
+                            crate::llm::generate_llm_response(&prompt, &llm_params, &worker_detail)
+                                .await
                         {
                             relevance[topic_key] =
                                 serde_json::Value::String(response.trim().to_string());

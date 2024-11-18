@@ -210,6 +210,7 @@ async fn process_analysis_item(
                 &article_url,
                 None,
                 &mut llm_params_clone,
+                worker_detail,
             )
             .await;
 
@@ -240,7 +241,7 @@ async fn process_analysis_item(
                     .join(", ");
                 let how_prompt =
                     prompts::how_does_it_affect_prompt(&article_text, &affected_places_str);
-                let how_response = generate_llm_response(&how_prompt, llm_params)
+                let how_response = generate_llm_response(&how_prompt, llm_params, worker_detail)
                     .await
                     .unwrap_or_default();
                 relation_to_topic_str
@@ -271,9 +272,10 @@ async fn process_analysis_item(
                         .collect::<Vec<_>>()
                         .join(", "),
                 );
-                let why_not_response = generate_llm_response(&why_not_prompt, llm_params)
-                    .await
-                    .unwrap_or_default();
+                let why_not_response =
+                    generate_llm_response(&why_not_prompt, llm_params, worker_detail)
+                        .await
+                        .unwrap_or_default();
                 relation_to_topic_str.push_str(&format!(
                     "\n\n{}\n\n{}",
                     non_affected_summary, why_not_response
@@ -375,6 +377,7 @@ async fn process_analysis_item(
                         &article_url,
                         Some(&topic),
                         &mut llm_params_clone,
+                        worker_detail,
                     )
                     .await;
 
@@ -497,10 +500,11 @@ async fn process_analysis(
     article_url: &str,
     topic: Option<&str>,
     llm_params: &mut LLMParams,
+    worker_detail: &WorkerDetail,
 ) -> (String, String, String, String, String, Option<String>) {
     // Re-summarize the article with the analysis worker.
     let summary_prompt = prompts::summary_prompt(article_text);
-    let summary = generate_llm_response(&summary_prompt, llm_params)
+    let summary = generate_llm_response(&summary_prompt, llm_params, worker_detail)
         .await
         .unwrap_or_default();
 
@@ -510,23 +514,25 @@ async fn process_analysis(
     let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
     let source_analysis_prompt = prompts::source_analysis_prompt(article_html, article_url);
 
-    let tiny_summary = generate_llm_response(&tiny_summary_prompt, llm_params)
+    let tiny_summary = generate_llm_response(&tiny_summary_prompt, llm_params, worker_detail)
         .await
         .unwrap_or_default();
-    let critical_analysis = generate_llm_response(&critical_analysis_prompt, llm_params)
-        .await
-        .unwrap_or_default();
-    let logical_fallacies = generate_llm_response(&logical_fallacies_prompt, llm_params)
-        .await
-        .unwrap_or_default();
-    let source_analysis = generate_llm_response(&source_analysis_prompt, llm_params)
+    let critical_analysis =
+        generate_llm_response(&critical_analysis_prompt, llm_params, worker_detail)
+            .await
+            .unwrap_or_default();
+    let logical_fallacies =
+        generate_llm_response(&logical_fallacies_prompt, llm_params, worker_detail)
+            .await
+            .unwrap_or_default();
+    let source_analysis = generate_llm_response(&source_analysis_prompt, llm_params, worker_detail)
         .await
         .unwrap_or_default();
 
     let relation_response = if let Some(topic) = topic {
         let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic);
         Some(
-            generate_llm_response(&relation_prompt, &llm_params)
+            generate_llm_response(&relation_prompt, &llm_params, worker_detail)
                 .await
                 .unwrap_or_default(),
         )
