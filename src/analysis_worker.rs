@@ -21,13 +21,13 @@ enum Mode {
 /// Main analysis loop function with fallback mechanism
 pub async fn analysis_loop(
     worker_id: i16,
+    topics: &[String],
     llm_client: &LLMClient,
     model: &str,
     slack_token: &str,
-    slack_channel: &str,
+    default_slack_channel: &str,
     temperature: f32,
     fallback: Option<FallbackConfig>,
-    places: Option<serde_json::Value>,
 ) {
     let db = Database::instance().await;
     let mut llm_params = LLMParams {
@@ -59,9 +59,8 @@ pub async fn analysis_loop(
                     &mut llm_params,
                     &db,
                     slack_token,
-                    slack_channel,
+                    default_slack_channel,
                     temperature,
-                    &places,
                 )
                 .await;
 
@@ -90,7 +89,7 @@ pub async fn analysis_loop(
                 }
 
                 // Sleep briefly to prevent tight loop
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_secs(2)).await;
             }
             Mode::FallbackDecision => {
                 if let Some(fallback_config) = fallback.clone() {
@@ -123,22 +122,18 @@ pub async fn analysis_loop(
                     );
 
                     // Process a single Decision task
-                    let decision_processed = process_decision_item(
+                    process_decision_item(
                         worker_id,
                         &mut llm_params,
                         &db,
                         slack_token,
-                        slack_channel,
-                        temperature,
+                        default_slack_channel,
+                        topics,
                     )
                     .await;
 
-                    if decision_processed {
-                        last_activity = Instant::now();
-                    }
-
                     // Sleep briefly to prevent tight loop
-                    sleep(Duration::from_secs(1)).await;
+                    sleep(Duration::from_secs(2)).await;
                 } else {
                     // No fallback configured; remain in Analysis mode
                     warn!(
@@ -183,8 +178,7 @@ async fn process_analysis_item(
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
-    temperature: f32,
-    places: &Option<serde_json::Value>,
+    _temperature: f32,
 ) -> bool {
     // Fetch from life_safety_queue
     match db.fetch_and_delete_from_life_safety_queue().await {
@@ -232,7 +226,7 @@ async fn process_analysis_item(
                 critical_analysis,
                 logical_fallacies,
                 source_analysis,
-                relation_to_topic,
+                _relation_to_topic,
             ) = process_analysis(
                 &article_text,
                 &article_html,
@@ -368,7 +362,7 @@ async fn process_analysis_item(
                     );
                 }
             }
-            // Currently just logging the pulled data. Further processing can be added here.
+            // Log success, and go to next queue item.
             true
         }
         Ok(None) => {
@@ -377,6 +371,106 @@ async fn process_analysis_item(
                 "worker {}: No items in life safety queue.",
                 worker_id
             );
+
+            // Process matched topics queue as before
+            match db.fetch_and_delete_from_matched_topics_queue().await {
+                Ok(Some((
+                    article_text,
+                    article_html,
+                    article_url,
+                    article_title,
+                    article_hash,
+                    title_domain_hash,
+                    topic,
+                ))) => {
+                    let mut llm_params_clone = llm_params.clone();
+
+                    let start_time = std::time::Instant::now();
+
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "worker {}: Analyzing article from matched topics queue: {}",
+                        worker_id,
+                        article_url
+                    );
+
+                    let (
+                        summary,
+                        tiny_summary,
+                        critical_analysis,
+                        logical_fallacies,
+                        source_analysis,
+                        relation,
+                    ) = process_analysis(
+                        &article_text,
+                        &article_html,
+                        &article_url,
+                        Some(&topic),
+                        &mut llm_params_clone,
+                    )
+                    .await;
+
+                    let response_json = json!({
+                        "topic": topic,
+                        "summary": summary,
+                        "tiny_summary": tiny_summary,
+                        "critical_analysis": critical_analysis,
+                        "logical_fallacies": logical_fallacies,
+                        "relation_to_topic": relation,
+                        "source_analysis": source_analysis,
+                        "elapsed_time": start_time.elapsed().as_secs_f64(),
+                        "model": llm_params.model
+                    });
+
+                    send_to_slack(
+                        &format!("*<{}|{}>*", article_url, article_title),
+                        &response_json.to_string(),
+                        slack_token,
+                        slack_channel,
+                    )
+                    .await;
+
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "worker {}: Successfully analyzed article and sent to Slack: {}",
+                        worker_id,
+                        article_url
+                    );
+
+                    if let Err(e) = db
+                        .add_article(
+                            &article_url,
+                            true,
+                            Some(&topic),
+                            Some(&response_json.to_string()),
+                            Some(&tiny_summary),
+                            Some(&article_hash),
+                            Some(&title_domain_hash),
+                        )
+                        .await
+                    {
+                        error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
+                    }
+                }
+                Ok(None) => {
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "worker {}: No items in matched topics queue. Sleeping 10 seconds...",
+                        worker_id
+                    );
+                    // Log success, and go to next queue item.
+                    return true;
+                }
+                Err(e) => {
+                    error!(
+                        target: TARGET_LLM_REQUEST,
+                        "worker {}: Error fetching from matched topics queue: {:?}", worker_id, e
+                    );
+                    // Sleep after a database error.
+                    sleep(Duration::from_secs(5)).await;
+                }
+            }
+            // Try again
             false
         }
         Err(e) => {
@@ -385,7 +479,9 @@ async fn process_analysis_item(
                 "worker {}: Error fetching from life safety queue: {:?}",
                 worker_id, e
             );
+            // Sleep after a database error.
             sleep(Duration::from_secs(5)).await; // Wait and retry
+                                                 // Then try again
             false
         }
     }
@@ -399,8 +495,8 @@ async fn process_decision_item(
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
-    temperature: f32,
-) -> bool {
+    topics: &[String],
+) {
     // Fetch from rss_queue similar to decision_worker::decision_loop
     match db.fetch_and_delete_url_from_rss_queue("random").await {
         Ok(Some((url, title))) => {
@@ -410,7 +506,6 @@ async fn process_decision_item(
                     "worker {}: Found an empty URL in the queue, skipping...",
                     worker_id
                 );
-                return false;
             }
 
             info!(
@@ -425,7 +520,7 @@ async fn process_decision_item(
             };
 
             let mut params = ProcessItemParams {
-                topics: &[], // No topics needed for fallback Decision mode
+                topics,
                 llm_client: &llm_params.llm_client,
                 model: &llm_params.model,
                 temperature: llm_params.temperature,
@@ -436,10 +531,7 @@ async fn process_decision_item(
             };
 
             // Reuse the existing process_item logic from decision_worker
-            // Assuming process_item is made public in decision_worker.rs
             crate::decision_worker::process_item(item, &mut params).await;
-
-            true
         }
         Ok(None) => {
             debug!(
@@ -448,7 +540,6 @@ async fn process_decision_item(
                 worker_id
             );
             sleep(Duration::from_secs(60)).await;
-            false
         }
         Err(e) => {
             error!(
@@ -457,7 +548,6 @@ async fn process_decision_item(
                 worker_id, e
             );
             sleep(Duration::from_secs(5)).await; // Wait and retry
-            false
         }
     }
 }

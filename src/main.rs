@@ -370,9 +370,9 @@ async fn main() -> Result<()> {
     // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
     for worker_config in analysis_workers.into_iter() {
+        let decision_worker_topics = topics.clone();
         let analysis_worker_slack_token = slack_token.clone();
         let analysis_worker_slack_channel = slack_channel.clone();
-        let analysis_worker_places = places.clone();
         let analysis_handle = task::spawn(async move {
             info!(
                 target: TARGET_LLM_REQUEST,
@@ -381,13 +381,13 @@ async fn main() -> Result<()> {
             );
             analysis_worker::analysis_loop(
                 worker_config.id,
+                &decision_worker_topics,
                 &worker_config.llm_client,
                 &worker_config.model,
                 &analysis_worker_slack_token,
                 &analysis_worker_slack_channel,
                 temperature,
                 worker_config.fallback,
-                analysis_worker_places,
             )
             .await;
             info!(
