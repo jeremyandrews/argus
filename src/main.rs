@@ -9,10 +9,6 @@ use std::path::Path;
 use tokio::task;
 use tracing::{debug, error, info, warn};
 
-const TARGET_WEB_REQUEST: &str = "web_request";
-const TARGET_LLM_REQUEST: &str = "llm_request";
-const TARGET_DB: &str = "db_query";
-
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
 const ANALYSIS_OLLAMA_CONFIGS_ENV: &str = "ANALYSIS_OLLAMA_CONFIGS";
 const DECISION_OPENAI_CONFIGS_ENV: &str = "DECISION_OPENAI_CONFIGS";
@@ -27,7 +23,7 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::{FallbackConfig, LLMClient};
+use argus::{FallbackConfig, LLMClient, TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 use environment::get_env_var_as_vec;
 
