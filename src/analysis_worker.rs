@@ -73,15 +73,37 @@ pub async fn analysis_loop(
                         mode = Mode::FallbackDecision;
                         fallback_start_time = Some(Instant::now());
 
-                        // Update active model.
+                        // Update active model to fallback model
                         worker_detail.model = fallback_config.model.to_string();
 
                         // Update LLM params to use fallback model
                         llm_params = LLMParams {
                             llm_client: fallback_config.llm_client.clone(),
-                            model: fallback_config.model,
+                            model: fallback_config.model.clone(),
                             temperature,
                         };
+
+                        // Wait for the new model to be operational
+                        if let Err(_) = wait_for_model_ready(
+                            &fallback_config.model,
+                            &mut llm_params,
+                            &worker_detail,
+                        )
+                        .await
+                        {
+                            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Failed to switch to fallback model '{}'. Continuing in Analysis mode.", worker_detail.name, worker_detail.id, worker_detail.model, fallback_config.model);
+                            mode = Mode::Analysis;
+                            fallback_start_time = None;
+                            worker_detail.model = model.to_string();
+                            llm_params = LLMParams {
+                                llm_client: llm_client.clone(),
+                                model: model.to_string(),
+                                temperature,
+                            };
+                            // Give time for the original model to restore.
+                            let _ =
+                                wait_for_model_ready(&model, &mut llm_params, &worker_detail).await;
+                        }
                     }
                 }
 
@@ -89,6 +111,7 @@ pub async fn analysis_loop(
                 sleep(Duration::from_secs(2)).await;
             }
             Mode::FallbackDecision => {
+                // Existing fallback processing logic...
                 if let Some(_fallback_config) = fallback.clone() {
                     // Check if fallback duration has elapsed
                     if let Some(start_time) = fallback_start_time {
@@ -103,6 +126,12 @@ pub async fn analysis_loop(
                                 model: model.to_string(),
                                 temperature,
                             };
+
+                            worker_detail.model = model.to_string();
+
+                            // Wait for the original model to be operational
+                            let _ =
+                                wait_for_model_ready(model, &mut llm_params, &worker_detail).await;
                             continue;
                         }
                     }
@@ -136,7 +165,7 @@ pub async fn analysis_loop(
                     mode = Mode::Analysis;
                     fallback_start_time = None;
 
-                    // Update active model.
+                    // Update active model to original model
                     worker_detail.model = model.to_string();
 
                     // Restore original LLM params
@@ -145,7 +174,71 @@ pub async fn analysis_loop(
                         model: model.to_string(),
                         temperature,
                     };
+
+                    // Wait for the original model to be operational
+                    let _ = wait_for_model_ready(model, &mut llm_params, &worker_detail).await;
                 }
+            }
+        }
+    }
+}
+
+/// Waits until the specified model is operational by repeatedly sending a test prompt.
+///
+/// # Arguments
+///
+/// * `model` - The name of the model to test.
+/// * `llm_params` - Mutable reference to the current LLM parameters.
+/// * `worker_detail` - Reference to the worker's details for logging purposes.
+async fn wait_for_model_ready(
+    model: &str,
+    llm_params: &mut LLMParams,
+    worker_detail: &WorkerDetail,
+) -> Result<(), ()> {
+    let test_prompt = "Are you operational? Answer yes or no.";
+    let retry_delay = Duration::from_secs(5);
+    let max_retries = 60;
+    let mut attempts = 0;
+
+    loop {
+        attempts += 1;
+        match generate_llm_response(test_prompt, llm_params, worker_detail).await {
+            Some(response) => {
+                info!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: Model '{}' responded to readiness check: {}.",
+                    worker_detail.name,
+                    worker_detail.id,
+                    worker_detail.model,
+                    model,
+                    response,
+                );
+                return Ok(());
+            }
+            None => {
+                error!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: Model '{}' not ready yet (Attempt {}/{}).",
+                    worker_detail.name,
+                    worker_detail.id,
+                    worker_detail.model,
+                    model,
+                    attempts,
+                    max_retries,
+                );
+                if attempts >= max_retries {
+                    error!(
+                        target: TARGET_LLM_REQUEST,
+                        "[{} {} {}]: Model '{}' failed to become operational after {} attempts.",
+                        worker_detail.name,
+                        worker_detail.id,
+                        worker_detail.model,
+                        model,
+                        max_retries,
+                    );
+                    return Err(());
+                }
+                sleep(retry_delay).await;
             }
         }
     }
