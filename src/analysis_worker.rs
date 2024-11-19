@@ -66,10 +66,10 @@ pub async fn analysis_loop(
                     last_activity = Instant::now();
                 }
 
-                // Check if idle for over 2 minutes
-                if last_activity.elapsed() > Duration::from_secs(120) {
+                // Check if idle for over 10 minutes
+                if last_activity.elapsed() > Duration::from_secs(600) {
                     if let Some(fallback_config) = fallback.clone() {
-                        info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: idle for 2 minutes, switching to Decision Worker mode with model {}.", worker_detail.name, worker_detail.id, worker_detail.model, fallback_config.model);
+                        info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: idle for more than 10 minutes ({:#?}), switching to Decision Worker mode with model {}.", worker_detail.name, worker_detail.id, worker_detail.model, last_activity.elapsed(), fallback_config.model);
                         mode = Mode::FallbackDecision;
                         fallback_start_time = Some(Instant::now());
 
