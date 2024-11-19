@@ -92,8 +92,8 @@ pub async fn analysis_loop(
                 if let Some(_fallback_config) = fallback.clone() {
                     // Check if fallback duration has elapsed
                     if let Some(start_time) = fallback_start_time {
-                        if start_time.elapsed() > Duration::from_secs(900) {
-                            info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: switching back from Decision Worker after 15 minutes, returning to mode with model {}.", worker_detail.name, worker_detail.id, worker_detail.model, model);
+                        if start_time.elapsed() > Duration::from_secs(300) {
+                            info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: switching back from Decision Worker after 5 minutes, returning to mode with model {}.", worker_detail.name, worker_detail.id, worker_detail.model, model);
                             mode = Mode::Analysis;
                             fallback_start_time = None;
 
@@ -192,7 +192,8 @@ async fn process_analysis_item(
                     "Article with hash {} or title_domain_hash {} was already processed. Skipping.",
                     article_hash, title_domain_hash
                 );
-                return true;
+                // No item processed, this was a duplicate.
+                return false;
             }
 
             let mut llm_params_clone = llm_params.clone();
@@ -312,7 +313,8 @@ async fn process_analysis_item(
                         "Article with hash {} or title_domain_hash {} was already processed (third check). Skipping Slack post.",
                         article_hash, title_domain_hash
                     );
-                    return true;
+                    // No item processed, this was a duplicate.
+                    return false;
                 }
 
                 send_to_slack(
@@ -341,8 +343,8 @@ async fn process_analysis_item(
                     );
                 }
             }
-            // Log success, and go to next queue item.
-            true
+            // An item was processed, return to process another.
+            return true;
         }
         Ok(None) => {
             debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: no items in life safety queue.", worker_detail.name, worker_detail.id, worker_detail.model);
@@ -417,27 +419,27 @@ async fn process_analysis_item(
                     {
                         error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
                     }
+                    // An item was processed, return to process another.
+                    return true;
                 }
                 Ok(None) => {
                     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Matched Topics queue empty, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model);
-                    // Log success, and go to next queue item.
-                    return true;
+                    sleep(Duration::from_secs(10)).await;
                 }
                 Err(e) => {
                     error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: error pulling from Matched topics queue: {:?}, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model, e);
-                    // Sleep after a database error.
                     sleep(Duration::from_secs(5)).await;
                 }
             }
-            // Try again
-            false
+            // If we get here, no item was processed, return to try again.
+            return false;
         }
         Err(e) => {
             error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: error pulling from Life Safety queue: {:?}, sleeping 5 seconds...", worker_detail.name, worker_detail.id, worker_detail.model, e);
             // Sleep after a database error.
-            sleep(Duration::from_secs(5)).await; // Wait and retry
-                                                 // Then try again
-            false
+            sleep(Duration::from_secs(5)).await;
+            // If we get here, no item was processed, return to try again.
+            return false;
         }
     }
 }
