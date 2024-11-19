@@ -84,6 +84,7 @@ pub async fn analysis_loop(
                         };
 
                         // Wait for the new model to be operational
+                        // @TODO: Skip this for OpenAI?
                         if let Err(_) = wait_for_model_ready(
                             &fallback_config.model,
                             &mut llm_params,
