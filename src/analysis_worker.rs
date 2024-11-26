@@ -378,10 +378,10 @@ async fn process_analysis_item(
             }
 
             if !summary.is_empty()
-                || !critical_analysis.is_empty()
-                || !logical_fallacies.is_empty()
-                || !relation_to_topic_str.is_empty()
-                || !source_analysis.is_empty()
+                && !tiny_summary.is_empty()
+                && !critical_analysis.is_empty()
+                && !logical_fallacies.is_empty()
+                && !relation_to_topic_str.is_empty()
             {
                 let detailed_response_json = json!({
                     "topic": format!("{} {}", affected_summary, non_affected_summary),
@@ -477,44 +477,52 @@ async fn process_analysis_item(
                     )
                     .await;
 
-                    let response_json = json!({
-                        "topic": topic,
-                        "summary": summary,
-                        "tiny_summary": tiny_summary,
-                        "critical_analysis": critical_analysis,
-                        "logical_fallacies": logical_fallacies,
-                        "relation_to_topic": relation,
-                        "source_analysis": source_analysis,
-                        "elapsed_time": start_time.elapsed().as_secs_f64(),
-                        "model": llm_params.model
-                    });
-
-                    send_to_slack(
-                        &format!("*<{}|{}>*", article_url, article_title),
-                        &response_json.to_string(),
-                        slack_token,
-                        slack_channel,
-                    )
-                    .await;
-
-                    debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
-
-                    if let Err(e) = db
-                        .add_article(
-                            &article_url,
-                            true,
-                            Some(&topic),
-                            Some(&response_json.to_string()),
-                            Some(&tiny_summary),
-                            Some(&article_hash),
-                            Some(&title_domain_hash),
-                        )
-                        .await
+                    if !summary.is_empty()
+                        && !tiny_summary.is_empty()
+                        && !critical_analysis.is_empty()
+                        && !logical_fallacies.is_empty()
                     {
-                        error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
+                        let response_json = json!({
+                            "topic": topic,
+                            "summary": summary,
+                            "tiny_summary": tiny_summary,
+                            "critical_analysis": critical_analysis,
+                            "logical_fallacies": logical_fallacies,
+                            "relation_to_topic": relation,
+                            "source_analysis": source_analysis,
+                            "elapsed_time": start_time.elapsed().as_secs_f64(),
+                            "model": llm_params.model
+                        });
+
+                        send_to_slack(
+                            &format!("*<{}|{}>*", article_url, article_title),
+                            &response_json.to_string(),
+                            slack_token,
+                            slack_channel,
+                        )
+                        .await;
+
+                        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
+
+                        if let Err(e) = db
+                            .add_article(
+                                &article_url,
+                                true,
+                                Some(&topic),
+                                Some(&response_json.to_string()),
+                                Some(&tiny_summary),
+                                Some(&article_hash),
+                                Some(&title_domain_hash),
+                            )
+                            .await
+                        {
+                            error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
+                        }
+                        // An item was processed, return to process another.
+                        return true;
+                    } else {
+                        return false;
                     }
-                    // An item was processed, return to process another.
-                    return true;
                 }
                 Ok(None) => {
                     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Matched Topics queue empty, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model);
