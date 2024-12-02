@@ -4,8 +4,8 @@ const DONT_TELL_ME: &str =
     "Do not tell me what you're doing, do not explain that you're writing in American English.";
 const FORMAT_INSTRUCTIONS: &str =
     "Format your answer for easy and clear readability in text. Use _italic_ for italicized text,
-     *bold* for bold text, ~strike~ for strikethrough text, > for block quotes, `code` for code
-     formatting, and \\n for newlines.";
+     *bold* for bold text, ~strike~ for strikethrough text, > for block quotes, and `code` for code
+     formatting.";
 const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
 
 const CONTEXT_2024: &str = "
