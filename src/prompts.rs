@@ -45,7 +45,7 @@ bullet points, and for very long texts (over 2000 words): 6-10 bullet points.
 
 pub fn tiny_summary_prompt(summary_response: &str) -> String {
     format!(
-        "{summary} | Please summarize down to 200 characters or less.
+        "{summary} | Please summarize down to 400 characters or less.
 
 {write_in_clear_english}
 
