@@ -6,7 +6,8 @@ use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::Path;
-use tokio::task;
+use std::sync::Arc;
+use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
@@ -319,12 +320,31 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Spawn a thread to parse URLs from RSS feeds.
-    let rss_handle = task::spawn(async move {
-        info!(target: TARGET_WEB_REQUEST, "Starting RSS feed parsing.");
-        match rss::rss_loop(urls.clone()).await {
-            Ok(_) => info!(target: TARGET_WEB_REQUEST, "RSS feed parsing completed successfully."),
-            Err(e) => error!(target: TARGET_WEB_REQUEST, "RSS feed parsing failed: {}", e),
+    // Define panic notification mechanism
+    let panic_notify = Arc::new(Notify::new());
+
+    // Spawn a thread to parse URLs from RSS feeds with monitoring.
+    let rss_notify = Arc::clone(&panic_notify);
+    let rss_handle = tokio::spawn({
+        let urls = urls.clone(); // Make sure urls are properly cloned
+        async move {
+            let thread_name = "RSS Feed Parser".to_string();
+            let result = tokio::spawn({
+                let thread_name = thread_name.clone();
+                async move {
+                    info!(target: TARGET_WEB_REQUEST, "{}: Starting RSS feed parsing.", thread_name);
+                    match rss::rss_loop(urls.clone()).await {
+                        Ok(_) => info!(target: TARGET_WEB_REQUEST, "{}: Parsing completed successfully.", thread_name),
+                        Err(e) => error!(target: TARGET_WEB_REQUEST, "{}: Parsing failed: {}", thread_name, e),
+                    }
+                }
+            })
+            .await;
+
+            if result.is_err() {
+                error!(target: TARGET_WEB_REQUEST, "{}: Panic occurred.", thread_name);
+                rss_notify.notify_one();
+            }
         }
     });
 
@@ -337,28 +357,36 @@ async fn main() -> Result<()> {
         let decision_worker_slack_token = slack_token.clone();
         let decision_worker_slack_channel = slack_channel.clone();
         let decision_worker_places = places.clone();
-        let decision_worker_handle = task::spawn(async move {
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "Decision worker {}: starting with model '{}'",
-                decision_id, decision_model
-            );
-            decision_worker::decision_loop(
-                decision_id,
-                &decision_worker_topics,
-                &llm_client,
-                &decision_model,
-                temperature,
-                &decision_worker_slack_token,
-                &decision_worker_slack_channel,
-                decision_worker_places,
-            )
-            .await;
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "Decision worker {}: completed decision_loop for model '{}'",
-                decision_id, decision_model
-            );
+        let worker_notify = Arc::clone(&panic_notify);
+        let thread_name = format!("Decision Worker {}", decision_id);
+        let decision_worker_handle = tokio::spawn({
+            let thread_name = thread_name.clone();
+            async move {
+                let result = tokio::spawn({
+                    let thread_name = thread_name.clone();
+                    async move {
+                        info!(target: TARGET_LLM_REQUEST, "{}: Starting with model '{}'", thread_name, decision_model);
+                        decision_worker::decision_loop(
+                            decision_id,
+                            &decision_worker_topics,
+                            &llm_client,
+                            &decision_model,
+                            temperature,
+                            &decision_worker_slack_token,
+                            &decision_worker_slack_channel,
+                            decision_worker_places,
+                        )
+                        .await;
+                        info!(target: TARGET_LLM_REQUEST, "{}: Completed successfully.", thread_name);
+                    }
+                })
+                .await;
+
+                if result.is_err() {
+                    error!(target: TARGET_LLM_REQUEST, "{}: Panic occurred.", thread_name);
+                    worker_notify.notify_one();
+                }
+            }
         });
         decision_handles.push(decision_worker_handle);
     }
@@ -369,52 +397,68 @@ async fn main() -> Result<()> {
         let decision_worker_topics = topics.clone();
         let analysis_worker_slack_token = slack_token.clone();
         let analysis_worker_slack_channel = slack_channel.clone();
-        let analysis_handle = task::spawn(async move {
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "Analysis worker {}: starting with model '{}'",
-                worker_config.id, worker_config.model
-            );
-            analysis_worker::analysis_loop(
-                worker_config.id,
-                &decision_worker_topics,
-                &worker_config.llm_client,
-                &worker_config.model,
-                &analysis_worker_slack_token,
-                &analysis_worker_slack_channel,
-                temperature,
-                worker_config.fallback,
-            )
-            .await;
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "Analysis worker {}: completed analysis_loop for model '{}'",
-                worker_config.id, worker_config.model
-            );
+        let worker_notify = Arc::clone(&panic_notify);
+        let thread_name = format!("Analysis Worker {}", worker_config.id);
+        let analysis_handle = tokio::spawn({
+            let thread_name = thread_name.clone();
+            async move {
+                let result = tokio::spawn({
+                    let thread_name = thread_name.clone();
+                    async move {
+                        info!(target: TARGET_LLM_REQUEST, "{}: Starting with model '{}'", thread_name, worker_config.model);
+                        analysis_worker::analysis_loop(
+                            worker_config.id,
+                            &decision_worker_topics,
+                            &worker_config.llm_client,
+                            &worker_config.model,
+                            &analysis_worker_slack_token,
+                            &analysis_worker_slack_channel,
+                            temperature,
+                            worker_config.fallback,
+                        )
+                        .await;
+                        info!(target: TARGET_LLM_REQUEST, "{}: Completed successfully.", thread_name);
+                    }
+                })
+                .await;
+
+                if result.is_err() {
+                    error!(target: TARGET_LLM_REQUEST, "{}: Panic occurred.", thread_name);
+                    worker_notify.notify_one();
+                }
+            }
         });
         analysis_handles.push(analysis_handle);
     }
+
+    // Spawn a watcher for any thread failures
+    let panic_notify_clone = Arc::clone(&panic_notify);
+    let watcher_handle = tokio::spawn(async move {
+        panic_notify_clone.notified().await;
+        error!("A thread has exited or panicked. Triggering main process panic.");
+        panic!("Thread failure detected");
+    });
 
     // Await task completions
     if let Err(e) = rss_handle.await {
         error!(target: TARGET_WEB_REQUEST, "RSS task encountered an error: {}", e);
     }
 
-    // Await decision worker tasks
-    let results = join_all(decision_handles).await;
-    for (i, result) in results.into_iter().enumerate() {
+    let decision_results = join_all(decision_handles).await;
+    for (i, result) in decision_results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "Decision worker {}: task failed with error: {}", i, e);
+            error!(target: TARGET_LLM_REQUEST, "Decision worker {} failed: {}", i, e);
         }
     }
 
-    // Await analysis worker tasks
     let analysis_results = join_all(analysis_handles).await;
     for (i, result) in analysis_results.into_iter().enumerate() {
         if let Err(e) = result {
-            error!(target: TARGET_LLM_REQUEST, "Analysis worker {}: task failed with error: {}", i, e);
+            error!(target: TARGET_LLM_REQUEST, "Analysis worker {} failed: {}", i, e);
         }
     }
+
+    watcher_handle.await.ok(); // Ensure watcher completes
 
     Ok(())
 }
