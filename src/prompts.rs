@@ -18,26 +18,28 @@ By using these formats, we can make our conversation more engaging and
 easy to follow.";
 */
 const FORMAT_INSTRUCTIONS: &str =
-    "To ensure that our conversation is easy to follow and understand, I'd like 
-    to outline the various formatting options available. 
+    "To ensure that our conversation is easy to follow and understand, use the 
+following formatting options:
 
-    When you want to add emphasis or indicate that a word or phrase is being 
-    used in a special way, use _italic_ formatting, such as when referring to 
-    a _foreign word_ or a _technical term_. In contrast, *bold* text is ideal 
-    for drawing attention to important information, like *key takeaways* or 
-    *main points*. If you need to indicate that something is no longer 
-    relevant or has been corrected, use ~strike~ formatting, such as when 
-    showing a ~deleted option~ or a ~revised estimate~. 
+When appropriate, add emphasis or indicate that a word or phrase is being 
+used in a special way by using _italic_ formatting, such as when referring to 
+a _foreign word_ or a _technical term_. Use *bold* text to draw attention 
+to important information, like *key takeaways* or *main points*. If you 
+need to indicate that something is no longer relevant or has been 
+corrected, use ~strike~ formatting, such as when showing a ~deleted 
+option~ or a ~revised estimate~.
 
-    For quoting someone or setting apart a large section of text, use the > 
-    block quote formatting, like this:
-    > This is an example of a block quote, which can be used to set apart a 
-    large section of text or to quote someone.
+For quoting someone or setting apart a large section of text, use the > 
+block quote formatting, like this:
+> This is an example of a block quote, which can be used to set apart a 
+> large section of text or to quote someone or to quote the article. Use
+> this format to make it clear that you are referencing someone else's words.
 
-    Finally, when referencing code, commands, or specific technical terms, use 
-    `code` formatting, such as when talking about a `programming language` or 
-    a `specific software feature`. By using these formatting styles, we can 
-    make our conversation more readable and engaging.";
+Finally, when specifically referencing code, commands, or specific
+ technical terms, use `code` formatting, such as when talking about a
+`programming language` or a `specific software feature` or `function`.
+
+Use these formatting styles to make your text more readable and engaging.";
 const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
 
 const CONTEXT_2024: &str = "
