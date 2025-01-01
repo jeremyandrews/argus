@@ -19,7 +19,7 @@ easy to follow.";
 */
 const FORMAT_INSTRUCTIONS: &str =
     "To ensure that our conversation is easy to follow and understand, use the 
-following formatting options:
+following formatting options when it make the text more readable:
 
 When appropriate, add emphasis or indicate that a word or phrase is being 
 used in a special way by using _italic_ formatting, such as when referring to 
@@ -27,19 +27,24 @@ a _foreign word_ or a _technical term_. Use *bold* text to draw attention
 to important information, like *key takeaways* or *main points*. If you 
 need to indicate that something is no longer relevant or has been 
 corrected, use ~strike~ formatting, such as when showing a ~deleted 
-option~ or a ~revised estimate~.
+option~ or a ~revised estimate~. Only do so when it makes the text easier
+to understand.
 
-For quoting someone or setting apart a large section of text, use the > 
-block quote formatting, like this:
+For quoting someone or setting apart a large section of text when it makes
+your writing more reasable, use the > block quote formatting, like this:
 > This is an example of a block quote, which can be used to set apart a 
 > large section of text or to quote someone or to quote the article. Use
 > this format to make it clear that you are referencing someone else's words.
+> Only do this if you need to quote someone to make your writing more
+> accessible.
 
 Finally, when specifically referencing code, commands, or specific
  technical terms, use `code` formatting, such as when talking about a
 `programming language` or a `specific software feature` or `function`.
+Only use if it makes your writing more readable.
 
-Use these formatting styles to make your text more readable and engaging.";
+Use these formatting styles to make your text more readable and engaging. Only
+use special formatting when it makes the text more readable.";
 const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
 
 const CONTEXT_2024: &str = "
