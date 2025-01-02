@@ -2,21 +2,6 @@ use chrono::Local;
 
 const DONT_TELL_ME: &str =
     "Do not tell me what you're doing, do not explain that you're writing in American English.";
-/*
-"To ensure easy readability, let's use the following formatting options:
-
-* _Italic_ for emphasis or special usage, like a _foreign word_.
-* *Bold* for importance, such as *key takeaways*.
-* ~Strike~ for indicating something is no longer relevant, like a ~deleted
-option~.
-* > for block quotes, like this:
-> This sets apart a large section of text or quotes someone.
-* `Code` for technical terms, commands, or code, such as a `programming
-language`.
-
-By using these formats, we can make our conversation more engaging and
-easy to follow.";
-*/
 const FORMAT_INSTRUCTIONS: &str =
     "To ensure that our conversation is easy to follow and understand, use the 
 following formatting options when it make the text more readable:
