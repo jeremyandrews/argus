@@ -19,7 +19,16 @@ struct Claims {
 /// # Arguments
 /// * `title` - The title of the notification.
 /// * `body` - The body of the notification.
-pub async fn send_to_app(json: &Value) {
+pub async fn send_to_app(json: &Value) -> Option<String> {
+    // Upload the JSON to R2
+    let json_url = match upload_to_r2(json).await {
+        Some(url) => url,
+        None => {
+            warn!("Failed to upload JSON to R2. Aborting notification.");
+            return None;
+        }
+    };
+
     let title = json
         .get("title")
         .and_then(|v| v.as_str())
@@ -30,8 +39,8 @@ pub async fn send_to_app(json: &Value) {
         .unwrap_or("No summary available.");
 
     info!(
-        "Preparing to send notification: title = '{}', body = '{}'",
-        title, body
+        "Preparing to send notification: title = '{}', body = '{}', json_url = '{}'",
+        title, body, json_url
     );
 
     // Load required environment variables, or disable app notifications.
@@ -39,21 +48,21 @@ pub async fn send_to_app(json: &Value) {
         Ok(val) => val,
         Err(_) => {
             warn!("APP_TEAM_ID environment variable not set. App notifications are disabled.");
-            return;
+            return None;
         }
     };
     let key_id = match env::var("APP_KEY_ID") {
         Ok(val) => val,
         Err(_) => {
             warn!("APP_KEY_ID environment variable not set. App notifications are disabled.");
-            return;
+            return None;
         }
     };
     let device_token = match env::var("APP_DEVICE_TOKEN") {
         Ok(val) => val,
         Err(_) => {
             warn!("APP_DEVICE_TOKEN environment variable not set. App notifications are disabled.");
-            return;
+            return None;
         }
     };
     let private_key_path = match env::var("APP_PRIVATE_KEY_PATH") {
@@ -62,7 +71,7 @@ pub async fn send_to_app(json: &Value) {
             warn!(
                 "APP_PRIVATE_KEY_PATH environment variable not set. App notifications are disabled."
             );
-            return;
+            return None;
         }
     };
 
@@ -74,7 +83,7 @@ pub async fn send_to_app(json: &Value) {
                 "Failed to read private key file from path '{}': {}. App notifications are disabled.",
                 private_key_path, e
             );
-            return;
+            return None;
         }
     };
 
@@ -84,7 +93,7 @@ pub async fn send_to_app(json: &Value) {
         Ok(duration) => duration.as_secs(),
         Err(_) => {
             error!("System time is before UNIX epoch. App notifications are disabled.");
-            return;
+            return None;
         }
     };
 
@@ -103,7 +112,7 @@ pub async fn send_to_app(json: &Value) {
                 "Failed to create encoding key from private key: {}. App notifications are disabled.",
                 e
             );
-            return;
+            return None;
         }
     };
 
@@ -114,7 +123,7 @@ pub async fn send_to_app(json: &Value) {
                 "Failed to encode JWT token: {}. App notifications are disabled.",
                 e
             );
-            return;
+            return None;
         }
     };
 
@@ -130,6 +139,9 @@ pub async fn send_to_app(json: &Value) {
             "sound": "default",
             "badge": 1,
             "content-available": 1
+        },
+        "data": {
+            "json_url": json_url
         }
     });
 
@@ -146,7 +158,7 @@ pub async fn send_to_app(json: &Value) {
                 "Failed to build HTTP client: {}. App notifications are disabled.",
                 e
             );
-            return;
+            return None;
         }
     };
 
@@ -180,6 +192,47 @@ pub async fn send_to_app(json: &Value) {
         }
         Err(e) => {
             error!("Failed to send POST request to APNs: {}", e);
+        }
+    }
+    Some(json_url)
+}
+
+pub async fn upload_to_r2(json: &Value) -> Option<String> {
+    let bucket_name = env::var("R2_BUCKET_NAME").expect("R2_BUCKET_NAME not set");
+    let endpoint_url = env::var("R2_ENDPOINT_URL").expect("R2_ENDPOINT_URL not set");
+    let access_key = env::var("R2_ACCESS_KEY_ID").expect("R2_ACCESS_KEY_ID not set");
+    let secret_key = env::var("R2_SECRET_ACCESS_KEY").expect("R2_SECRET_ACCESS_KEY not set");
+
+    let client = Client::new();
+
+    // Create the file name and URL
+    let file_name = format!("{}.json", uuid::Uuid::new_v4());
+    let object_url = format!("{}/{}/{}", endpoint_url, bucket_name, file_name);
+
+    // Send PUT request to upload the JSON
+    let response = client
+        .put(&object_url)
+        .header(
+            "Authorization",
+            format!("Bearer {}:{}", access_key, secret_key),
+        )
+        .header("Content-Type", "application/json")
+        .body(json.to_string())
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            println!("Uploaded JSON to R2: {}", object_url);
+            Some(object_url)
+        }
+        Ok(resp) => {
+            eprintln!("Failed to upload to R2: {}", resp.status());
+            None
+        }
+        Err(e) => {
+            eprintln!("Error during upload: {}", e);
+            None
         }
     }
 }

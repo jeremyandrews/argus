@@ -27,6 +27,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
 url = "2.5"
 urlnorm = "0.1.6"
+uuid = "1.11"
 
 [[bin]]
 name = "rss_fetcher"

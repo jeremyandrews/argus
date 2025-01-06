@@ -712,6 +712,7 @@ async fn process_topics(
                 None,
                 Some(&article_hash),
                 Some(&title_domain_hash),
+                None,
             )
             .await
         {
@@ -802,6 +803,7 @@ async fn handle_access_denied(
                 None,
                 None,
                 Some(&title_domain_hash),
+                None,
             )
             .await
         {

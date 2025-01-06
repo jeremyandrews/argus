@@ -57,7 +57,8 @@ impl Database {
                 tiny_summary TEXT,
                 analysis TEXT,
                 hash TEXT,
-                title_domain_hash TEXT
+                title_domain_hash TEXT,
+                r2_url TEXT,
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
             CREATE INDEX IF NOT EXISTS idx_hash ON articles (hash);
@@ -430,6 +431,7 @@ impl Database {
         tiny_summary: Option<&str>,
         hash: Option<&str>,
         title_domain_hash: Option<&str>,
+        r2_url: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         // Parse the URL
         let parsed_url = match Url::parse(url) {
@@ -453,8 +455,8 @@ impl Database {
         debug!(target: TARGET_DB, "Adding/updating article: {}", url);
         sqlx::query(
             r#"
-            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
             ON CONFLICT(url) DO UPDATE SET
                 url = excluded.url,
                 seen_at = excluded.seen_at,
@@ -463,7 +465,8 @@ impl Database {
                 analysis = excluded.analysis,
                 tiny_summary = excluded.tiny_summary,
                 hash = excluded.hash,
-                title_domain_hash = excluded.title_domain_hash
+                title_domain_hash = excluded.title_domain_hash,
+                r2_url = excluded.r2_url
             "#,
         )
         .bind(url)
@@ -475,6 +478,7 @@ impl Database {
         .bind(tiny_summary)
         .bind(hash)
         .bind(title_domain_hash)
+        .bind(r2_url)
         .execute(&self.pool)
         .await?;
 

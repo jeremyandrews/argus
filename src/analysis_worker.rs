@@ -422,7 +422,7 @@ async fn process_analysis_item(
                     slack_channel,
                 )
                 .await;
-                send_to_app(&detailed_response_json).await;
+                let r2_url = send_to_app(&detailed_response_json).await;
 
                 if let Err(e) = db
                     .add_article(
@@ -433,6 +433,7 @@ async fn process_analysis_item(
                         Some(&tiny_summary),
                         Some(&article_hash),
                         Some(&title_domain_hash),
+                        r2_url.as_deref(),
                     )
                     .await
                 {
@@ -510,7 +511,7 @@ async fn process_analysis_item(
                         )
                         .await;
 
-                        send_to_app(&response_json).await;
+                        let r2_url = send_to_app(&response_json).await;
 
                         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
@@ -523,6 +524,7 @@ async fn process_analysis_item(
                                 Some(&tiny_summary),
                                 Some(&article_hash),
                                 Some(&title_domain_hash),
+                                r2_url.as_deref(),
                             )
                             .await
                         {
