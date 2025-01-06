@@ -1,10 +1,19 @@
 use anyhow::Result;
 use serde_json::json;
+use tracing::info;
+use tracing_subscriber;
 
 use argus::app;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Set up logging
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO) // Display INFO and higher
+        .init();
+
+    info!("Starting the application");
+
     let json = json!({
         "topic": "test",
         "title": "A test article title.",
