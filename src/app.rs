@@ -1,5 +1,8 @@
+use aws_sdk_s3::config::BehaviorVersion;
+use aws_sdk_s3::config::{Credentials, Region};
+use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::{Client, Config};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
 use std::env;
@@ -7,6 +10,7 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Duration;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 #[derive(Serialize)]
 struct Claims {
@@ -151,7 +155,7 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
         device_token
     );
 
-    let client = match Client::builder().http2_prior_knowledge().build() {
+    let client = match reqwest::Client::builder().http2_prior_knowledge().build() {
         Ok(client) => client,
         Err(e) => {
             warn!(
@@ -198,41 +202,45 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
 }
 
 pub async fn upload_to_r2(json: &Value) -> Option<String> {
-    let bucket_name = env::var("R2_BUCKET_NAME").expect("R2_BUCKET_NAME not set");
-    let endpoint_url = env::var("R2_ENDPOINT_URL").expect("R2_ENDPOINT_URL not set");
-    let access_key = env::var("R2_ACCESS_KEY_ID").expect("R2_ACCESS_KEY_ID not set");
-    let secret_key = env::var("R2_SECRET_ACCESS_KEY").expect("R2_SECRET_ACCESS_KEY not set");
+    // Load environment variables
+    let bucket_name = env::var("R2_BUCKET_NAME").ok()?;
+    let endpoint_url = env::var("R2_ENDPOINT_URL").ok()?;
+    let access_key = env::var("R2_ACCESS_KEY_ID").ok()?;
+    let secret_key = env::var("R2_SECRET_ACCESS_KEY").ok()?;
 
-    let client = Client::new();
+    // Configure the AWS S3 client for R2
+    let creds = Credentials::new(access_key, secret_key, None, None, "custom");
+    let config = Config::builder()
+        .region(Region::new("us-east-1")) // Use the appropriate region
+        .endpoint_url(&endpoint_url) // Set the custom endpoint URL
+        .credentials_provider(creds)
+        .behavior_version(BehaviorVersion::latest()) // Use the correct type for behavior version
+        .build();
 
-    // Create the file name and URL
-    let file_name = format!("{}.json", uuid::Uuid::new_v4());
-    let object_url = format!("{}/{}/{}", endpoint_url, bucket_name, file_name);
+    let client = Client::from_conf(config);
 
-    // Send PUT request to upload the JSON
-    let response = client
-        .put(&object_url)
-        .header(
-            "Authorization",
-            format!("Bearer {}:{}", access_key, secret_key),
-        )
-        .header("Content-Type", "application/json")
-        .body(json.to_string())
+    // Generate a UUID for the file name
+    let file_name = format!("{}.json", Uuid::new_v4());
+    let json_data = json.to_string();
+
+    // Attempt to upload the JSON to R2
+    match client
+        .put_object()
+        .bucket(&bucket_name)
+        .key(&file_name)
+        .body(ByteStream::from(json_data.into_bytes()))
+        .content_type("application/json")
         .send()
-        .await;
-
-    match response {
-        Ok(resp) if resp.status().is_success() => {
-            println!("Uploaded JSON to R2: {}", object_url);
-            Some(object_url)
-        }
-        Ok(resp) => {
-            eprintln!("Failed to upload to R2: {}", resp.status());
-            None
+        .await
+    {
+        Ok(_) => {
+            let file_url = format!("{}/{}", endpoint_url, file_name);
+            println!("Upload successful! File URL: {}", file_url);
+            Some(file_url) // Return URL if successful
         }
         Err(e) => {
-            eprintln!("Error during upload: {}", e);
-            None
+            eprintln!("Upload failed with error: {:?}", e);
+            None // Return None if upload fails
         }
     }
 }
