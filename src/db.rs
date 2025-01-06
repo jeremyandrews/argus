@@ -58,7 +58,7 @@ impl Database {
                 analysis TEXT,
                 hash TEXT,
                 title_domain_hash TEXT,
-                r2_url TEXT,
+                r2_url TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
             CREATE INDEX IF NOT EXISTS idx_hash ON articles (hash);
