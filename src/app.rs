@@ -5,6 +5,7 @@ use std::env;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Duration;
+use tracing::{debug, error, info, warn};
 
 #[derive(Serialize)]
 struct Claims {
@@ -12,32 +13,72 @@ struct Claims {
     iat: u64,
 }
 
-/// Sends a push notification to the iOS app.
+/// Send iOS app a push notification.
 ///
 /// # Arguments
 /// * `title` - The title of the notification.
 /// * `body` - The body of the notification.
 pub async fn send_to_app(title: &str, body: &str) {
-    // Get configuration from environment variables.
-    let team_id = env::var("APP_TEAM_ID").expect("APP_TEAM_ID environment variable not set");
-    let key_id = env::var("APP_KEY_ID").expect("APP_KEY_ID environment variable not set");
-    let device_token =
-        env::var("APP_DEVICE_TOKEN").expect("APP_DEVICE_TOKEN environment variable not set");
-    let private_key_path = env::var("APP_PRIVATE_KEY_PATH")
-        .expect("APP_PRIVATE_KEY_PATH environment variable not set");
+    info!(
+        "Preparing to send notification: title = '{}', body = '{}'",
+        title, body
+    );
+
+    // Load required environment variables, or disable app notifications.
+    let team_id = match env::var("APP_TEAM_ID") {
+        Ok(val) => val,
+        Err(_) => {
+            warn!("APP_TEAM_ID environment variable not set. App notifications are disabled.");
+            return;
+        }
+    };
+    let key_id = match env::var("APP_KEY_ID") {
+        Ok(val) => val,
+        Err(_) => {
+            warn!("APP_KEY_ID environment variable not set. App notifications are disabled.");
+            return;
+        }
+    };
+    let device_token = match env::var("APP_DEVICE_TOKEN") {
+        Ok(val) => val,
+        Err(_) => {
+            warn!("APP_DEVICE_TOKEN environment variable not set. App notifications are disabled.");
+            return;
+        }
+    };
+    let private_key_path = match env::var("APP_PRIVATE_KEY_PATH") {
+        Ok(val) => val,
+        Err(_) => {
+            warn!(
+                "APP_PRIVATE_KEY_PATH environment variable not set. App notifications are disabled."
+            );
+            return;
+        }
+    };
 
     // Load the private key
-    let private_key =
-        fs::read_to_string(private_key_path).expect("Failed to read private key file");
+    let private_key = match fs::read_to_string(&private_key_path) {
+        Ok(key) => key,
+        Err(e) => {
+            warn!(
+                "Failed to read private key file from path '{}': {}. App notifications are disabled.",
+                private_key_path, e
+            );
+            return;
+        }
+    };
 
     // Get the current time in seconds since the UNIX epoch
     let start = SystemTime::now();
-    let iat = start
-        .duration_since(UNIX_EPOCH)
-        .expect("System time before UNIX epoch")
-        .as_secs();
+    let iat = match start.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs(),
+        Err(_) => {
+            error!("System time is before UNIX epoch. App notifications are disabled.");
+            return;
+        }
+    };
 
-    // Create the claims
+    debug!("Generated claims: iss = '{}', iat = {}", team_id, iat);
     let claims = Claims { iss: team_id, iat };
 
     // Create the JWT header
@@ -45,9 +86,29 @@ pub async fn send_to_app(title: &str, body: &str) {
     header.kid = Some(key_id);
 
     // Encode the token
-    let encoding_key = EncodingKey::from_ec_pem(private_key.as_bytes())
-        .expect("Failed to create encoding key from private key");
-    let jwt_token = encode(&header, &claims, &encoding_key).expect("Failed to encode JWT token");
+    let encoding_key = match EncodingKey::from_ec_pem(private_key.as_bytes()) {
+        Ok(key) => key,
+        Err(e) => {
+            warn!(
+                "Failed to create encoding key from private key: {}. App notifications are disabled.",
+                e
+            );
+            return;
+        }
+    };
+
+    let jwt_token = match encode(&header, &claims, &encoding_key) {
+        Ok(token) => token,
+        Err(e) => {
+            warn!(
+                "Failed to encode JWT token: {}. App notifications are disabled.",
+                e
+            );
+            return;
+        }
+    };
+
+    debug!("Generated JWT token: {}", jwt_token);
 
     // Define the payload
     let payload = serde_json::json!({
@@ -67,13 +128,25 @@ pub async fn send_to_app(title: &str, body: &str) {
         "https://api.sandbox.push.apple.com/3/device/{}",
         device_token
     );
-    let client = Client::builder()
-        .http2_prior_knowledge() // Ensure HTTP/2 is explicitly enabled
-        .build()
-        .expect("Failed to build HTTP client");
+
+    let client = match Client::builder().http2_prior_knowledge().build() {
+        Ok(client) => client,
+        Err(e) => {
+            warn!(
+                "Failed to build HTTP client: {}. App notifications are disabled.",
+                e
+            );
+            return;
+        }
+    };
+
+    debug!(
+        "Sending POST request to APNs: URL = '{}', payload = {:?}",
+        apns_url, payload
+    );
 
     // Send the POST request
-    let response = client
+    match client
         .post(&apns_url)
         .header("apns-topic", "com.andrews.Argus.Argus")
         .header("apns-priority", "10")
@@ -83,11 +156,20 @@ pub async fn send_to_app(title: &str, body: &str) {
         .timeout(Duration::from_secs(10))
         .send()
         .await
-        .expect("Failed to send POST request to APNs");
-
-    if response.status().is_success() {
-        println!("Notification sent successfully: {:#?}", response);
-    } else {
-        eprintln!("Failed to send notification: {:#?}", response);
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                info!("Notification sent successfully: {:?}", response);
+            } else {
+                error!(
+                    "Failed to send notification: Status = {}, Response = {:?}",
+                    response.status(),
+                    response
+                );
+            }
+        }
+        Err(e) => {
+            error!("Failed to send POST request to APNs: {}", e);
+        }
     }
 }
