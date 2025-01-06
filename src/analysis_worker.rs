@@ -2,6 +2,7 @@ use serde_json::json;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info};
 
+use crate::app::send_to_app;
 use crate::db::Database;
 use crate::decision_worker::FeedItem;
 use crate::llm::generate_llm_response;
@@ -418,6 +419,7 @@ async fn process_analysis_item(
                     slack_channel,
                 )
                 .await;
+                send_to_app(&article_title, &tiny_summary).await;
 
                 if let Err(e) = db
                     .add_article(
@@ -501,6 +503,7 @@ async fn process_analysis_item(
                             slack_channel,
                         )
                         .await;
+                        send_to_app(&article_title, &tiny_summary).await;
 
                         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
