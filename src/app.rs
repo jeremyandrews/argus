@@ -1,6 +1,7 @@
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
 use serde::Serialize;
+use serde_json::Value;
 use std::env;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +19,16 @@ struct Claims {
 /// # Arguments
 /// * `title` - The title of the notification.
 /// * `body` - The body of the notification.
-pub async fn send_to_app(title: &str, body: &str) {
+pub async fn send_to_app(json: &Value) {
+    let title = json
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("No title available.");
+    let body = json
+        .get("tiny_summary")
+        .and_then(|v| v.as_str())
+        .unwrap_or("No summary available.");
+
     info!(
         "Preparing to send notification: title = '{}', body = '{}'",
         title, body

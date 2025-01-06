@@ -386,8 +386,11 @@ async fn process_analysis_item(
             {
                 let detailed_response_json = json!({
                     "topic": format!("{} {}", affected_summary, non_affected_summary),
-                    "summary": summary,
+                    "title": article_title,
+                    "url": article_url,
+                    "article_body": article_text,
                     "tiny_summary": tiny_summary,
+                    "summary": summary,
                     "critical_analysis": critical_analysis,
                     "logical_fallacies": logical_fallacies,
                     "relation_to_topic": relation_to_topic_str,
@@ -419,7 +422,7 @@ async fn process_analysis_item(
                     slack_channel,
                 )
                 .await;
-                send_to_app(&article_title, &tiny_summary).await;
+                send_to_app(&detailed_response_json).await;
 
                 if let Err(e) = db
                     .add_article(
@@ -486,8 +489,11 @@ async fn process_analysis_item(
                     {
                         let response_json = json!({
                             "topic": topic,
-                            "summary": summary,
+                            "title": article_title,
+                            "url": article_url,
+                            "article_body": article_text,
                             "tiny_summary": tiny_summary,
+                            "summary": summary,
                             "critical_analysis": critical_analysis,
                             "logical_fallacies": logical_fallacies,
                             "relation_to_topic": relation,
@@ -503,7 +509,8 @@ async fn process_analysis_item(
                             slack_channel,
                         )
                         .await;
-                        send_to_app(&article_title, &tiny_summary).await;
+
+                        send_to_app(&response_json).await;
 
                         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
