@@ -205,6 +205,7 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
     // Load environment variables
     let bucket_name = env::var("R2_BUCKET_NAME").ok()?;
     let endpoint_url = env::var("R2_ENDPOINT_URL").ok()?;
+    let public_url = env::var("R2_PUBLIC_URL").ok()?;
     let access_key = env::var("R2_ACCESS_KEY_ID").ok()?;
     let secret_key = env::var("R2_SECRET_ACCESS_KEY").ok()?;
 
@@ -234,9 +235,9 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
         .await
     {
         Ok(_) => {
-            let file_url = format!("{}/{}", endpoint_url, file_name);
+            let file_url = format!("{}/{}", public_url, file_name);
             println!("Upload successful! File URL: {}", file_url);
-            Some(file_url) // Return URL if successful
+            Some(file_url) // Return the public URL if successful
         }
         Err(e) => {
             eprintln!("Upload failed with error: {:?}", e);
