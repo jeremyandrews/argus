@@ -27,6 +27,6 @@ async fn main() -> Result<()> {
         "elapsed_time": "12345",
         "model": "test model"
     });
-    app::send_to_app(&json).await;
+    app::send_to_app(&json, "low").await;
     Ok(())
 }
