@@ -9,7 +9,7 @@ use std::env;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -25,14 +25,7 @@ struct Claims {
 /// * `importance` - Notification importance: "high" or "low".
 pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     // Upload the JSON to R2
-    let json_url = match upload_to_r2(json).await {
-        Some(url) => url,
-        None => {
-            warn!("Failed to upload JSON to R2. Aborting notification.");
-            return None;
-        }
-    };
-
+    let json_url = upload_to_r2(json).await?;
     let title = json
         .get("title")
         .and_then(|v| v.as_str())
@@ -42,111 +35,44 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         .and_then(|v| v.as_str())
         .unwrap_or("No summary available.");
 
-    info!(
-        "Preparing to send notification: title = '{}', body = '{}', json_url = '{}'",
-        title, body, json_url
-    );
+    // Load required environment variables
+    let team_id = env::var("APP_TEAM_ID").ok()?;
+    let key_id = env::var("APP_KEY_ID").ok()?;
+    let device_token = env::var("APP_DEVICE_TOKEN").ok()?;
+    let private_key_path = env::var("APP_PRIVATE_KEY_PATH").ok()?;
+    let private_key = fs::read_to_string(&private_key_path).ok()?;
 
-    // Load required environment variables, or disable app notifications.
-    let team_id = match env::var("APP_TEAM_ID") {
-        Ok(val) => val,
-        Err(_) => {
-            warn!("APP_TEAM_ID environment variable not set. App notifications are disabled.");
-            return None;
-        }
+    // Generate JWT token
+    let iat = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let claims = Claims {
+        iss: team_id.clone(),
+        iat,
     };
-    let key_id = match env::var("APP_KEY_ID") {
-        Ok(val) => val,
-        Err(_) => {
-            warn!("APP_KEY_ID environment variable not set. App notifications are disabled.");
-            return None;
-        }
-    };
-    let device_token = match env::var("APP_DEVICE_TOKEN") {
-        Ok(val) => val,
-        Err(_) => {
-            warn!("APP_DEVICE_TOKEN environment variable not set. App notifications are disabled.");
-            return None;
-        }
-    };
-    let private_key_path = match env::var("APP_PRIVATE_KEY_PATH") {
-        Ok(val) => val,
-        Err(_) => {
-            warn!(
-                "APP_PRIVATE_KEY_PATH environment variable not set. App notifications are disabled."
-            );
-            return None;
-        }
-    };
-
-    // Load the private key
-    let private_key = match fs::read_to_string(&private_key_path) {
-        Ok(key) => key,
-        Err(e) => {
-            warn!(
-                "Failed to read private key file from path '{}': {}. App notifications are disabled.",
-                private_key_path, e
-            );
-            return None;
-        }
-    };
-
-    // Get the current time in seconds since the UNIX epoch
-    let start = SystemTime::now();
-    let iat = match start.duration_since(UNIX_EPOCH) {
-        Ok(duration) => duration.as_secs(),
-        Err(_) => {
-            error!("System time is before UNIX epoch. App notifications are disabled.");
-            return None;
-        }
-    };
-
-    debug!("Generated claims: iss = '{}', iat = {}", team_id, iat);
-    let claims = Claims { iss: team_id, iat };
-
-    // Create the JWT header
     let mut header = Header::new(Algorithm::ES256);
-    header.kid = Some(key_id);
+    header.kid = Some(key_id.clone());
+    let encoding_key = EncodingKey::from_ec_pem(private_key.as_bytes()).ok()?;
+    let jwt_token = encode(&header, &claims, &encoding_key).ok()?;
 
-    // Encode the token
-    let encoding_key = match EncodingKey::from_ec_pem(private_key.as_bytes()) {
-        Ok(key) => key,
-        Err(e) => {
-            warn!(
-                "Failed to create encoding key from private key: {}. App notifications are disabled.",
-                e
-            );
-            return None;
-        }
-    };
-
-    let jwt_token = match encode(&header, &claims, &encoding_key) {
-        Ok(token) => token,
-        Err(e) => {
-            warn!(
-                "Failed to encode JWT token: {}. App notifications are disabled.",
-                e
-            );
-            return None;
-        }
-    };
-
-    debug!("Generated JWT token: {}", jwt_token);
-
-    // Determine priority based on importance
-    let priority = match importance {
-        "high" => "10", // Immediate delivery
-        "low" => "5",   // Background delivery
-        _ => "5",       // Default to background delivery
-    };
-
-    // Define the payload
+    // Determine priority and payload
+    let priority = if importance == "high" { "10" } else { "5" };
     let payload = serde_json::json!({
         "aps": {
-            "alert": json_alert(title, body, importance == "high"),
-            "sound": json_string("default", importance == "high"),
-            "badge": json_number(1, importance == "high"),
-            "content-available": 1,
+            "alert": if importance == "high" {
+                serde_json::json!({ "title": title, "body": body })
+            } else {
+                serde_json::Value::Null
+            },
+            "sound": if importance == "high" {
+                serde_json::Value::String("default".to_string())
+            } else {
+                serde_json::Value::Null
+            },
+            "badge": if importance == "high" {
+                serde_json::Value::Number(1.into())
+            } else {
+                serde_json::Value::Null
+            },
+            "content-available": 1
         },
         "data": {
             "json_url": json_url,
@@ -154,29 +80,16 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         }
     });
 
-    // Define the APNs endpoint
+    // Send notification
+    let client = reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .build()
+        .ok()?;
     let apns_url = format!(
         "https://api.sandbox.push.apple.com/3/device/{}",
         device_token
     );
 
-    let client = match reqwest::Client::builder().http2_prior_knowledge().build() {
-        Ok(client) => client,
-        Err(e) => {
-            warn!(
-                "Failed to build HTTP client: {}. App notifications are disabled.",
-                e
-            );
-            return None;
-        }
-    };
-
-    debug!(
-        "Sending POST request to APNs: URL = '{}', payload = {:?}",
-        apns_url, payload
-    );
-
-    // Send the POST request
     match client
         .post(&apns_url)
         .header("apns-topic", "com.andrews.Argus.Argus")
@@ -188,21 +101,21 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         .send()
         .await
     {
+        Ok(response) if response.status().is_success() => {
+            info!("Notification sent successfully.");
+        }
         Ok(response) => {
-            if response.status().is_success() {
-                info!("Notification sent successfully: {:?}", response);
-            } else {
-                error!(
-                    "Failed to send notification: Status = {}, Response = {:?}",
-                    response.status(),
-                    response
-                );
-            }
+            error!(
+                "Failed to send notification: Status = {}, Response = {:?}",
+                response.status(),
+                response
+            );
         }
         Err(e) => {
             error!("Failed to send POST request to APNs: {}", e);
         }
     }
+
     Some(json_url)
 }
 
@@ -248,32 +161,5 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
             eprintln!("Upload failed with error: {:?}", e);
             None // Return None if upload fails
         }
-    }
-}
-
-fn json_string(value: &str, condition: bool) -> serde_json::Value {
-    if condition {
-        serde_json::Value::String(value.to_string())
-    } else {
-        serde_json::Value::Null
-    }
-}
-
-fn json_number(value: i64, condition: bool) -> serde_json::Value {
-    if condition {
-        serde_json::Value::Number(value.into())
-    } else {
-        serde_json::Value::Null
-    }
-}
-
-fn json_alert(title: &str, body: &str, condition: bool) -> serde_json::Value {
-    if condition {
-        serde_json::json!({
-            "title": title,
-            "body": body,
-        })
-    } else {
-        serde_json::Value::Null
     }
 }
