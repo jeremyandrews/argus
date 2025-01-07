@@ -21,8 +21,7 @@ struct Claims {
 /// Send iOS app a push notification.
 ///
 /// # Arguments
-/// * `title` - The title of the notification.
-/// * `body` - The body of the notification.
+/// * `json` - A json object with details about the analyzed article.
 pub async fn send_to_app(json: &Value) -> Option<String> {
     // Upload the JSON to R2
     let json_url = match upload_to_r2(json).await {
@@ -145,7 +144,8 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
             "content-available": 1
         },
         "data": {
-            "json_url": json_url
+            "json_url": json_url,
+            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none")
         }
     });
 
