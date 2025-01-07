@@ -146,7 +146,7 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
             "alert": json_alert(title, body, importance == "high"),
             "sound": json_string("default", importance == "high"),
             "badge": json_number(1, importance == "high"),
-            "content-available": json_number(1, true), // Always included
+            "content-available": 1,
         },
         "data": {
             "json_url": json_url,
