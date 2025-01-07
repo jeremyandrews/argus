@@ -313,7 +313,7 @@ async fn process_analysis_item(
             let mut relation_to_topic_str = String::new();
 
             // Generate relation to topic (affected and non-affected summary)
-            let mut affected_summary = String::default();
+            let affected_summary;
 
             // For affected places
             if !affected_people.is_empty() {
@@ -345,7 +345,7 @@ async fn process_analysis_item(
             }
 
             // For non-affected places
-            let mut non_affected_summary = String::default();
+            let non_affected_summary;
             if !non_affected_people.is_empty() {
                 non_affected_summary = format!(
                     "This article does not affect these people in {}: {}",
@@ -385,7 +385,7 @@ async fn process_analysis_item(
                 && !relation_to_topic_str.is_empty()
             {
                 let detailed_response_json = json!({
-                    "topic": format!("{} {}", affected_summary, non_affected_summary),
+                    "topic": "Alert",
                     "title": article_title,
                     "url": article_url,
                     "article_body": article_text,
