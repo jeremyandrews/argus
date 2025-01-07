@@ -422,7 +422,7 @@ async fn process_analysis_item(
                     slack_channel,
                 )
                 .await;
-                let r2_url = send_to_app(&detailed_response_json).await;
+                let r2_url = send_to_app(&detailed_response_json, "high").await;
 
                 if let Err(e) = db
                     .add_article(
@@ -511,7 +511,7 @@ async fn process_analysis_item(
                         )
                         .await;
 
-                        let r2_url = send_to_app(&response_json).await;
+                        let r2_url = send_to_app(&response_json, "low").await;
 
                         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 

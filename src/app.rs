@@ -22,7 +22,8 @@ struct Claims {
 ///
 /// # Arguments
 /// * `json` - A json object with details about the analyzed article.
-pub async fn send_to_app(json: &Value) -> Option<String> {
+/// * `importance` - Notification importance: "high" or "low".
+pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     // Upload the JSON to R2
     let json_url = match upload_to_r2(json).await {
         Some(url) => url,
@@ -132,20 +133,24 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
 
     debug!("Generated JWT token: {}", jwt_token);
 
+    // Determine priority based on importance
+    let priority = match importance {
+        "high" => "10", // Immediate delivery
+        "low" => "5",   // Background delivery
+        _ => "5",       // Default to background delivery
+    };
+
     // Define the payload
     let payload = serde_json::json!({
         "aps": {
-            "alert": {
-                "title": title,
-                "body": body,
-            },
-            "sound": "default",
-            "badge": 1,
-            "content-available": 1
+            "alert": json_alert(title, body, importance == "high"),
+            "sound": json_string("default", importance == "high"),
+            "badge": json_number(1, importance == "high"),
+            "content-available": json_number(1, true), // Always included
         },
         "data": {
             "json_url": json_url,
-            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none")
+            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
         }
     });
 
@@ -175,7 +180,7 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
     match client
         .post(&apns_url)
         .header("apns-topic", "com.andrews.Argus.Argus")
-        .header("apns-priority", "10")
+        .header("apns-priority", priority)
         .header("authorization", format!("bearer {}", jwt_token))
         .header("Content-Type", "application/json")
         .body(payload.to_string())
@@ -243,5 +248,32 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
             eprintln!("Upload failed with error: {:?}", e);
             None // Return None if upload fails
         }
+    }
+}
+
+fn json_string(value: &str, condition: bool) -> serde_json::Value {
+    if condition {
+        serde_json::Value::String(value.to_string())
+    } else {
+        serde_json::Value::Null
+    }
+}
+
+fn json_number(value: i64, condition: bool) -> serde_json::Value {
+    if condition {
+        serde_json::Value::Number(value.into())
+    } else {
+        serde_json::Value::Null
+    }
+}
+
+fn json_alert(title: &str, body: &str, condition: bool) -> serde_json::Value {
+    if condition {
+        serde_json::json!({
+            "title": title,
+            "body": body,
+        })
+    } else {
+        serde_json::Value::Null
     }
 }
