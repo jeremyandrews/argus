@@ -10,6 +10,7 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Duration;
 use tracing::{error, info};
+use url::Url;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -34,6 +35,17 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         .get("tiny_summary")
         .and_then(|v| v.as_str())
         .unwrap_or("No summary available.");
+
+    // Extract base URL of the article
+    let domain = json
+        .get("url")
+        .and_then(|v| v.as_str())
+        .and_then(|url| {
+            Url::parse(url)
+                .ok()
+                .and_then(|parsed_url| parsed_url.host_str().map(|host| host.to_string()))
+        })
+        .unwrap_or_else(|| "unknown".to_string());
 
     // Load required environment variables
     let team_id = env::var("APP_TEAM_ID").ok()?;
@@ -81,6 +93,7 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
             "title": if importance != "high" { Some(title) } else { None },
             "body": if importance != "high" { Some(body) } else { None },
             "affected": json.get("affected"),
+            "domain": domain,
         }
     });
 
