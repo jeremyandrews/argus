@@ -1,6 +1,6 @@
 /target
 /.env
-/argus.db
+/argus.db*
 /.github
 /.pre-commit-config.yaml
 /logs/
@@ -9,3 +9,5 @@
 /*swp
 /rss_fetcher.sh
 /reprocess_analyzer.sh
+/AuthKey*p8
+/env
