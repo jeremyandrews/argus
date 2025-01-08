@@ -57,7 +57,11 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     let priority = if importance == "high" { "10" } else { "5" };
     let payload = serde_json::json!({
         "aps": {
-            "alert": serde_json::json!({ "title": title, "body": body }),
+            "alert": if importance == "high" {
+                serde_json::json!({ "title": title, "body": body })
+            } else {
+                serde_json::Value::Null
+            },
             "sound": if importance == "high" {
                 serde_json::Value::String("default".to_string())
             } else {
@@ -73,6 +77,8 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         "data": {
             "json_url": json_url,
             "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
+            "title": if importance != "high" { Some(title) } else { None },
+            "body": if importance != "high" { Some(body) } else { None },
         }
     });
 
