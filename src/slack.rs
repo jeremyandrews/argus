@@ -21,17 +21,14 @@ pub async fn send_to_slack(
 ) {
     // Parse the TOPICS environment variable to get the topic-to-channel mappings
     let topics = std::env::var("TOPICS").unwrap().replace('\n', "");
-    let topic_mappings: HashMap<&str, (&str, &str)> = topics
+    let topic_mappings: HashMap<&str, (&str, Option<&str>)> = topics
         .split(';')
         .filter_map(|entry| {
             let mut parts = entry.trim().splitn(3, ':');
-            if let (Some(topic_name), Some(topic_prompt), Some(channel)) =
-                (parts.next(), parts.next(), parts.next())
-            {
-                Some((topic_name.trim(), (topic_prompt.trim(), channel.trim())))
-            } else {
-                None
-            }
+            let topic_name = parts.next()?.trim();
+            let topic_prompt = parts.next()?.trim();
+            let channel = parts.next().map(|ch| ch.trim()); // Optional channel
+            Some((topic_name, (topic_prompt, channel)))
         })
         .collect();
 
@@ -56,7 +53,7 @@ pub async fn send_to_slack(
     // Determine the Slack channel based on the matched topic
     let channel = topic_mappings
         .get(topic)
-        .map(|(_, channel)| *channel)
+        .and_then(|(_, channel)| *channel)
         .unwrap_or(default_channel);
 
     let summary = deduplicate_markdown(

@@ -636,7 +636,7 @@ async fn process_topics(
 
     for topic in params.topics {
         let parts: Vec<_> = topic.trim().split(':').collect();
-        if parts.is_empty() {
+        if parts.len() < 2 {
             continue;
         }
         let topic_name = parts[0].trim();
