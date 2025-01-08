@@ -12,7 +12,7 @@ do
   sleep 2
 
   # Run Argo.
-  cargo run --release
+  cargo run --release --bin argus
 
   # Sleep for 15 minutes (900 seconds) before restarting the program.
   # This delay can help manage load on the system or external services by preventing constant restarts.
