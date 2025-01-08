@@ -296,6 +296,7 @@ async fn process_analysis_item(
             let (
                 summary,
                 tiny_summary,
+                tiny_title,
                 critical_analysis,
                 logical_fallacies,
                 source_analysis,
@@ -342,6 +343,8 @@ async fn process_analysis_item(
                     .unwrap_or_default();
                 relation_to_topic_str
                     .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
+            } else {
+                affected_summary = String::new();
             }
 
             // For non-affected places
@@ -388,8 +391,10 @@ async fn process_analysis_item(
                     "topic": "Alert",
                     "title": article_title,
                     "url": article_url,
+                    "affected": affected_summary,
                     "article_body": article_text,
                     "tiny_summary": tiny_summary,
+                    "tiny_title": tiny_title,
                     "summary": summary,
                     "critical_analysis": critical_analysis,
                     "logical_fallacies": logical_fallacies,
@@ -469,6 +474,7 @@ async fn process_analysis_item(
                     let (
                         summary,
                         tiny_summary,
+                        tiny_title,
                         critical_analysis,
                         logical_fallacies,
                         source_analysis,
@@ -494,6 +500,7 @@ async fn process_analysis_item(
                             "url": article_url,
                             "article_body": article_text,
                             "tiny_summary": tiny_summary,
+                            "tiny_title": tiny_title,
                             "summary": summary,
                             "critical_analysis": critical_analysis,
                             "logical_fallacies": logical_fallacies,
@@ -617,7 +624,15 @@ async fn process_analysis(
     topic: Option<&str>,
     llm_params: &mut LLMParams,
     worker_detail: &WorkerDetail,
-) -> (String, String, String, String, String, Option<String>) {
+) -> (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+) {
     // Re-summarize the article with the analysis worker.
     let summary_prompt = prompts::summary_prompt(article_text);
     let summary = generate_llm_response(&summary_prompt, llm_params, worker_detail)
@@ -626,11 +641,15 @@ async fn process_analysis(
 
     // Now perform the rest of the analysis.
     let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary);
+    let tiny_title_prompt = prompts::tiny_title_prompt(&summary);
     let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
     let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
     let source_analysis_prompt = prompts::source_analysis_prompt(article_html, article_url);
 
     let tiny_summary = generate_llm_response(&tiny_summary_prompt, llm_params, worker_detail)
+        .await
+        .unwrap_or_default();
+    let tiny_title = generate_llm_response(&tiny_title_prompt, llm_params, worker_detail)
         .await
         .unwrap_or_default();
     let critical_analysis =
@@ -659,6 +678,7 @@ async fn process_analysis(
     (
         summary,
         tiny_summary,
+        tiny_title,
         critical_analysis,
         logical_fallacies,
         source_analysis,

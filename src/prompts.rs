@@ -80,6 +80,19 @@ pub fn tiny_summary_prompt(summary_response: &str) -> String {
     )
 }
 
+pub fn tiny_title_prompt(summary_response: &str) -> String {
+    format!(
+        "{summary} | Please write an informational and accurate 3 to 5 word title for this text.
+
+{write_in_clear_english}
+
+{dont_tell_me}",
+        summary = summary_response,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
+        dont_tell_me = DONT_TELL_ME
+    )
+}
+
 pub fn critical_analysis_prompt(article_text: &str) -> String {
     format!(
         "{article} |

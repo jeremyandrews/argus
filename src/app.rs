@@ -27,7 +27,7 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     // Upload the JSON to R2
     let json_url = upload_to_r2(json).await?;
     let title = json
-        .get("title")
+        .get("tiny_title")
         .and_then(|v| v.as_str())
         .unwrap_or("No title available.");
     let body = json
@@ -77,8 +77,10 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         "data": {
             "json_url": json_url,
             "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
+            "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
             "title": if importance != "high" { Some(title) } else { None },
             "body": if importance != "high" { Some(body) } else { None },
+            "affected": json.get("affected"),
         }
     });
 
