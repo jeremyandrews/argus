@@ -548,7 +548,7 @@ async fn process_city(
 
 async fn article_is_relevant(
     article_text: &str,
-    topic_name: &str,
+    topic_prompt: &str,
     llm_params: &mut LLMParams,
     worker_detail: &WorkerDetail,
 ) -> bool {
@@ -559,7 +559,7 @@ async fn article_is_relevant(
         .unwrap_or_default();
 
     // Confirm the article relevance
-    let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_name);
+    let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_prompt);
     if let Some(confirm_response) =
         generate_llm_response(&confirm_prompt, &llm_params, worker_detail).await
     {
@@ -639,14 +639,16 @@ async fn process_topics(
         if parts.is_empty() {
             continue;
         }
-        let topic_name = parts[0];
-        if topic_name.is_empty() {
+        let topic_name = parts[0].trim();
+        let topic_prompt = parts[1].trim();
+
+        if topic_name.is_empty() || topic_prompt.is_empty() {
             continue;
         }
 
-        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if about {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name);
+        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if about {}: {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, topic_prompt);
 
-        let yes_no_prompt = prompts::is_this_about(article_text, topic_name);
+        let yes_no_prompt = prompts::is_this_about(article_text, topic_prompt);
         let mut llm_params = extract_llm_params(params);
         if let Some(yes_no_response) =
             generate_llm_response(&yes_no_prompt, &llm_params, worker_detail).await
@@ -666,7 +668,7 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                if article_is_relevant(article_text, topic_name, &mut llm_params, worker_detail)
+                if article_is_relevant(article_text, topic_prompt, &mut llm_params, worker_detail)
                     .await
                 {
                     // Add to matched topics queue

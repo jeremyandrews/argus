@@ -141,7 +141,7 @@ Identify the strength of arguments and evidence presented in one or two sentence
     )
 }
 
-pub fn relation_to_topic_prompt(article_text: &str, topic_name: &str) -> String {
+pub fn relation_to_topic_prompt(article_text: &str, topic_prompt: &str) -> String {
     format!( "{article} |
 Briefly explain in one or two sentences how this relates to {topic}, starting with 'This relates to {topic}.'.
 
@@ -151,7 +151,7 @@ Briefly explain in one or two sentences how this relates to {topic}, starting wi
 
 {format_instructions}",
         article = article_text,
-        topic = topic_name,
+        topic = topic_prompt,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
         format_instructions = FORMAT_INSTRUCTIONS

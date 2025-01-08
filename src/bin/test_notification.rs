@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
         "url": "http://example.com/1/2/3",
         "tiny_summary": "This is a high priority notification.",
         "tiny_title": "High Priority Notification",
+        "affected": "This affects Bob, Alice.",
         "summary": "This is a *long* summary with lots of _detail_.\nIt is more than one line long.\n * One\n * Two\n * Three",
         "critical_analysis": "This is a critical analysis.",
         "logical_fallacies": "This explores logical fallacies.",
