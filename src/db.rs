@@ -1,3 +1,4 @@
+use rand::Rng;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Pool, Row, Sqlite,
@@ -7,7 +8,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
-use tokio::time::Duration;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, instrument};
 use url::Url;
 use urlnorm::UrlNormalizer;
@@ -17,6 +18,20 @@ use crate::TARGET_DB;
 #[derive(Clone)]
 pub struct Database {
     pool: Pool<Sqlite>,
+}
+
+// Helper method to check if an sqlx error is a database lock error
+trait DbLockErrorExt {
+    fn is_database_lock_error(&self) -> bool;
+}
+
+impl DbLockErrorExt for sqlx::Error {
+    fn is_database_lock_error(&self) -> bool {
+        match self {
+            sqlx::Error::Database(err) => err.code().map_or(false, |c| c == "55P03"), // check if the error is a "lock_timeout" error
+            _ => false,
+        }
+    }
 }
 
 impl Database {
@@ -441,19 +456,21 @@ impl Database {
                 return Err(sqlx::Error::Protocol("Invalid URL provided".into()));
             }
         };
-
         // Normalize the URL
         let normalizer = UrlNormalizer::default();
         let normalized_url = normalizer.compute_normalization_string(&parsed_url);
-
         let seen_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time travel")
             .as_secs()
             .to_string();
-
         debug!(target: TARGET_DB, "Adding/updating article: {}", url);
-        sqlx::query(
+
+        let mut backoff = 100; // initial delay in milliseconds
+        let max_retries = 5;
+
+        for attempt in 1..=max_retries {
+            match sqlx::query(
             r#"
             INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
@@ -470,8 +487,8 @@ impl Database {
             "#,
         )
         .bind(url)
-        .bind(normalized_url)
-        .bind(seen_at)
+        .bind(&normalized_url)
+        .bind(&seen_at)
         .bind(is_relevant)
         .bind(category)
         .bind(analysis)
@@ -480,10 +497,33 @@ impl Database {
         .bind(title_domain_hash)
         .bind(r2_url)
         .execute(&self.pool)
-        .await?;
+        .await {
+            Ok(_) => {
+                debug!(target: TARGET_DB, "Article added/updated: {}", url);
+                return Ok(());
+            }
+            Err(err) => {
+                if err.is_database_lock_error() {
+                    info!(target: TARGET_DB, "Database is locked, waiting {}ms before retrying attempt {}/{}: {}", backoff, attempt, max_retries, url);
+                    sleep(Duration::from_millis(backoff)).await;
+                    backoff = backoff.saturating_mul(2); // exponential backoff
+                    if attempt == max_retries {
+                        // Introduce some randomness to avoid the "thundering herd problem"
+                        let random_jitter = rand::thread_rng().gen_range(0..200);
+                        backoff += random_jitter;
+                        sleep(Duration::from_millis(backoff)).await;
+                    }
+                } else {
+                    error!(target: TARGET_DB, "Failed to add article: {}", err);
+                    return Err(err);
+                }
+            }
+        }
+        }
 
-        debug!(target: TARGET_DB, "Article added/updated: {}", url);
-        Ok(())
+        Err(sqlx::Error::Protocol(
+            "Maximum retries exceeded for adding article".into(),
+        ))
     }
 
     #[instrument(target = "db", level = "info", skip(self))]
