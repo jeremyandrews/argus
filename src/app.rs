@@ -84,7 +84,8 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
             } else {
                 serde_json::Value::Null
             },
-            "content-available": 1
+            "content-available": 1,
+            "mutable-content": true
         },
         "data": {
             "json_url": json_url,
