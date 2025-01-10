@@ -1,5 +1,4 @@
 use anyhow::Result;
-use serde_json::json;
 use tracing::info;
 use tracing_subscriber;
 
@@ -12,9 +11,10 @@ async fn main() -> Result<()> {
         .with_max_level(tracing::Level::INFO) // Display INFO and higher
         .init();
 
-    info!("Starting the application");
+    info!("Sending test notifications ...");
 
-    let json = json!({
+    // Test case: Low priority notification
+    let low_priority_json = serde_json::json!({
         "topic": "Test",
         "title": "Low priority",
         "url": "http://example.com/1/2/3",
@@ -28,9 +28,11 @@ async fn main() -> Result<()> {
         "elapsed_time": "12345",
         "model": "test model"
     });
-    app::send_to_app(&json, "low").await;
 
-    let json = json!({
+    app::send_to_app(&low_priority_json, "low").await;
+
+    // Test case: High priority notification
+    let high_priority_json = serde_json::json!({
         "topic": "Test",
         "title": "High priority",
         "url": "http://example.com/1/2/3",
@@ -45,6 +47,10 @@ async fn main() -> Result<()> {
         "elapsed_time": "12345",
         "model": "test model"
     });
-    app::send_to_app(&json, "high").await;
+
+    app::send_to_app(&high_priority_json, "high").await;
+
+    info!("Finished sending notifications");
+
     Ok(())
 }
