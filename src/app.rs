@@ -174,97 +174,56 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     };
     info!("Successfully retrieved OAuth token.");
 
-    // Build the notification payload
-    let priority = if importance == "high" {
-        "high"
-    } else {
-        "normal"
-    };
-
-    println!("priority: {}", priority);
-    let payload = serde_json::json!({
-        "message": {
-            "notification": {
+    // Build the notification payload.
+    let aps = if importance == "high" {
+        // High-priority notification payload
+        serde_json::json!({
+            "alert": {
                 "title": title,
                 "body": body
             },
-            "data": {
-                "json_url": json_url,
-                "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
-                "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
-                "domain": domain,
-            },
+            "sound": "default",
+            "badge": 1
+        })
+    } else {
+        // Low-priority notification payload
+        serde_json::json!({
+            "content-available": 1,
+            "sound": "default",
+            "badge": 1
+        })
+    };
+    let data = if importance == "high" {
+        // Data for high-priority notifications (exclude title and body)
+        serde_json::json!({
+            "json_url": json_url,
+            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
+            "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
+            "domain": domain
+        })
+    } else {
+        // Data for low-priority notifications (include title and body)
+        serde_json::json!({
+            "json_url": json_url,
+            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
+            "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
+            "domain": domain,
+            "title": title,
+            "body": body
+        })
+    };
+    let payload = serde_json::json!({
+        "message": {
+            "data": data,
             "android": {
-                "priority": priority
+                "priority": if importance == "high" { "high" } else { "normal" }
             },
             "apns": {
                 "headers": {
                     "apns-priority": if importance == "high" { "10" } else { "5" }
                 },
                 "payload": {
-                    "aps": {
-                        "alert": {
-                            "title": title,
-                            "body": body
-                        },
-                        "content-available": 1
-                    }
-                }
-            },
-            "token": "dX38ZiPQ5UrNgE8_1j6ASo:APA91bHa9GOHCprsgCXtSanaUIMnYJ5g_jGyUphTmcpAbrw1koqzUpImE0WkBBRvc-hm0IP51rxbKoWvQOUmwpTAKgv-dy64SOuIm28TzH8xYbVB6Xtc9Mc"
-        }
-    });
-    let payload = serde_json::json!({
-        "message": {
-            "notification": {
-                "title": title,
-                "body": body,
-            },
-            "data": {
-                "json_url": json_url,
-                "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
-                "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
-                "domain": domain
-            },
-            "android": {
-                "priority": "high"
-            },
-            "apns": {
-                "headers": {
-                    "apns-priority": "10"
-                },
-                "payload": {
-                    "aps": {
-                        "sound": "default",
-                        "badge": 1
-                    },
-                }
-            },
-            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
-        }
-    });
-    let payload = serde_json::json!({
-        "message": {
-            "data": {
-                "json_url": json_url,
-                "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
-                "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
-                "domain": domain,
-                "title": title,
-                "body": body
-            },
-            "android": {
-                "priority": "high"
-            },
-            "apns": {
-                "headers": {
-                    "apns-priority": "10"
-                },
-                "payload": {
-                    "aps": {
-                        "sound": "default",
-                        "badge": 1
-                    }
+                    "aps": aps
                 }
             },
             "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
