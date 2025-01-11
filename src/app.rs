@@ -182,6 +182,7 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
                 "title": title,
                 "body": body
             },
+            "mutable-content": 1,
             "sound": "default",
             "badge": 1
         })
