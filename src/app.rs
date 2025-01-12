@@ -13,6 +13,8 @@ use tracing::{error, info};
 use url::Url;
 use uuid::Uuid;
 
+use crate::db::Database;
+
 #[derive(Serialize)]
 struct Claims {
     iss: String,
@@ -50,7 +52,6 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     // Load required environment variables
     let team_id = env::var("APP_TEAM_ID").ok()?;
     let key_id = env::var("APP_KEY_ID").ok()?;
-    let device_token = env::var("APP_DEVICE_TOKEN").ok()?;
     let private_key_path = env::var("APP_PRIVATE_KEY_PATH").ok()?;
     let private_key = fs::read_to_string(&private_key_path).ok()?;
 
@@ -97,39 +98,49 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         }
     });
 
+    // Extract topic
+    let topic = json.get("topic").and_then(|v| v.as_str()).unwrap_or("none");
+
     // Send notification
     let client = reqwest::Client::builder()
         .http2_prior_knowledge()
         .build()
         .ok()?;
-    let apns_url = format!(
-        "https://api.sandbox.push.apple.com/3/device/{}",
-        device_token
-    );
 
-    match client
-        .post(&apns_url)
-        .header("apns-topic", "com.andrews.Argus.Argus")
-        .header("apns-priority", priority)
-        .header("authorization", format!("bearer {}", jwt_token))
-        .header("Content-Type", "application/json")
-        .body(payload.to_string())
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-    {
-        Ok(response) if response.status().is_success() => {
-            info!("Notification sent successfully.");
-        }
-        Ok(response) => {
-            error!(
-                "Failed to send notification: Status = {}, Response = {:?}",
-                response.status(),
-                response
-            );
-        }
-        Err(e) => {
-            error!("Failed to send POST request to APNs: {}", e);
+    // Fetch subscribed devices
+    let db = Database::instance().await;
+    let device_tokens = db.fetch_devices_for_topic(topic).await.ok()?;
+
+    for device_token in device_tokens {
+        let apns_url = format!(
+            "https://api.sandbox.push.apple.com/3/device/{}",
+            device_token
+        );
+
+        match client
+            .post(&apns_url)
+            .header("apns-topic", "com.andrews.Argus.Argus")
+            .header("apns-priority", priority)
+            .header("authorization", format!("bearer {}", jwt_token))
+            .header("Content-Type", "application/json")
+            .body(payload.to_string())
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                info!("Notification sent successfully.");
+            }
+            Ok(response) => {
+                error!(
+                    "Failed to send notification: Status = {}, Response = {:?}",
+                    response.status(),
+                    response
+                );
+            }
+            Err(e) => {
+                error!("Failed to send POST request to APNs: {}", e);
+            }
         }
     }
 

@@ -117,6 +117,22 @@ impl Database {
                 timestamp TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_life_safety_article_url ON life_safety_queue (article_url);
+
+            CREATE TABLE IF NOT EXISTS devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL UNIQUE
+            );
+            
+            CREATE TABLE IF NOT EXISTS device_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                topic TEXT NOT NULL,
+                FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
+                UNIQUE(device_id, topic)
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_device_id ON device_subscriptions (device_id);
+            CREATE INDEX IF NOT EXISTS idx_topic_device_id ON device_subscriptions (topic, device_id);
             "#,
         )
         .execute(&mut conn)
@@ -138,6 +154,89 @@ impl Database {
                     .expect("Failed to initialize database")
             })
             .await
+    }
+
+    /// Add a new device to the `devices` table (returns the device ID's internal `id`)
+    pub async fn add_device(&self, device_id: &str) -> Result<i64, sqlx::Error> {
+        let id = sqlx::query(
+            r#"
+                INSERT INTO devices (device_id)
+                VALUES (?1)
+                ON CONFLICT(device_id) DO UPDATE SET device_id = excluded.device_id
+                RETURNING id;
+                "#,
+        )
+        .bind(device_id)
+        .fetch_one(&self.pool)
+        .await?
+        .get("id");
+        Ok(id)
+    }
+
+    /// Subscribe a device to a specific topic
+    pub async fn subscribe_to_topic(
+        &self,
+        device_id: &str,
+        topic: &str,
+    ) -> Result<(), sqlx::Error> {
+        let device_id_internal = self.add_device(device_id).await?;
+        sqlx::query(
+            r#"
+                INSERT INTO device_subscriptions (device_id, topic)
+                VALUES (?1, ?2)
+                ON CONFLICT DO NOTHING;
+                "#,
+        )
+        .bind(device_id_internal)
+        .bind(topic)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Unsubscribe a device from a specific topic
+    pub async fn unsubscribe_from_topic(
+        &self,
+        device_id: &str,
+        topic: &str,
+    ) -> Result<(), sqlx::Error> {
+        let device_id_internal: Option<i64> =
+            sqlx::query("SELECT id FROM devices WHERE device_id = ?1")
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .map(|row| row.get("id"));
+
+        if let Some(device_id_internal) = device_id_internal {
+            sqlx::query(
+                r#"
+                    DELETE FROM device_subscriptions
+                    WHERE device_id = ?1 AND topic = ?2;
+                    "#,
+            )
+            .bind(device_id_internal)
+            .bind(topic)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Fetch all device IDs subscribed to a specific topic
+    pub async fn fetch_devices_for_topic(&self, topic: &str) -> Result<Vec<String>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+                SELECT d.device_id
+                FROM device_subscriptions ds
+                JOIN devices d ON ds.device_id = d.id
+                WHERE ds.topic = ?1;
+                "#,
+        )
+        .bind(topic)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|row| row.get("device_id")).collect())
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, title))]
