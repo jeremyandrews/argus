@@ -526,6 +526,39 @@ impl Database {
         ))
     }
 
+    /// Update an article with R2 details
+    #[instrument(target = "db", level = "info", skip(self))]
+    pub async fn update_article_with_r2_details(
+        &self,
+        url: &str,
+        r2_url: &str,
+    ) -> Result<(), sqlx::Error> {
+        debug!(target: TARGET_DB, "Updating article with R2 details: {}", url);
+
+        let result = sqlx::query(
+            r#"
+            UPDATE articles
+            SET r2_url = ?1
+            WHERE url = ?2
+            "#,
+        )
+        .bind(r2_url)
+        .bind(url)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => {
+                debug!(target: TARGET_DB, "Successfully updated R2 details for article: {}", url);
+                Ok(())
+            }
+            Err(err) => {
+                error!(target: TARGET_DB, "Failed to update R2 details for article: {}: {:?}", url, err);
+                Err(err)
+            }
+        }
+    }
+
     #[instrument(target = "db", level = "info", skip(self))]
     pub async fn has_seen(&self, url: &str) -> Result<bool, sqlx::Error> {
         debug!(target: TARGET_DB, "Checking if article has been seen: {}", url);

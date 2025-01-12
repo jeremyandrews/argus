@@ -1,6 +1,6 @@
 use serde_json::json;
 use tokio::time::{sleep, Duration, Instant};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::app::send_to_app;
 use crate::db::Database;
@@ -404,31 +404,7 @@ async fn process_analysis_item(
                     "model": llm_params.model
                 });
 
-                // Check again if the article hash already exists in the database before posting to Slack
-                if db.has_hash(&article_hash).await.unwrap_or(false)
-                    || db
-                        .has_title_domain_hash(&title_domain_hash)
-                        .await
-                        .unwrap_or(false)
-                {
-                    info!(
-                        target: TARGET_LLM_REQUEST,
-                        "Article with hash {} or title_domain_hash {} was already processed (third check). Skipping Slack post.",
-                        article_hash, title_domain_hash
-                    );
-                    // No item processed, this was a duplicate.
-                    return false;
-                }
-
-                send_to_slack(
-                    &format!("*<{}|{}>*", article_url, article_title),
-                    &detailed_response_json.to_string(),
-                    slack_token,
-                    slack_channel,
-                )
-                .await;
-                let r2_url = send_to_app(&detailed_response_json, "high").await;
-
+                // Save the article first
                 if let Err(e) = db
                     .add_article(
                         &article_url,
@@ -438,15 +414,41 @@ async fn process_analysis_item(
                         Some(&tiny_summary),
                         Some(&article_hash),
                         Some(&title_domain_hash),
-                        r2_url.as_deref(),
+                        None, // R2 URL will be updated later
                     )
                     .await
                 {
                     error!(
                         target: TARGET_LLM_REQUEST,
-                        "Failed to update database: {:?}", e
+                        "Failed to save article to database: {:?}", e
                     );
+                    return false; // Skip processing if saving fails
                 }
+
+                // Send notification to app
+                if let Some(r2_url) = send_to_app(&detailed_response_json, "high").await {
+                    // Update the article with R2 details
+                    if let Err(e) = db
+                        .update_article_with_r2_details(&article_url, &r2_url)
+                        .await
+                    {
+                        error!(
+                            target: TARGET_LLM_REQUEST,
+                            "Failed to update R2 details in database: {:?}", e
+                        );
+                    }
+                } else {
+                    warn!("failed to send Alert: {} to app...", article_url);
+                }
+
+                // Send notification to Slack
+                send_to_slack(
+                    &format!("*<{}|{}>*", article_url, article_title),
+                    &detailed_response_json.to_string(),
+                    slack_token,
+                    slack_channel,
+                )
+                .await;
             }
             // An item was processed, return to process another.
             return true;
@@ -510,18 +512,7 @@ async fn process_analysis_item(
                             "model": llm_params.model
                         });
 
-                        send_to_slack(
-                            &format!("*<{}|{}>*", article_url, article_title),
-                            &response_json.to_string(),
-                            slack_token,
-                            slack_channel,
-                        )
-                        .await;
-
-                        let r2_url = send_to_app(&response_json, "low").await;
-
-                        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: sent analysis to slack: {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
-
+                        // Save the article first
                         if let Err(e) = db
                             .add_article(
                                 &article_url,
@@ -531,14 +522,48 @@ async fn process_analysis_item(
                                 Some(&tiny_summary),
                                 Some(&article_hash),
                                 Some(&title_domain_hash),
-                                r2_url.as_deref(),
+                                None, // Placeholder for R2 URL, will update later
                             )
                             .await
                         {
-                            error!(target: TARGET_LLM_REQUEST, "Failed to update database: {:?}", e);
+                            error!(
+                                target: TARGET_LLM_REQUEST,
+                                "Failed to save article to database: {:?}", e
+                            );
+                            return false; // Skip processing if saving fails
                         }
-                        // An item was processed, return to process another.
-                        return true;
+
+                        // Send notification to app
+                        if let Some(r2_url) = send_to_app(&response_json, "low").await {
+                            // Update the article with R2 details
+                            if let Err(e) = db
+                                .update_article_with_r2_details(&article_url, &r2_url)
+                                .await
+                            {
+                                error!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "Failed to update R2 details in database: {:?}", e
+                                );
+                            }
+                        } else {
+                            warn!("failed to send analysis: {} to app...", article_url);
+                        }
+
+                        // Send notification to slack
+                        send_to_slack(
+                            &format!("*<{}|{}>*", article_url, article_title),
+                            &response_json.to_string(),
+                            slack_token,
+                            slack_channel,
+                        )
+                        .await;
+
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "[{} {} {}]: sent analysis to slack: {}.",
+                            worker_detail.name, worker_detail.id, worker_detail.model, article_url
+                        );
+                        return true; // An item was processed
                     } else {
                         return false;
                     }
