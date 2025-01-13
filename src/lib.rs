@@ -1,6 +1,8 @@
 pub mod analysis_worker;
-pub mod app;
-pub mod app_api;
+pub mod app {
+    pub mod api;
+    pub mod util;
+}
 pub mod db;
 pub mod decision_worker;
 pub mod environment;

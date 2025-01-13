@@ -20,7 +20,7 @@ const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
 const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
 use argus::analysis_worker;
-use argus::app_api;
+use argus::app::api;
 use argus::decision_worker;
 use argus::environment;
 use argus::logging;
@@ -329,7 +329,7 @@ async fn main() -> Result<()> {
     let app_api_handle = tokio::spawn(async move {
         let thread_name = "App API Loop".to_string();
         info!("{}: Starting App API (app_api_loop)", thread_name);
-        match app_api::app_api_loop().await {
+        match api::app_api_loop().await {
             Ok(_) => {
                 info!(target: TARGET_WEB_REQUEST, "{}: app_api_loop completed successfully.", thread_name)
             }
