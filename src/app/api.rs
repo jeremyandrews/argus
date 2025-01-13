@@ -209,8 +209,12 @@ async fn unsubscribe_from_topic(
         device_id
     );
 
-    // Validate the provided topic
-    if !VALID_TOPICS.contains(&payload.topic) {
+    // Validate the provided topic or allow "Alert" and "Test" topics
+    let mut valid_topics = VALID_TOPICS.clone();
+    valid_topics.insert("Alert".to_string());
+    valid_topics.insert("Test".to_string());
+
+    if !valid_topics.contains(&payload.topic) {
         warn!(
             "app::api unsubscribe_from_topic invalid topic: {}",
             payload.topic
