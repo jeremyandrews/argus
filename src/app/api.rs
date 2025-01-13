@@ -12,27 +12,32 @@ use tracing::info;
 
 use crate::db::Database;
 
+/// Represents the response for an authentication request, containing a JWT token.
 #[derive(Serialize)]
 struct AuthResponse {
     token: String,
 }
 
+/// Represents the claims stored in a JWT token.
 #[derive(Serialize, Deserialize)]
 struct Claims {
-    sub: String,
-    exp: usize,
+    sub: String, // Subject (e.g., device ID)
+    exp: usize,  // Expiration time (as a timestamp)
 }
 
+/// Represents the request payload for authentication, containing a device ID.
 #[derive(Deserialize)]
 struct AuthRequest {
     device_id: String,
 }
 
+/// Represents the request payload for topic subscription and unsubscription.
 #[derive(Deserialize)]
 struct TopicRequest {
     topic: String,
 }
 
+/// Static private key used for encoding and decoding JWT tokens.
 static PRIVATE_KEY: Lazy<Mutex<Vec<u8>>> = Lazy::new(|| {
     let rng = SystemRandom::new();
     let mut key_bytes = vec![0u8; 32]; // 256-bit key for HMAC
@@ -41,16 +46,19 @@ static PRIVATE_KEY: Lazy<Mutex<Vec<u8>>> = Lazy::new(|| {
     Mutex::new(key_bytes)
 });
 
+/// Static encoding key for generating JWT tokens.
 static ENCODING_KEY: Lazy<EncodingKey> = Lazy::new(|| {
     let key = PRIVATE_KEY.lock().unwrap();
     EncodingKey::from_secret(&key)
 });
 
+/// Static decoding key for validating JWT tokens.
 static DECODING_KEY: Lazy<DecodingKey> = Lazy::new(|| {
     let key = PRIVATE_KEY.lock().unwrap();
     DecodingKey::from_secret(&key)
 });
 
+/// Static set of valid topics parsed from an environment variable.
 static VALID_TOPICS: Lazy<HashSet<String>> = Lazy::new(|| {
     let topics_env = std::env::var("TOPICS").unwrap_or_default();
     topics_env
@@ -59,6 +67,7 @@ static VALID_TOPICS: Lazy<HashSet<String>> = Lazy::new(|| {
         .collect()
 });
 
+/// Main application loop, setting up and running the Axum-based API server.
 pub async fn app_api_loop() -> Result<()> {
     let app = Router::new()
         .route("/status", post(status_check))
@@ -85,6 +94,7 @@ pub async fn app_api_loop() -> Result<()> {
     Ok(())
 }
 
+/// Handles authentication requests by validating the device ID and returning a JWT token.
 async fn authenticate(Json(payload): Json<AuthRequest>) -> Json<AuthResponse> {
     info!("Authenticating device_id: {}", payload.device_id);
 
@@ -107,6 +117,7 @@ async fn authenticate(Json(payload): Json<AuthRequest>) -> Json<AuthResponse> {
     Json(AuthResponse { token })
 }
 
+/// Subscribes a device to a topic after validating the JWT and topic validity.
 async fn subscribe_to_topic(
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<TopicRequest>,
@@ -128,6 +139,7 @@ async fn subscribe_to_topic(
     Ok(StatusCode::OK)
 }
 
+/// Unsubscribes a device from a topic after validating the JWT and topic validity.
 async fn unsubscribe_from_topic(
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<TopicRequest>,
@@ -149,6 +161,7 @@ async fn unsubscribe_from_topic(
     Ok(StatusCode::OK)
 }
 
+/// Checks the server's status, optionally validating a JWT if provided.
 async fn status_check(
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
 ) -> Result<&'static str, StatusCode> {
