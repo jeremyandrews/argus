@@ -158,19 +158,34 @@ impl Database {
 
     /// Add a new device to the `devices` table (returns the device ID's internal `id`)
     pub async fn add_device(&self, device_id: &str) -> Result<i64, sqlx::Error> {
-        let id = sqlx::query(
+        // Attempt to insert the device
+        let result = sqlx::query(
             r#"
-                INSERT INTO devices (device_id)
-                VALUES (?1)
-                ON CONFLICT(device_id) DO NOTHING
-                RETURNING id;
-                "#,
+            INSERT INTO devices (device_id)
+            VALUES (?1)
+            ON CONFLICT(device_id) DO NOTHING
+            RETURNING id;
+            "#,
         )
         .bind(device_id)
-        .fetch_one(&self.pool)
-        .await?
-        .get("id");
-        Ok(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = result {
+            // If the insert was successful, return the newly inserted id
+            Ok(row.get("id"))
+        } else {
+            // If the device already exists, retrieve its id
+            let existing_id = sqlx::query_scalar(
+                r#"
+                SELECT id FROM devices WHERE device_id = ?1;
+                "#,
+            )
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await?;
+            Ok(existing_id)
+        }
     }
 
     /// Subscribe a device to a specific topic
