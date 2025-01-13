@@ -1,10 +1,5 @@
 use anyhow::Result;
-use axum::{
-    extract::Json,
-    http::StatusCode,
-    routing::{get, post},
-    Router,
-};
+use axum::{extract::Json, http::StatusCode, routing::post, Router};
 use axum_extra::extract::TypedHeader;
 use axum_extra::headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -52,7 +47,7 @@ static DECODING_KEY: Lazy<DecodingKey> = Lazy::new(|| {
 pub async fn app_api_loop() -> Result<()> {
     // Build the Axum router
     let app = Router::new()
-        .route("/status", get(status_check))
+        .route("/status", post(status_check))
         .route("/authenticate", post(authenticate));
 
     // Determine the port to listen on
