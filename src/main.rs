@@ -20,6 +20,7 @@ const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
 const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
 use argus::analysis_worker;
+use argus::app_api;
 use argus::decision_worker;
 use argus::environment;
 use argus::logging;
@@ -322,6 +323,16 @@ async fn main() -> Result<()> {
 
     // Define panic notification mechanism
     let panic_notify = Arc::new(Notify::new());
+
+    // Spawn the app_api_loop in a new thread
+    let app_api_notify = Arc::clone(&panic_notify);
+    let _app_api_handle = tokio::spawn(async move {
+        let thread_name = "App API Loop".to_string();
+        info!("{}: Starting", thread_name);
+        app_api::app_api_loop().await;
+        error!("{}: Exited unexpectedly.", thread_name);
+        app_api_notify.notify_one();
+    });
 
     // Spawn a thread to parse URLs from RSS feeds with monitoring.
     let rss_notify = Arc::clone(&panic_notify);
