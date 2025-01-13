@@ -132,11 +132,25 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
                 info!("Notification sent successfully.");
             }
             Ok(response) => {
+                let status = response.status();
+                let response_text = response.text().await.unwrap_or_default();
                 error!(
-                    "Failed to send notification: Status = {}, Response = {:?}",
-                    response.status(),
-                    response
+                    "Failed to send notification: Status = {}, Response = {}",
+                    status, response_text
                 );
+
+                // Check for 410 Unregistered status code
+                if status == reqwest::StatusCode::GONE || status == reqwest::StatusCode::NOT_FOUND {
+                    info!(
+                        "Device token {} is unregistered. Unsubscribing from all topics.",
+                        device_token
+                    );
+                    if let Err(e) = db.remove_device_token(&device_token).await {
+                        error!("Failed to unsubscribe device {}: {}", device_token, e);
+                    } else {
+                        info!("Device {} unsubscribed from all topics.", device_token);
+                    }
+                }
             }
             Err(e) => {
                 error!("Failed to send POST request to APNs: {}", e);

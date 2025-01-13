@@ -232,6 +232,37 @@ impl Database {
         Ok(rows_affected > 0)
     }
 
+    /// Remove a device token and its subscriptions from the database
+    pub async fn remove_device_token(&self, device_token: &str) -> Result<(), sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+
+        // Delete subscriptions for the device
+        sqlx::query(
+            r#"
+                DELETE FROM device_subscriptions
+                WHERE device_id = (SELECT id FROM devices WHERE device_id = ?1);
+                "#,
+        )
+        .bind(device_token)
+        .execute(&mut transaction)
+        .await?;
+
+        // Delete the device itself
+        sqlx::query(
+            r#"
+                DELETE FROM devices
+                WHERE device_id = ?1;
+                "#,
+        )
+        .bind(device_token)
+        .execute(&mut transaction)
+        .await?;
+
+        // Commit the transaction
+        transaction.commit().await?;
+        Ok(())
+    }
+
     /// Fetch all device IDs subscribed to a specific topic
     pub async fn fetch_devices_for_topic(&self, topic: &str) -> Result<Vec<String>, sqlx::Error> {
         let rows = sqlx::query(
