@@ -88,6 +88,14 @@ pub async fn app_api_loop() -> Result<()> {
 async fn authenticate(Json(payload): Json<AuthRequest>) -> Json<AuthResponse> {
     info!("Authenticating device_id: {}", payload.device_id);
 
+    // Basic validation for iOS device token
+    if payload.device_id.len() != 64 || !payload.device_id.chars().all(|c| c.is_ascii_hexdigit()) {
+        tracing::error!("Invalid iOS device token format: {}", payload.device_id);
+        return Json(AuthResponse {
+            token: "Invalid device token".to_string(),
+        });
+    }
+
     let claims = Claims {
         sub: payload.device_id.clone(),
         exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
