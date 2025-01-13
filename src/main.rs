@@ -326,7 +326,7 @@ async fn main() -> Result<()> {
 
     // Spawn the app_api_loop in a new thread
     let app_api_notify = Arc::clone(&panic_notify);
-    let _app_api_handle = tokio::spawn(async move {
+    let app_api_handle = tokio::spawn(async move {
         let thread_name = "App API Loop".to_string();
         info!("{}: Starting App API (app_api_loop)", thread_name);
         match app_api::app_api_loop().await {
@@ -339,6 +339,11 @@ async fn main() -> Result<()> {
             }
         }
     });
+
+    // Await app_api completion
+    if let Err(e) = app_api_handle.await {
+        error!(target: TARGET_WEB_REQUEST, "App API (app_api_loop) encountered an error: {}", e);
+    }
 
     // Spawn a thread to parse URLs from RSS feeds with monitoring.
     let rss_notify = Arc::clone(&panic_notify);
@@ -355,6 +360,11 @@ async fn main() -> Result<()> {
             }
         }
     });
+
+    // Await rss_loop completion
+    if let Err(e) = rss_handle.await {
+        error!(target: TARGET_WEB_REQUEST, "RSS task (rss_loop) encountered an error: {}", e);
+    }
 
     // Launch DECISION workers
     let mut decision_handles = Vec::new();
@@ -434,11 +444,6 @@ async fn main() -> Result<()> {
         error!("A thread has exited or panicked. Triggering main process panic.");
         panic!("Thread failure detected");
     });
-
-    // Await task completions
-    if let Err(e) = rss_handle.await {
-        error!(target: TARGET_WEB_REQUEST, "RSS task encountered an error: {}", e);
-    }
 
     let decision_results = join_all(decision_handles).await;
     for (i, result) in decision_results.into_iter().enumerate() {
