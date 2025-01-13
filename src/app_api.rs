@@ -1,7 +1,15 @@
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use anyhow::Result;
+use base64::Engine;
+use ring::rand::{SecureRandom, SystemRandom};
+use serde::Serialize;
 use std::env;
 use tracing::info;
+
+#[derive(Serialize)]
+struct AuthResponse {
+    token: String,
+}
 
 pub async fn app_api_loop() -> Result<()> {
     // Get the port from environment variables or default to 8080
@@ -17,8 +25,8 @@ pub async fn app_api_loop() -> Result<()> {
     actix_web::rt::System::new().block_on(async {
         HttpServer::new(|| {
             App::new()
-                .route("/", web::get().to(handle_get))
-                .route("/", web::post().to(handle_post))
+                .route("/status", web::get().to(status_check))
+                .route("/authenticate", web::post().to(authenticate))
         })
         .bind(server_address)?
         .run()
@@ -28,12 +36,27 @@ pub async fn app_api_loop() -> Result<()> {
     Ok(())
 }
 
-async fn handle_get(_req: HttpRequest) -> impl Responder {
-    info!("Handling GET request");
-    HttpResponse::Ok().body("GET request received")
+/// Status check endpoint: Replies with "OK" to a GET request
+async fn status_check(_req: HttpRequest) -> impl Responder {
+    info!("Handling status check GET request");
+    HttpResponse::Ok().body("OK")
 }
 
-async fn handle_post(_req: HttpRequest) -> impl Responder {
-    info!("Handling POST request");
-    HttpResponse::Ok().body("POST request received")
+/// Keyless authentication endpoint: Generates a cryptographically secure 64-character token
+async fn authenticate(_req: HttpRequest) -> impl Responder {
+    info!("Handling keyless authentication POST request");
+
+    let rng = SystemRandom::new();
+    let mut token_bytes = [0u8; 48]; // 48 bytes = 64 characters in Base64
+    if let Err(e) = rng.fill(&mut token_bytes) {
+        info!("Failed to generate secure random bytes: {:?}", e);
+        return HttpResponse::InternalServerError().body("Failed to generate token");
+    }
+
+    // Use the `URL_SAFE_NO_PAD` engine for encoding
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&token_bytes);
+
+    let response = AuthResponse { token };
+
+    HttpResponse::Ok().json(response)
 }
