@@ -426,8 +426,14 @@ async fn process_analysis_item(
                     return false; // Skip processing if saving fails
                 }
 
+                let importance = if affected_summary.is_empty() {
+                    "low"
+                } else {
+                    "high"
+                };
+
                 // Send notification to app
-                if let Some(r2_url) = send_to_app(&detailed_response_json, "high").await {
+                if let Some(r2_url) = send_to_app(&detailed_response_json, importance).await {
                     // Update the article with R2 details
                     if let Err(e) = db
                         .update_article_with_r2_details(&article_url, &r2_url)
