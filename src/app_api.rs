@@ -13,8 +13,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tokio::net::TcpListener;
-use tracing::{info, Level};
-use tracing_subscriber;
+use tracing::info;
 
 #[derive(Serialize)]
 struct AuthResponse {
@@ -51,9 +50,6 @@ static DECODING_KEY: Lazy<DecodingKey> = Lazy::new(|| {
 });
 
 pub async fn app_api_loop() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
-
     // Build the Axum router
     let app = Router::new()
         .route("/status", get(status_check))
