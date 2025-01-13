@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde_json::json;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -29,7 +30,7 @@ pub async fn analysis_loop(
     default_slack_channel: &str,
     temperature: f32,
     fallback: Option<FallbackConfig>,
-) {
+) -> Result<()> {
     let db = Database::instance().await;
     let mut llm_params = LLMParams {
         llm_client: llm_client.clone(),

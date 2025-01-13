@@ -1,3 +1,4 @@
+use anyhow::Result;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use readability::extractor;
 use serde_json::Value;
@@ -85,7 +86,7 @@ pub async fn decision_loop(
     slack_token: &str,
     slack_channel: &str,
     places: Option<Value>,
-) {
+) -> Result<()> {
     let db = Database::instance().await;
     let mut rng = StdRng::from_entropy();
 

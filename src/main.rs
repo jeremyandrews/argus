@@ -328,32 +328,29 @@ async fn main() -> Result<()> {
     let app_api_notify = Arc::clone(&panic_notify);
     let _app_api_handle = tokio::spawn(async move {
         let thread_name = "App API Loop".to_string();
-        info!("{}: Starting", thread_name);
-        app_api::app_api_loop().await;
-        error!("{}: Exited unexpectedly.", thread_name);
-        app_api_notify.notify_one();
+        info!("{}: Starting App API (app_api_loop)", thread_name);
+        match app_api::app_api_loop().await {
+            Ok(_) => {
+                info!(target: TARGET_WEB_REQUEST, "{}: app_api_loop completed successfully.", thread_name)
+            }
+            Err(e) => {
+                error!("{}: app_api_loop failed: {}", thread_name, e);
+                app_api_notify.notify_one();
+            }
+        }
     });
 
     // Spawn a thread to parse URLs from RSS feeds with monitoring.
     let rss_notify = Arc::clone(&panic_notify);
-    let rss_handle = tokio::spawn({
-        let urls = urls.clone(); // Make sure urls are properly cloned
-        async move {
-            let thread_name = "RSS Feed Parser".to_string();
-            let result = tokio::spawn({
-                let thread_name = thread_name.clone();
-                async move {
-                    info!(target: TARGET_WEB_REQUEST, "{}: Starting RSS feed parsing.", thread_name);
-                    match rss::rss_loop(urls.clone()).await {
-                        Ok(_) => info!(target: TARGET_WEB_REQUEST, "{}: Parsing completed successfully.", thread_name),
-                        Err(e) => error!(target: TARGET_WEB_REQUEST, "{}: Parsing failed: {}", thread_name, e),
-                    }
-                }
-            })
-            .await;
-
-            if result.is_err() {
-                error!(target: TARGET_WEB_REQUEST, "{}: Panic occurred.", thread_name);
+    let rss_handle = tokio::spawn(async move {
+        let thread_name = "RSS Feed Parser".to_string();
+        info!(target: TARGET_WEB_REQUEST, "{}: Starting RSS feed parsing (rss_loop).", thread_name);
+        match rss::rss_loop(urls.clone()).await {
+            Ok(_) => {
+                info!(target: TARGET_WEB_REQUEST, "{}: rss_loop completed successfully.", thread_name)
+            }
+            Err(e) => {
+                error!(target: TARGET_WEB_REQUEST, "{}: rss_loop failed: {}", thread_name, e);
                 rss_notify.notify_one();
             }
         }
@@ -370,31 +367,25 @@ async fn main() -> Result<()> {
         let decision_worker_places = places.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Decision Worker {}", decision_id);
-        let decision_worker_handle = tokio::spawn({
-            let thread_name = thread_name.clone();
-            async move {
-                let result = tokio::spawn({
-                    let thread_name = thread_name.clone();
-                    async move {
-                        info!(target: TARGET_LLM_REQUEST, "{}: Starting with model '{}'", thread_name, decision_model);
-                        decision_worker::decision_loop(
-                            decision_id,
-                            &decision_worker_topics,
-                            &llm_client,
-                            &decision_model,
-                            temperature,
-                            &decision_worker_slack_token,
-                            &decision_worker_slack_channel,
-                            decision_worker_places,
-                        )
-                        .await;
-                        info!(target: TARGET_LLM_REQUEST, "{}: Completed successfully.", thread_name);
-                    }
-                })
-                .await;
-
-                if result.is_err() {
-                    error!(target: TARGET_LLM_REQUEST, "{}: Panic occurred.", thread_name);
+        let decision_worker_handle = tokio::spawn(async move {
+            info!(target: TARGET_LLM_REQUEST, "{}: Starting Decision Worker with model '{}' (decision_loop)", thread_name, decision_model);
+            match decision_worker::decision_loop(
+                decision_id,
+                &decision_worker_topics,
+                &llm_client,
+                &decision_model,
+                temperature,
+                &decision_worker_slack_token,
+                &decision_worker_slack_channel,
+                decision_worker_places,
+            )
+            .await
+            {
+                Ok(_) => {
+                    info!(target: TARGET_LLM_REQUEST, "{}: decision_loop completed successfully.", thread_name)
+                }
+                Err(e) => {
+                    error!(target: TARGET_LLM_REQUEST, "{}: decision_loop failed: {}", thread_name, e);
                     worker_notify.notify_one();
                 }
             }
@@ -410,31 +401,25 @@ async fn main() -> Result<()> {
         let analysis_worker_slack_channel = slack_channel.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Analysis Worker {}", worker_config.id);
-        let analysis_handle = tokio::spawn({
-            let thread_name = thread_name.clone();
-            async move {
-                let result = tokio::spawn({
-                    let thread_name = thread_name.clone();
-                    async move {
-                        info!(target: TARGET_LLM_REQUEST, "{}: Starting with model '{}'", thread_name, worker_config.model);
-                        analysis_worker::analysis_loop(
-                            worker_config.id,
-                            &decision_worker_topics,
-                            &worker_config.llm_client,
-                            &worker_config.model,
-                            &analysis_worker_slack_token,
-                            &analysis_worker_slack_channel,
-                            temperature,
-                            worker_config.fallback,
-                        )
-                        .await;
-                        info!(target: TARGET_LLM_REQUEST, "{}: Completed successfully.", thread_name);
-                    }
-                })
-                .await;
-
-                if result.is_err() {
-                    error!(target: TARGET_LLM_REQUEST, "{}: Panic occurred.", thread_name);
+        let analysis_handle = tokio::spawn(async move {
+            info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_config.model);
+            match analysis_worker::analysis_loop(
+                worker_config.id,
+                &decision_worker_topics,
+                &worker_config.llm_client,
+                &worker_config.model,
+                &analysis_worker_slack_token,
+                &analysis_worker_slack_channel,
+                temperature,
+                worker_config.fallback,
+            )
+            .await
+            {
+                Ok(_) => {
+                    info!(target: TARGET_LLM_REQUEST, "{}: analysis_loop completed successfully.", thread_name)
+                }
+                Err(e) => {
+                    error!(target: TARGET_LLM_REQUEST, "{}: analysis_loop failed: {}", thread_name, e);
                     worker_notify.notify_one();
                 }
             }
