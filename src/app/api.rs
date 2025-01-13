@@ -8,7 +8,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Mutex};
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::db::Database;
 
@@ -125,25 +125,56 @@ async fn subscribe_to_topic(
     let token = auth_header.token();
 
     // Validate JWT and extract claims
+    info!(
+        "app::api subscribe_to_topic starting for topic: {}",
+        payload.topic
+    );
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+        .map_err(|e| {
+            warn!(
+                "app::api subscribe_to_topic JWT validation failed: {:#?}",
+                e
+            );
+            StatusCode::UNAUTHORIZED
+        })?;
 
     let device_id = claims.claims.sub;
+    info!(
+        "app::api subscribe_to_topic validated JWT for device_id: {}",
+        device_id
+    );
 
     // Validate the provided topic
     if !VALID_TOPICS.contains(&payload.topic) {
+        warn!(
+            "app::api subscribe_to_topic invalid topic: {}",
+            payload.topic
+        );
         return Err(StatusCode::BAD_REQUEST);
     }
 
     // Get database instance and subscribe the device
+    info!(
+        "app::api subscribe_to_topic subscribing device_id: {} to topic: {}",
+        device_id, payload.topic
+    );
     let db: &Database = Database::instance().await;
     match db.subscribe_to_topic(&device_id, &payload.topic).await {
-        Ok(_) => Ok(StatusCode::OK), // Successfully subscribed
-        Err(sqlx::Error::Database(err)) if err.message().contains("UNIQUE constraint failed") => {
-            // The subscription already exists
-            Ok(StatusCode::CONFLICT)
+        Ok(_) => {
+            info!(
+                "app::api subscribe_to_topic successfully subscribed device_id: {} to topic: {}",
+                device_id, payload.topic
+            );
+            Ok(StatusCode::OK) // Successfully subscribed
         }
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR), // Generic error for other cases
+        Err(sqlx::Error::Database(err)) if err.message().contains("UNIQUE constraint failed") => {
+            warn!("app::api subscribe_to_topic subscription already exists for device_id: {} and topic: {}", device_id, payload.topic);
+            Ok(StatusCode::CONFLICT) // The subscription already exists
+        }
+        Err(e) => {
+            warn!("app::api subscribe_to_topic unexpected error: {:#?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR) // Generic error for other cases
+        }
     }
 }
 
@@ -155,22 +186,53 @@ async fn unsubscribe_from_topic(
     let token = auth_header.token();
 
     // Validate JWT and extract claims
+    info!(
+        "app::api unsubscribe_from_topic starting for topic: {}",
+        payload.topic
+    );
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+        .map_err(|e| {
+            warn!(
+                "app::api unsubscribe_from_topic JWT validation failed: {:#?}",
+                e
+            );
+            StatusCode::UNAUTHORIZED
+        })?;
 
     let device_id = claims.claims.sub;
+    info!(
+        "app::api unsubscribe_from_topic validated JWT for device_id: {}",
+        device_id
+    );
 
     // Validate the provided topic
     if !VALID_TOPICS.contains(&payload.topic) {
+        warn!(
+            "app::api unsubscribe_from_topic invalid topic: {}",
+            payload.topic
+        );
         return Err(StatusCode::BAD_REQUEST);
     }
 
     // Get database instance and unsubscribe the device
+    info!(
+        "app::api unsubscribe_from_topic unsubscribing device_id: {} from topic: {}",
+        device_id, payload.topic
+    );
     let db: &Database = Database::instance().await;
     match db.unsubscribe_from_topic(&device_id, &payload.topic).await {
-        Ok(true) => Ok(StatusCode::OK),          // Successfully unsubscribed
-        Ok(false) => Err(StatusCode::NOT_FOUND), // Subscription not found
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR), // Generic error for other cases
+        Ok(true) => {
+            info!("app::api unsubscribe_from_topic successfully unsubscribed device_id: {} from topic: {}", device_id, payload.topic);
+            Ok(StatusCode::OK) // Successfully unsubscribed
+        }
+        Ok(false) => {
+            warn!("app::api unsubscribe_from_topic no subscription found for device_id: {} and topic: {}", device_id, payload.topic);
+            Err(StatusCode::NOT_FOUND) // Subscription not found
+        }
+        Err(e) => {
+            warn!("app::api unsubscribe_from_topic unexpected error: {:#?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR) // Generic error for other cases
+        }
     }
 }
 
