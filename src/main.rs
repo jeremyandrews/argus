@@ -340,11 +340,6 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Await app_api completion
-    if let Err(e) = app_api_handle.await {
-        error!(target: TARGET_WEB_REQUEST, "App API (app_api_loop) encountered an error: {}", e);
-    }
-
     // Spawn a thread to parse URLs from RSS feeds with monitoring.
     let rss_notify = Arc::clone(&panic_notify);
     let rss_handle = tokio::spawn(async move {
@@ -360,11 +355,6 @@ async fn main() -> Result<()> {
             }
         }
     });
-
-    // Await rss_loop completion
-    if let Err(e) = rss_handle.await {
-        error!(target: TARGET_WEB_REQUEST, "RSS task (rss_loop) encountered an error: {}", e);
-    }
 
     // Launch DECISION workers
     let mut decision_handles = Vec::new();
@@ -459,7 +449,17 @@ async fn main() -> Result<()> {
         }
     }
 
-    watcher_handle.await.ok(); // Ensure watcher completes
+    watcher_handle.await.ok();
+
+    // Await app_api completion
+    if let Err(e) = app_api_handle.await {
+        error!(target: TARGET_WEB_REQUEST, "App API (app_api_loop) encountered an error: {}", e);
+    }
+
+    // Await rss_loop completion
+    if let Err(e) = rss_handle.await {
+        error!(target: TARGET_WEB_REQUEST, "RSS task (rss_loop) encountered an error: {}", e);
+    }
 
     Ok(())
 }
