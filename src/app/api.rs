@@ -123,20 +123,28 @@ async fn subscribe_to_topic(
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_header.token();
+
+    // Validate JWT and extract claims
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     let device_id = claims.claims.sub;
+
+    // Validate the provided topic
     if !VALID_TOPICS.contains(&payload.topic) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // Get database instance and subscribe the device
     let db: &Database = Database::instance().await;
-    db.subscribe_to_topic(&device_id, &payload.topic)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(StatusCode::OK)
+    match db.subscribe_to_topic(&device_id, &payload.topic).await {
+        Ok(_) => Ok(StatusCode::OK), // Successfully subscribed
+        Err(sqlx::Error::Database(err)) if err.message().contains("UNIQUE constraint failed") => {
+            // The subscription already exists
+            Ok(StatusCode::CONFLICT)
+        }
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR), // Generic error for other cases
+    }
 }
 
 /// Unsubscribes a device from a topic after validating the JWT and topic validity.
@@ -145,20 +153,25 @@ async fn unsubscribe_from_topic(
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_header.token();
+
+    // Validate JWT and extract claims
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     let device_id = claims.claims.sub;
+
+    // Validate the provided topic
     if !VALID_TOPICS.contains(&payload.topic) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // Get database instance and unsubscribe the device
     let db: &Database = Database::instance().await;
-    db.unsubscribe_from_topic(&device_id, &payload.topic)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(StatusCode::OK)
+    match db.unsubscribe_from_topic(&device_id, &payload.topic).await {
+        Ok(true) => Ok(StatusCode::OK),          // Successfully unsubscribed
+        Ok(false) => Err(StatusCode::NOT_FOUND), // Subscription not found
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR), // Generic error for other cases
+    }
 }
 
 /// Checks the server's status, optionally validating a JWT if provided.

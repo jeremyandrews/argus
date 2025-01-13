@@ -162,7 +162,7 @@ impl Database {
             r#"
                 INSERT INTO devices (device_id)
                 VALUES (?1)
-                ON CONFLICT(device_id) DO UPDATE SET device_id = excluded.device_id
+                ON CONFLICT(device_id) DO NOTHING
                 RETURNING id;
                 "#,
         )
@@ -199,27 +199,22 @@ impl Database {
         &self,
         device_id: &str,
         topic: &str,
-    ) -> Result<(), sqlx::Error> {
-        let device_id_internal: Option<i64> =
-            sqlx::query("SELECT id FROM devices WHERE device_id = ?1")
-                .bind(device_id)
-                .fetch_optional(&self.pool)
-                .await?
-                .map(|row| row.get("id"));
+    ) -> Result<bool, sqlx::Error> {
+        let rows_affected = sqlx::query(
+            r#"
+            DELETE FROM device_subscriptions
+            WHERE device_id = (SELECT id FROM devices WHERE device_id = ?1)
+            AND topic = ?2;
+            "#,
+        )
+        .bind(device_id)
+        .bind(topic)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
 
-        if let Some(device_id_internal) = device_id_internal {
-            sqlx::query(
-                r#"
-                    DELETE FROM device_subscriptions
-                    WHERE device_id = ?1 AND topic = ?2;
-                    "#,
-            )
-            .bind(device_id_internal)
-            .bind(topic)
-            .execute(&self.pool)
-            .await?;
-        }
-        Ok(())
+        // Return true if a subscription was removed, false otherwise
+        Ok(rows_affected > 0)
     }
 
     /// Fetch all device IDs subscribed to a specific topic
