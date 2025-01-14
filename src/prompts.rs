@@ -32,18 +32,12 @@ Use these formatting styles to make your text more readable and engaging. Only
 use special formatting when it makes the text more readable.";
 const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
 
-const CONTEXT_2024: &str = "
-- In January 2024, BRICS expanded, adding five nations and shifting global economic power. Record global temperatures highlighted the escalating climate crisis. A Supreme Court ruling on Trump’s immunity shaped U.S. legal precedents. Japan faced devastation from a 7.6 earthquake, and a U.S. winter storm exposed energy vulnerabilities.
-- In February 2024, significant events included devastating wildfires in Chile, the resignation of Hungary's president amid controversy, a deadly Israeli airstrike in Rafah, a severe U.S. winter storm disrupting energy production, and U.S. airstrikes targeting Iranian facilities in Iraq and Syria.
-- In March 2024, France enshrined abortion rights in its constitution, Sweden joined NATO, the U.S. Supreme Court ruled on ballot access for federal candidates, LeBron James reached 40,000 NBA points, and a Massachusetts Air National Guard member pleaded guilty to leaking security secrets.
-- In April 2024, a total solar eclipse united North America in awe. Concurrently, severe weather events highlighted the pressing issue of climate change. U.S. campuses saw pro-Palestinian protests, igniting debates on free speech. Donald Trump's criminal trial marked a historic legal moment, while UK local elections influenced political dynamics.
-- In May 2024, Vladimir Putin began his fifth term as Russian President; Chinese Premier Xi Jinping visited Europe, marking a significant diplomatic engagement; Israeli forces seized Gaza's Rafah crossing; Stormy Daniels testified in a trial involving Donald Trump; and severe floods in Brazil's Rio Grande do Sul state resulted in substantial loss of life and property.
-- In June 2024, the world faced record-breaking heatwaves, underscoring the urgent need for climate action. The 80th anniversary of D-Day was commemorated, honoring World War II sacrifices. The US Supreme Court's decision on homelessness influenced national policies. Apple announced a partnership with OpenAI to integrate generative AI into its devices, marking a significant technological advancement. G7 leaders committed $50 billion to support Ukraine, reflecting global geopolitical dynamics.
-- In July 2024, the Paris Olympics united nations in athletic competition; record-breaking heatwaves highlighted the climate crisis; President Biden withdrew from the US presidential race, endorsing Kamala Harris; the UK experienced a political shift with Labour's victory; and Israeli airstrikes in Gaza escalated regional tensions.
-- In August 2024, Earth experienced its hottest month on record, highlighting the urgent climate crisis. The Paris Olympics showcased global athletic talent, fostering unity. Financial markets faced volatility, with the IMF cautioning about future instability. The WHO declared mpox a public health emergency, urging international action. Escalating conflict in Gaza raised humanitarian and geopolitical concerns.
-- In September 2024, the UN's Summit of the Future led to a pivotal 'Pact for the Future.' A groundbreaking whole-eye and face transplant was declared successful. Hurricane Helene's unprecedented impact highlighted climate challenges. The Paris Olympics concluded, celebrated for inclusivity. Apple unveiled new products, influencing global technology trends.
-- In October 2024, the U.S. presidential campaign intensified ahead of the November election. Globally, the anniversary of the October 7 Hamas attack prompted widespread commemorations. Claudia Sheinbaum was inaugurated as Mexico's first female president. The BRICS summit in Russia focused on economic cooperation among emerging economies. Domestically, Hurricane Helene caused significant damage along the U.S. Gulf Coast, leading to extensive federal disaster response efforts.
-- In November 2024, Donald Trump's re-election and the Republican Party's regained House majority signaled potential policy shifts. Global markets reacted with strengthened U.S. stocks and dollar values. North Korea's deployment of over 10,000 troops to support Russia in Ukraine escalated the conflict. Additionally, 2024 is projected to be the hottest year on record, exceeding a 1.5°C temperature rise since pre-industrial times, underscoring the urgent need to address climate change.";
+const CONTEXT: &str = "
+In Q1 2024, BRICS expanded, shifting global economic power, while record temperatures highlighted climate concerns. Japan's 7.6 earthquake and U.S. winter storms exposed vulnerabilities. France enshrined abortion rights, Sweden joined NATO, and the U.S. Supreme Court ruled on key legal precedents. Major wildfires and geopolitical tensions added to global challenges.
+In Q2 2024, a solar eclipse captivated North America as record heatwaves and severe floods underscored climate urgency. Trump’s trial and free speech protests stirred U.S. discourse. Putin’s fifth term, Xi's European visit, and G7's $50B Ukraine aid shaped geopolitics. Apple’s AI integration marked tech innovation.
+In Q3 2024, the Paris Olympics fostered unity amidst record-breaking heatwaves and escalating Gaza tensions. Biden withdrew from the presidential race, endorsing Kamala Harris. The UN's 'Pact for the Future' and a historic face transplant marked milestones. Hurricane Helene and mpox emphasized urgent global challenges.
+In Q4 2024, Trump’s re-election and U.S. economic growth highlighted domestic shifts. Hurricane Helene devastated the Gulf Coast, while 2024 set a record as the hottest year. South Korea’s political turmoil and Assad’s overthrow reshaped global dynamics. The Notre-Dame reopening symbolized cultural resilience.
+- In January 2025, Donald Trump is inaugurated as the 47th U.S. President, signaling a major political shift. Los Angeles faces its most destructive wildfires, causing significant damage and loss of life. A European report confirms 2024 as the hottest year on record, emphasizing climate change urgency. Ukraine halts Russian gas transit, affecting European energy dynamics. Canadian Prime Minister Justin Trudeau announces his resignation, indicating impending leadership changes.";
 
 pub fn summary_prompt(article_text: &str) -> String {
     format!(
@@ -204,16 +198,16 @@ pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
     let year = today.format("%Y").to_string(); // Full year
 
     format!(
-        " A small sampling of events in 2024 since your knowledge cutoff: `{context}` |
+        " A small sampling of events since your knowledge cutoff in 2022: `{context}` |
 Article to review: `{article}` | Source URL: `{source_url}` |
-In 2-4 sentences, provide an analysis of the source of this content which includes any background information you know on the source, including details such as ownership, general purpose and goals, awards, scandals, and other relevant information.  Today is {month} {day} {year}, is the content likely recent or does it indicate otherwise?
+Analyze the source of the article, including if possible its background, ownership, purpose, and notable achievements or controversies. Consider factors such as awards, scandals, and any relevant historical context. Given the current date is {month} {day} {year}, assess whether the content appears to be recent or if there are indications it may be outdated. Please provide your analysis in 2-4 sentences.
 
 {write_in_clear_english}
 
 {dont_tell_me}
 
 {format_instructions}",
-        context = CONTEXT_2024,
+        context = CONTEXT,
         article = article_html,
         source_url = source_url,
         day = day,
