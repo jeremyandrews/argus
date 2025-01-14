@@ -99,6 +99,8 @@ pub async fn decision_loop(
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: starting decision_loop using {:?}.", worker_detail.name, worker_detail.id, worker_detail.model, llm_client);
 
     loop {
+        // Determine which article to select next: 30% of the time seelct the newest
+        // (latest news), 25% oldest (stale queue), 45% random.
         let roll = rng.gen_range(0..100);
         let order = if roll < 30 {
             "newest"
