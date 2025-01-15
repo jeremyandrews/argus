@@ -905,4 +905,28 @@ impl Database {
             .await?;
         Ok(row.is_some())
     }
+
+    /// Collect statistics from various tables in the database
+    pub async fn collect_stats(&self) -> Result<String, sqlx::Error> {
+        let queries = vec![
+            "SELECT COUNT(*) FROM articles WHERE is_relevant = false;",
+            "SELECT COUNT(*) FROM articles WHERE is_relevant = true;",
+            "SELECT COUNT(*) FROM rss_queue;",
+            "SELECT COUNT(*) FROM life_safety_queue;",
+            "SELECT COUNT(*) FROM matched_topics_queue;",
+            "SELECT COUNT(*) FROM devices;",
+        ];
+
+        let mut results = vec![];
+        for query in queries {
+            let count: i64 = sqlx::query_scalar(query).fetch_one(&self.pool).await?;
+            results.push(count);
+        }
+
+        Ok(results
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(":"))
+    }
 }

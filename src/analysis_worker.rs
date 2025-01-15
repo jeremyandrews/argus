@@ -388,6 +388,15 @@ async fn process_analysis_item(
                 && !logical_fallacies.is_empty()
                 && !relation_to_topic_str.is_empty()
             {
+                // Collect database statistics
+                let stats = match db.collect_stats().await {
+                    Ok(stats) => stats,
+                    Err(e) => {
+                        error!(target: TARGET_LLM_REQUEST, "Failed to collect database stats: {:?}", e);
+                        String::from("N/A")
+                    }
+                };
+
                 let detailed_response_json = json!({
                     "topic": "Alert",
                     "title": article_title,
@@ -402,7 +411,8 @@ async fn process_analysis_item(
                     "relation_to_topic": relation_to_topic_str,
                     "source_analysis": source_analysis,
                     "elapsed_time": start_time.elapsed().as_secs_f64(),
-                    "model": llm_params.model
+                    "model": llm_params.model,
+                    "stats": stats
                 });
 
                 // Save the article first
@@ -503,6 +513,15 @@ async fn process_analysis_item(
                         && !critical_analysis.is_empty()
                         && !logical_fallacies.is_empty()
                     {
+                        // Collect database statistics
+                        let stats = match db.collect_stats().await {
+                            Ok(stats) => stats,
+                            Err(e) => {
+                                error!(target: TARGET_LLM_REQUEST, "Failed to collect database stats: {:?}", e);
+                                String::from("N/A")
+                            }
+                        };
+
                         let response_json = json!({
                             "topic": topic,
                             "title": article_title,
@@ -516,7 +535,8 @@ async fn process_analysis_item(
                             "relation_to_topic": relation,
                             "source_analysis": source_analysis,
                             "elapsed_time": start_time.elapsed().as_secs_f64(),
-                            "model": llm_params.model
+                            "model": llm_params.model,
+                            "stats": stats
                         });
 
                         // Save the article first
