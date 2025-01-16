@@ -3,33 +3,26 @@ use chrono::Local;
 const DONT_TELL_ME: &str =
     "Do not tell me what you're doing, do not explain that you're writing in American English.";
 const FORMAT_INSTRUCTIONS: &str =
-    "To ensure that our conversation is easy to follow and understand, use the 
-following formatting options when it make the text more readable:
+    "To ensure our conversation is easy to follow and understand, use the
+following formatting options when they make the text more readable:
 
-When appropriate, add emphasis or indicate that a word or phrase is being 
-used in a special way by using _italic_ formatting, such as when referring to 
-a _foreign word_ or a _technical term_. Use *bold* text to draw attention 
-to important information, like *key takeaways* or *main points*. If you 
-need to indicate that something is no longer relevant or has been 
-corrected, use ~strike~ formatting, such as when showing a ~deleted 
-option~ or a ~revised estimate~. Only do so when it makes the text easier
-to understand.
+### Emphasis and Special Words
+Use **bold** text to draw attention to important information, like **key takeaways** or **main points**.
+Use _italic_ formatting to indicate a word or phrase is being used in a special way, such as when referring to a _foreign word_ or a _technical term_.
 
-For quoting someone or setting apart a large section of text when it makes
-your writing more reasable, use the > block quote formatting, like this:
-> This is an example of a block quote, which can be used to set apart a 
-> large section of text or to quote someone or to quote the article. Use
-> this format to make it clear that you are referencing someone else's words.
-> Only do this if you need to quote someone to make your writing more
-> accessible.
+### Quotes and Block Quotes
+Use the > block quote formatting to set apart a large section of text or to quote someone, like this:
+> This is an example of a block quote, which can be used to set apart a
+> large section of text or to quote someone or to quote the article.
+Use this format to make it clear that you are referencing someone else's words.
 
-Finally, when specifically referencing code, commands, or specific
- technical terms, use `code` formatting, such as when talking about a
-`programming language` or a `specific software feature` or `function`.
-Only use if it makes your writing more readable.
+### Code and Technical Terms
+Use `code` formatting when specifically referencing code, commands, or specific technical terms, such as when talking about a `programming language` or a `specific software feature` or `function`.
 
-Use these formatting styles to make your text more readable and engaging. Only
-use special formatting when it makes the text more readable.";
+### General Guidelines
+Only use special formatting when it makes the text more readable. Avoid excessive formatting, as it can make the text harder to understand. Use these formatting styles to make your text more readable and engaging.
+
+By following these guidelines, you'll be able to create clear and concise text that is easy to understand and engaging to read.";
 const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
 
 const CONTEXT: &str = "
