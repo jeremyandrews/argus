@@ -35,6 +35,7 @@ struct AuthRequest {
 #[derive(Deserialize)]
 struct TopicRequest {
     topic: String,
+    priority: Option<String>,
 }
 
 /// Static private key used for encoding and decoding JWT tokens.
@@ -123,7 +124,6 @@ async fn subscribe_to_topic(
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_header.token();
-
     // Validate JWT and extract claims
     info!(
         "app::api subscribe_to_topic starting for topic: {}",
@@ -137,18 +137,15 @@ async fn subscribe_to_topic(
             );
             StatusCode::UNAUTHORIZED
         })?;
-
     let device_id = claims.claims.sub;
     info!(
         "app::api subscribe_to_topic validated JWT for device_id: {}",
         device_id
     );
-
     // Validate the provided topic or allow "Alert" and "Test" topics
     let mut valid_topics = VALID_TOPICS.clone();
     valid_topics.insert("Alert".to_string());
     valid_topics.insert("Test".to_string());
-
     if !valid_topics.contains(&payload.topic) {
         warn!(
             "app::api subscribe_to_topic invalid topic: {}",
@@ -156,14 +153,16 @@ async fn subscribe_to_topic(
         );
         return Err(StatusCode::BAD_REQUEST);
     }
-
     // Get database instance and subscribe the device
     info!(
         "app::api subscribe_to_topic subscribing device_id: {} to topic: {}",
         device_id, payload.topic
     );
     let db: &Database = Database::instance().await;
-    match db.subscribe_to_topic(&device_id, &payload.topic).await {
+    match db
+        .subscribe_to_topic(&device_id, &payload.topic, payload.priority.as_deref())
+        .await
+    {
         Ok(_) => {
             info!(
                 "app::api subscribe_to_topic successfully subscribed device_id: {} to topic: {}",

@@ -127,6 +127,7 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id INTEGER NOT NULL,
                 topic TEXT NOT NULL,
+                priority TEXT,
                 FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
                 UNIQUE(device_id, topic)
             );
@@ -193,17 +194,19 @@ impl Database {
         &self,
         device_id: &str,
         topic: &str,
+        priority: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         let device_id_internal = self.add_device(device_id).await?;
         sqlx::query(
             r#"
-                INSERT INTO device_subscriptions (device_id, topic)
-                VALUES (?1, ?2)
-                ON CONFLICT DO NOTHING;
-                "#,
+            INSERT INTO device_subscriptions (device_id, topic, priority)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(device_id, topic) DO UPDATE SET priority = ?3
+            "#,
         )
         .bind(device_id_internal)
         .bind(topic)
+        .bind(priority)
         .execute(&self.pool)
         .await?;
         Ok(())
