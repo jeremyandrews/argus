@@ -61,11 +61,15 @@ static DECODING_KEY: Lazy<DecodingKey> = Lazy::new(|| {
 
 /// Static set of valid topics parsed from an environment variable.
 static VALID_TOPICS: Lazy<HashSet<String>> = Lazy::new(|| {
-    let topics_env = std::env::var("TOPICS").unwrap_or_default();
-    topics_env
+    let mut topics = std::env::var("TOPICS")
+        .unwrap_or_default()
         .lines()
         .filter_map(|line| line.split(':').next().map(str::trim).map(String::from))
-        .collect()
+        .collect::<HashSet<String>>();
+    topics.insert("Alert: Direct".to_string());
+    topics.insert("Alert: Near".to_string());
+    topics.insert("Test".to_string());
+    topics
 });
 
 /// Main application loop, setting up and running the Axum-based API server.
@@ -142,11 +146,8 @@ async fn subscribe_to_topic(
         "app::api subscribe_to_topic validated JWT for device_id: {}",
         device_id
     );
-    // Validate the provided topic or allow "Alert" and "Test" topics
-    let mut valid_topics = VALID_TOPICS.clone();
-    valid_topics.insert("Alert".to_string());
-    valid_topics.insert("Test".to_string());
-    if !valid_topics.contains(&payload.topic) {
+    // Validate the provided topic
+    if !VALID_TOPICS.contains(&payload.topic) {
         warn!(
             "app::api subscribe_to_topic invalid topic: {}",
             payload.topic
@@ -208,12 +209,8 @@ async fn unsubscribe_from_topic(
         device_id
     );
 
-    // Validate the provided topic or allow "Alert" and "Test" topics
-    let mut valid_topics = VALID_TOPICS.clone();
-    valid_topics.insert("Alert".to_string());
-    valid_topics.insert("Test".to_string());
-
-    if !valid_topics.contains(&payload.topic) {
+    // Validate the provided topic
+    if !VALID_TOPICS.contains(&payload.topic) {
         warn!(
             "app::api unsubscribe_from_topic invalid topic: {}",
             payload.topic

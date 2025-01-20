@@ -397,8 +397,14 @@ async fn process_analysis_item(
                     }
                 };
 
+                let topic = if affected_summary.is_empty() {
+                    "Alert: Direct"
+                } else {
+                    "Alert: Close"
+                };
+
                 let detailed_response_json = json!({
-                    "topic": "Alert",
+                    "topic": topic,
                     "title": article_title,
                     "url": article_url,
                     "affected": affected_summary,
