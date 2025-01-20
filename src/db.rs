@@ -267,20 +267,26 @@ impl Database {
     }
 
     /// Fetch all device IDs subscribed to a specific topic
-    pub async fn fetch_devices_for_topic(&self, topic: &str) -> Result<Vec<String>, sqlx::Error> {
+    pub async fn fetch_devices_for_topic(
+        &self,
+        topic: &str,
+    ) -> Result<Vec<(String, String)>, sqlx::Error> {
         let rows = sqlx::query(
             r#"
-                SELECT d.device_id
-                FROM device_subscriptions ds
-                JOIN devices d ON ds.device_id = d.id
-                WHERE ds.topic = ?1;
-                "#,
+            SELECT d.device_id, COALESCE(ds.priority, 'low') as priority
+            FROM device_subscriptions ds
+            JOIN devices d ON ds.device_id = d.id
+            WHERE ds.topic = ?1;
+            "#,
         )
         .bind(topic)
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(|row| row.get("device_id")).collect())
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get("device_id"), row.get("priority")))
+            .collect())
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, title))]

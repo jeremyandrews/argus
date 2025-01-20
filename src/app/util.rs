@@ -3,6 +3,7 @@ use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::{Client, Config};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use reqwest::StatusCode;
 use serde::Serialize;
 use serde_json::Value;
 use std::env;
@@ -25,8 +26,7 @@ struct Claims {
 ///
 /// # Arguments
 /// * `json` - A json object with details about the analyzed article.
-/// * `importance` - Notification importance: "high" or "low".
-pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
+pub async fn send_to_app(json: &Value) -> Option<String> {
     // Upload the JSON to R2
     let json_url = upload_to_r2(json).await?;
     let title = json
@@ -37,7 +37,6 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         .get("tiny_summary")
         .and_then(|v| v.as_str())
         .unwrap_or("No summary available.");
-
     // Extract base URL of the article
     let domain = json
         .get("url")
@@ -48,13 +47,11 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
                 .and_then(|parsed_url| parsed_url.host_str().map(|host| host.to_string()))
         })
         .unwrap_or_else(|| "unknown".to_string());
-
     // Load required environment variables
     let team_id = env::var("APP_TEAM_ID").ok()?;
     let key_id = env::var("APP_KEY_ID").ok()?;
     let private_key_path = env::var("APP_PRIVATE_KEY_PATH").ok()?;
     let private_key = fs::read_to_string(&private_key_path).ok()?;
-
     // Generate JWT token
     let iat = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     let claims = Claims {
@@ -66,52 +63,52 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
     let encoding_key = EncodingKey::from_ec_pem(private_key.as_bytes()).ok()?;
     let jwt_token = encode(&header, &claims, &encoding_key).ok()?;
 
-    // Determine priority and payload
-    let priority = if importance == "high" { "10" } else { "5" };
-    let payload = serde_json::json!({
-        "aps": {
-            "alert": if importance == "high" {
-                serde_json::json!({ "title": title, "body": body })
-            } else {
-                serde_json::Value::Null
-            },
-            "sound": if importance == "high" {
-                serde_json::Value::String("default".to_string())
-            } else {
-                serde_json::Value::Null
-            },
-            "badge": if importance == "high" {
-                serde_json::Value::Number(1.into())
-            } else {
-                serde_json::Value::Null
-            },
-            "content-available": 1
-        },
-        "data": {
-            "json_url": json_url,
-            "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
-            "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
-            "title": if importance != "high" { Some(title) } else { None },
-            "body": if importance != "high" { Some(body) } else { None },
-            "affected": json.get("affected"),
-            "domain": domain,
-        }
-    });
-
-    // Extract topic
-    let topic = json.get("topic").and_then(|v| v.as_str()).unwrap_or("none");
-
     // Send notification
     let client = reqwest::Client::builder()
         .http2_prior_knowledge()
         .build()
         .ok()?;
 
-    // Fetch subscribed devices
+    // Fetch subscribed devices with their priorities
     let db = Database::instance().await;
-    let device_tokens = db.fetch_devices_for_topic(topic).await.ok()?;
+    let topic = json.get("topic").and_then(|v| v.as_str()).unwrap_or("none");
+    let device_tokens_with_priorities = db.fetch_devices_for_topic(topic).await.ok()?;
 
-    for device_token in device_tokens {
+    for (device_token, priority) in device_tokens_with_priorities {
+        let importance = if priority == "high" { "high" } else { "low" };
+        let apns_priority = if importance == "high" { "10" } else { "5" };
+
+        // Determine payload based on importance
+        let payload = serde_json::json!({
+            "aps": {
+                "alert": if importance == "high" {
+                    serde_json::json!({ "title": title, "body": body })
+                } else {
+                    serde_json::Value::Null
+                },
+                "sound": if importance == "high" {
+                    serde_json::Value::String("default".to_string())
+                } else {
+                    serde_json::Value::Null
+                },
+                "badge": if importance == "high" {
+                    serde_json::Value::Number(1.into())
+                } else {
+                    serde_json::Value::Null
+                },
+                "content-available": 1
+            },
+            "data": {
+                "json_url": json_url,
+                "topic": json.get("topic").and_then(|v| v.as_str()).unwrap_or("none"),
+                "article_title": json.get("title").and_then(|v| v.as_str()).unwrap_or("none"),
+                "title": if importance != "high" { Some(title) } else { None },
+                "body": if importance != "high" { Some(body) } else { None },
+                "affected": json.get("affected"),
+                "domain": domain,
+            }
+        });
+
         let apns_url = format!(
             "https://api.sandbox.push.apple.com/3/device/{}",
             device_token
@@ -120,7 +117,7 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
         match client
             .post(&apns_url)
             .header("apns-topic", "com.andrews.Argus.Argus")
-            .header("apns-priority", priority)
+            .header("apns-priority", apns_priority)
             .header("authorization", format!("bearer {}", jwt_token))
             .header("Content-Type", "application/json")
             .body(payload.to_string())
@@ -138,9 +135,8 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
                     "Failed to send notification: Status = {}, Response = {}",
                     status, response_text
                 );
-
                 // Check for 410 Unregistered status code
-                if status == reqwest::StatusCode::GONE || status == reqwest::StatusCode::NOT_FOUND {
+                if status == StatusCode::GONE || status == StatusCode::NOT_FOUND {
                     info!(
                         "Device token {} is unregistered. Unsubscribing from all topics.",
                         device_token
@@ -157,7 +153,6 @@ pub async fn send_to_app(json: &Value, importance: &str) -> Option<String> {
             }
         }
     }
-
     Some(json_url)
 }
 
