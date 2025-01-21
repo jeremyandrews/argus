@@ -397,10 +397,12 @@ async fn process_analysis_item(
                     }
                 };
 
+                // If affected_summary is empty, then a location alert doesn't
+                // directly affect anyone monitored.
                 let topic = if affected_summary.is_empty() {
-                    "Alert: Direct"
-                } else {
                     "Alert: Close"
+                } else {
+                    "Alert: Direct"
                 };
 
                 let detailed_response_json = json!({
