@@ -946,6 +946,7 @@ impl Database {
         seen_articles: &[String],
     ) -> Result<Vec<String>, sqlx::Error> {
         if seen_articles.is_empty() {
+            debug!("No seen articles provided. Returning an empty result.");
             return Ok(vec![]); // No articles to check against
         }
 
@@ -957,18 +958,30 @@ impl Database {
             .join(",");
         let query = format!(
             "SELECT r2_url FROM articles 
-            WHERE r2_url NOT IN ({}) 
-            AND seen_at > datetime('now', '-1 day');",
+         WHERE r2_url NOT IN ({}) 
+         AND seen_at > datetime('now', '-1 day');",
             placeholders
         );
 
+        debug!("Generated SQL query: {}", query);
+
         let mut query_builder = sqlx::query(&query);
-        for article in seen_articles {
+        for (index, article) in seen_articles.iter().enumerate() {
             query_builder = query_builder.bind(article);
+            debug!("Binding article [{}]: {}", index, article);
         }
 
+        debug!("Executing query to fetch unseen articles.");
         let rows = query_builder.fetch_all(&self.pool).await?;
 
-        Ok(rows.into_iter().map(|row| row.get("r2_url")).collect())
+        let unseen_articles: Vec<String> = rows.into_iter().map(|row| row.get("r2_url")).collect();
+
+        debug!("Fetched unseen articles: {:?}", unseen_articles);
+
+        if unseen_articles.is_empty() {
+            debug!("No unseen articles found for the given list of seen articles.");
+        }
+
+        Ok(unseen_articles)
     }
 }
