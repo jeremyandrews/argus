@@ -38,6 +38,18 @@ struct TopicRequest {
     priority: Option<String>,
 }
 
+/// Represents the request payload for syncing seen articles.
+#[derive(Deserialize)]
+struct SyncSeenArticlesRequest {
+    seen_articles: Vec<String>,
+}
+
+/// Represents the response payload for unseen articles.
+#[derive(Serialize)]
+struct SyncSeenArticlesResponse {
+    unseen_articles: Vec<String>,
+}
+
 /// Static private key used for encoding and decoding JWT tokens.
 static PRIVATE_KEY: Lazy<Mutex<Vec<u8>>> = Lazy::new(|| {
     let rng = SystemRandom::new();
@@ -78,7 +90,8 @@ pub async fn app_api_loop() -> Result<()> {
         .route("/status", post(status_check))
         .route("/authenticate", post(authenticate))
         .route("/subscribe", post(subscribe_to_topic))
-        .route("/unsubscribe", post(unsubscribe_from_topic));
+        .route("/unsubscribe", post(unsubscribe_from_topic))
+        .route("/articles/sync", post(sync_seen_articles));
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -257,4 +270,32 @@ async fn status_check(
 
     info!("No JWT provided for status check");
     Ok("OK")
+}
+
+/// Handles syncing seen articles and returning unseen articles.
+async fn sync_seen_articles(
+    auth_header: TypedHeader<Authorization<Bearer>>,
+    Json(payload): Json<SyncSeenArticlesRequest>,
+) -> Result<Json<SyncSeenArticlesResponse>, StatusCode> {
+    let token = auth_header.token();
+
+    // Validate JWT and extract claims
+    let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let device_id = claims.claims.sub;
+    info!("Syncing seen articles for device_id: {}", device_id);
+
+    let db: &Database = Database::instance().await;
+
+    // Get unseen articles from the database
+    let unseen_articles = match db.fetch_unseen_articles(&payload.seen_articles).await {
+        Ok(articles) => articles,
+        Err(e) => {
+            warn!("Error fetching unseen articles: {:?}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    Ok(Json(SyncSeenArticlesResponse { unseen_articles }))
 }

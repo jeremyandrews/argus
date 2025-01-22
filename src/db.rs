@@ -134,6 +134,7 @@ impl Database {
             
             CREATE INDEX IF NOT EXISTS idx_device_id ON device_subscriptions (device_id);
             CREATE INDEX IF NOT EXISTS idx_topic_device_id ON device_subscriptions (topic, device_id);
+            CREATE INDEX IF NOT EXISTS idx_seen_at ON articles (seen_at);
             "#,
         )
         .execute(&mut conn)
@@ -937,5 +938,35 @@ impl Database {
             .map(|c| c.to_string())
             .collect::<Vec<_>>()
             .join(":"))
+    }
+
+    /// Fetches articles that are not in the provided list of seen articles.
+    pub async fn fetch_unseen_articles(
+        &self,
+        seen_articles: &[String],
+    ) -> Result<Vec<String>, sqlx::Error> {
+        if seen_articles.is_empty() {
+            return Ok(vec![]); // No articles to check against
+        }
+
+        // Generate a query with a placeholder for each seen article
+        let placeholders: String = seen_articles
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+        let query = format!(
+        "SELECT url FROM articles WHERE url NOT IN ({}) AND seen_at > datetime('now', '-1 day');",
+        placeholders
+    );
+
+        let mut query_builder = sqlx::query(&query);
+        for article in seen_articles {
+            query_builder = query_builder.bind(article);
+        }
+
+        let rows = query_builder.fetch_all(&self.pool).await?;
+
+        Ok(rows.into_iter().map(|row| row.get("url")).collect())
     }
 }
