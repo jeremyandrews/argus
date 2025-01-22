@@ -960,7 +960,7 @@ impl Database {
              FROM articles 
              WHERE r2_url IS NOT NULL  -- Exclude rows with NULL r2_url
              AND r2_url NOT IN ({}) 
-             AND seen_at > datetime('now', '-1 day');",
+             AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day');",
             placeholders
         );
 
