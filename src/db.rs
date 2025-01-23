@@ -975,8 +975,7 @@ impl Database {
              FROM articles
              WHERE r2_url IS NOT NULL
              AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
-             AND (category IN ({}) OR category IS NULL)
-             AND is_relevant = 1;",
+             AND (category IN ({}) OR category IS NULL);",
                 topic_placeholders
             )
         } else {
@@ -991,8 +990,7 @@ impl Database {
              WHERE r2_url IS NOT NULL
              AND r2_url NOT IN ({})
              AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
-             AND (category IN ({}) OR category IS NULL)
-             AND is_relevant = 1;",
+             AND (category IN ({}) OR category IS NULL);",
                 seen_placeholders, topic_placeholders
             )
         };
