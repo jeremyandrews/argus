@@ -80,7 +80,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_title_domain_hash ON articles (title_domain_hash);
             CREATE INDEX IF NOT EXISTS idx_r2_url ON articles (r2_url);
             CREATE INDEX IF NOT EXISTS idx_seen_at_r2_url ON articles (seen_at, r2_url);
-            CREATE INDEX IF NOT EXISTS idx_feed_id ON articles (feed_id);
+            CREATE INDEX IF NOT EXISTS idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url);
         
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,6 +125,8 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id TEXT NOT NULL UNIQUE
             );
+
+            CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices (device_id);
             
             CREATE TABLE IF NOT EXISTS device_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,7 +138,7 @@ impl Database {
             );
             
             CREATE INDEX IF NOT EXISTS idx_topic_device_id ON device_subscriptions (topic, device_id);
-            CREATE INDEX IF NOT EXISTS idx_device_id_feed_id ON subscriptions (device_id, feed_id);
+            CREATE INDEX IF NOT EXISTS idx_device_subscriptions_device_id_topic ON device_subscriptions (device_id, topic);
             "#,
         )
         .execute(&mut conn)
@@ -951,9 +953,10 @@ impl Database {
             // If no seen articles, return all subscribed articles from the last day
             "SELECT DISTINCT a.r2_url
              FROM articles a
-             JOIN subscriptions s ON a.feed_id = s.feed_id
+             JOIN device_subscriptions ds ON a.category = ds.topic
+             JOIN devices d ON ds.device_id = d.id
              WHERE a.r2_url IS NOT NULL
-             AND s.device_id = ?
+             AND d.device_id = ?
              AND datetime(a.seen_at, 'unixepoch') > datetime('now', '-1 day');"
                 .to_string()
         } else {
@@ -966,9 +969,10 @@ impl Database {
             format!(
                 "SELECT DISTINCT a.r2_url
                  FROM articles a
-                 JOIN subscriptions s ON a.feed_id = s.feed_id
+                 JOIN device_subscriptions ds ON a.category = ds.topic
+                 JOIN devices d ON ds.device_id = d.id
                  WHERE a.r2_url IS NOT NULL
-                 AND s.device_id = ?
+                 AND d.device_id = ?
                  AND a.r2_url NOT IN ({})
                  AND datetime(a.seen_at, 'unixepoch') > datetime('now', '-1 day');",
                 placeholders
