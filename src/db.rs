@@ -949,44 +949,65 @@ impl Database {
         device_id: &str,
         seen_articles: &[String],
     ) -> Result<Vec<String>, sqlx::Error> {
-        let query = if seen_articles.is_empty() {
-            // If no seen articles, return all subscribed articles from the last day
-            "SELECT DISTINCT a.r2_url
-             FROM articles a
-             JOIN device_subscriptions ds ON a.category = ds.topic
+        // First, get the topics the device is subscribed to
+        let subscribed_topics = sqlx::query_as::<_, (String,)>(
+            "SELECT topic FROM device_subscriptions ds
              JOIN devices d ON ds.device_id = d.id
-             WHERE a.r2_url IS NOT NULL
-             AND d.device_id = ?
-             AND datetime(a.seen_at, 'unixepoch') > datetime('now', '-1 day');"
-                .to_string()
+             WHERE d.device_id = ?",
+        )
+        .bind(device_id)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(|r| r.0)
+        .collect::<Vec<String>>();
+
+        let topic_placeholders = subscribed_topics
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let query = if seen_articles.is_empty() {
+            format!(
+                "SELECT r2_url
+                 FROM articles
+                 WHERE r2_url IS NOT NULL
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
+                 AND category IN ({})
+                 AND is_relevant = 1;",
+                topic_placeholders
+            )
         } else {
-            // Generate a query with placeholders for each seen article
-            let placeholders: String = seen_articles
+            let seen_placeholders = seen_articles
                 .iter()
                 .map(|_| "?")
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "SELECT DISTINCT a.r2_url
-                 FROM articles a
-                 JOIN device_subscriptions ds ON a.category = ds.topic
-                 JOIN devices d ON ds.device_id = d.id
-                 WHERE a.r2_url IS NOT NULL
-                 AND d.device_id = ?
-                 AND a.r2_url NOT IN ({})
-                 AND datetime(a.seen_at, 'unixepoch') > datetime('now', '-1 day');",
-                placeholders
+                "SELECT r2_url
+                 FROM articles
+                 WHERE r2_url IS NOT NULL
+                 AND r2_url NOT IN ({})
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
+                 AND category IN ({})
+                 AND is_relevant = 1;",
+                seen_placeholders, topic_placeholders
             )
         };
 
         info!("Generated SQL query: {}", query);
 
-        let mut query_builder = sqlx::query(&query).bind(device_id);
+        let mut query_builder = sqlx::query(&query);
 
         // Bind seen articles if there are any
-        for (index, article) in seen_articles.iter().enumerate() {
+        for article in seen_articles {
             query_builder = query_builder.bind(article);
-            info!("Binding article [{}]: {}", index, article);
+        }
+
+        // Bind subscribed topics
+        for topic in &subscribed_topics {
+            query_builder = query_builder.bind(topic);
         }
 
         info!(
