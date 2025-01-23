@@ -78,7 +78,9 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
             CREATE INDEX IF NOT EXISTS idx_hash ON articles (hash);
             CREATE INDEX IF NOT EXISTS idx_title_domain_hash ON articles (title_domain_hash);
-            CREATE INDEX IF NOT EXISTS idx_seen_at ON articles (seen_at);
+            CREATE INDEX IF NOT EXISTS idx_r2_url ON articles (r2_url);
+            CREATE INDEX IF NOT EXISTS idx_seen_at_r2_url ON articles (seen_at, r2_url);
+            CREATE INDEX IF NOT EXISTS idx_feed_id ON articles (feed_id);
         
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,8 +135,8 @@ impl Database {
                 UNIQUE(device_id, topic)
             );
             
-            CREATE INDEX IF NOT EXISTS idx_device_id ON device_subscriptions (device_id);
             CREATE INDEX IF NOT EXISTS idx_topic_device_id ON device_subscriptions (topic, device_id);
+            CREATE INDEX IF NOT EXISTS idx_device_id_feed_id ON subscriptions (device_id, feed_id);
             "#,
         )
         .execute(&mut conn)
@@ -942,14 +944,17 @@ impl Database {
 
     pub async fn fetch_unseen_articles(
         &self,
+        device_id: &str,
         seen_articles: &[String],
     ) -> Result<Vec<String>, sqlx::Error> {
         let query = if seen_articles.is_empty() {
-            // If no seen articles, return all articles from the last day
-            "SELECT r2_url
-             FROM articles
-             WHERE r2_url IS NOT NULL
-             AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day');"
+            // If no seen articles, return all subscribed articles from the last day
+            "SELECT DISTINCT a.r2_url
+             FROM articles a
+             JOIN subscriptions s ON a.feed_id = s.feed_id
+             WHERE a.r2_url IS NOT NULL
+             AND s.device_id = ?
+             AND datetime(a.seen_at, 'unixepoch') > datetime('now', '-1 day');"
                 .to_string()
         } else {
             // Generate a query with placeholders for each seen article
@@ -959,34 +964,37 @@ impl Database {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "SELECT r2_url
-                 FROM articles
-                 WHERE r2_url IS NOT NULL
-                 AND r2_url NOT IN ({})
-                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day');",
+                "SELECT DISTINCT a.r2_url
+                 FROM articles a
+                 JOIN subscriptions s ON a.feed_id = s.feed_id
+                 WHERE a.r2_url IS NOT NULL
+                 AND s.device_id = ?
+                 AND a.r2_url NOT IN ({})
+                 AND datetime(a.seen_at, 'unixepoch') > datetime('now', '-1 day');",
                 placeholders
             )
         };
 
         info!("Generated SQL query: {}", query);
 
-        let mut query_builder = sqlx::query(&query);
+        let mut query_builder = sqlx::query(&query).bind(device_id);
 
-        // Only bind parameters if there are seen articles
-        if !seen_articles.is_empty() {
-            for (index, article) in seen_articles.iter().enumerate() {
-                query_builder = query_builder.bind(article);
-                info!("Binding article [{}]: {}", index, article);
-            }
+        // Bind seen articles if there are any
+        for (index, article) in seen_articles.iter().enumerate() {
+            query_builder = query_builder.bind(article);
+            info!("Binding article [{}]: {}", index, article);
         }
 
-        info!("Executing query to fetch unseen articles.");
+        info!(
+            "Executing query to fetch unseen articles for device_id: {}",
+            device_id
+        );
         let rows = query_builder.fetch_all(&self.pool).await?;
         let unseen_articles: Vec<String> = rows.into_iter().map(|row| row.get("r2_url")).collect();
 
         info!("Fetched unseen articles: {:?}", unseen_articles);
         if unseen_articles.is_empty() {
-            info!("No unseen articles found for the given list of seen articles.");
+            info!("No unseen articles found for the given list of seen articles and device_id.");
         }
 
         Ok(unseen_articles)

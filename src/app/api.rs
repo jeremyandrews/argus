@@ -289,7 +289,10 @@ async fn sync_seen_articles(
     let db: &Database = Database::instance().await;
 
     // Get unseen articles from the database
-    let unseen_articles = match db.fetch_unseen_articles(&payload.seen_articles).await {
+    let unseen_articles = match db
+        .fetch_unseen_articles(&device_id, &payload.seen_articles)
+        .await
+    {
         Ok(articles) => articles,
         Err(e) => {
             warn!("Error fetching unseen articles: {:?}", e);
