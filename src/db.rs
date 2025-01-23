@@ -944,41 +944,47 @@ impl Database {
         &self,
         seen_articles: &[String],
     ) -> Result<Vec<String>, sqlx::Error> {
-        if seen_articles.is_empty() {
-            info!("No seen articles provided. Returning an empty result.");
-            return Ok(vec![]); // No articles to check against
-        }
-
-        // Generate a query with placeholders for each seen article
-        let placeholders: String = seen_articles
-            .iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(",");
-        let query = format!(
-            "SELECT r2_url 
-             FROM articles 
-             WHERE r2_url IS NOT NULL  -- Exclude rows with NULL r2_url
-             AND r2_url NOT IN ({}) 
-             AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day');",
-            placeholders
-        );
+        let query = if seen_articles.is_empty() {
+            // If no seen articles, return all articles from the last day
+            "SELECT r2_url
+             FROM articles
+             WHERE r2_url IS NOT NULL
+             AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day');"
+                .to_string()
+        } else {
+            // Generate a query with placeholders for each seen article
+            let placeholders: String = seen_articles
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "SELECT r2_url
+                 FROM articles
+                 WHERE r2_url IS NOT NULL
+                 AND r2_url NOT IN ({})
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day');",
+                placeholders
+            )
+        };
 
         info!("Generated SQL query: {}", query);
 
         let mut query_builder = sqlx::query(&query);
-        for (index, article) in seen_articles.iter().enumerate() {
-            query_builder = query_builder.bind(article);
-            info!("Binding article [{}]: {}", index, article);
+
+        // Only bind parameters if there are seen articles
+        if !seen_articles.is_empty() {
+            for (index, article) in seen_articles.iter().enumerate() {
+                query_builder = query_builder.bind(article);
+                info!("Binding article [{}]: {}", index, article);
+            }
         }
 
         info!("Executing query to fetch unseen articles.");
         let rows = query_builder.fetch_all(&self.pool).await?;
-
         let unseen_articles: Vec<String> = rows.into_iter().map(|row| row.get("r2_url")).collect();
 
         info!("Fetched unseen articles: {:?}", unseen_articles);
-
         if unseen_articles.is_empty() {
             info!("No unseen articles found for the given list of seen articles.");
         }
