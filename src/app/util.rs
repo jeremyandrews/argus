@@ -91,11 +91,6 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
                 } else {
                     serde_json::Value::Null
                 },
-                "badge": if importance == "high" {
-                    serde_json::Value::Number(1.into())
-                } else {
-                    serde_json::Value::Null
-                },
                 "content-available": 1
             },
             "data": {
