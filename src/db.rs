@@ -1,5 +1,4 @@
 use rand::Rng;
-use serde_json::Value;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Pool, Row, Sqlite,
@@ -953,8 +952,8 @@ impl Database {
         // First, get the topics the device is subscribed to
         let subscribed_topics = sqlx::query_as::<_, (String,)>(
             "SELECT topic FROM device_subscriptions ds
-         JOIN devices d ON ds.device_id = d.id
-         WHERE d.device_id = ?",
+             JOIN devices d ON ds.device_id = d.id
+             WHERE d.device_id = ?",
         )
         .bind(device_id)
         .fetch_all(&self.pool)
@@ -963,20 +962,31 @@ impl Database {
         .map(|r| r.0)
         .collect::<Vec<String>>();
 
+        let include_alerts = subscribed_topics
+            .iter()
+            .any(|topic| topic.starts_with("Alert"));
+
         let topic_placeholders = subscribed_topics
             .iter()
             .map(|_| "?")
             .collect::<Vec<_>>()
             .join(",");
 
+        let category_condition = if include_alerts {
+            format!("(category IN ({}) OR category IS NULL)", topic_placeholders)
+        } else {
+            format!("category IN ({})", topic_placeholders)
+        };
+
         let query = if seen_articles.is_empty() {
             format!(
-                "SELECT r2_url, category, analysis
-             FROM articles
-             WHERE r2_url IS NOT NULL
-             AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
-             AND (category IN ({}) OR category IS NULL);",
-                topic_placeholders
+                "SELECT r2_url
+                 FROM articles
+                 WHERE r2_url IS NOT NULL
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
+                 AND {}
+                 AND is_relevant = 1;",
+                category_condition
             )
         } else {
             let seen_placeholders = seen_articles
@@ -985,13 +995,14 @@ impl Database {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "SELECT r2_url, category, analysis
-             FROM articles
-             WHERE r2_url IS NOT NULL
-             AND r2_url NOT IN ({})
-             AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
-             AND (category IN ({}) OR category IS NULL);",
-                seen_placeholders, topic_placeholders
+                "SELECT r2_url
+                 FROM articles
+                 WHERE r2_url IS NOT NULL
+                 AND r2_url NOT IN ({})
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
+                 AND {}
+                 AND is_relevant = 1;",
+                seen_placeholders, category_condition
             )
         };
 
@@ -1014,31 +1025,7 @@ impl Database {
             device_id
         );
         let rows = query_builder.fetch_all(&self.pool).await?;
-
-        // Filter the results based on category and 'affected' field in the JSON
-        let unseen_articles: Vec<String> = rows
-            .into_iter()
-            .filter_map(|row| {
-                let r2_url: String = row.get("r2_url");
-                let category: Option<String> = row.get("category");
-                let analysis: String = row.get("analysis");
-
-                match category {
-                    Some(_) => Some(r2_url), // Include all articles with a category
-                    None => {
-                        // For articles without a category, check if it's an alert
-                        if let Ok(json) = serde_json::from_str::<Value>(&analysis) {
-                            if let Some(affected) = json.get("affected") {
-                                if !affected.as_str().unwrap_or("").is_empty() {
-                                    return Some(r2_url);
-                                }
-                            }
-                        }
-                        None
-                    }
-                }
-            })
-            .collect();
+        let unseen_articles: Vec<String> = rows.into_iter().map(|row| row.get("r2_url")).collect();
 
         info!("Fetched unseen articles: {:?}", unseen_articles);
         if unseen_articles.is_empty() {
