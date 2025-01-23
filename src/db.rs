@@ -949,7 +949,10 @@ impl Database {
         device_id: &str,
         seen_articles: &[String],
     ) -> Result<Vec<String>, sqlx::Error> {
-        // First, get the topics the device is subscribed to
+        info!("Fetching unseen articles for device_id: {}", device_id);
+        info!("Number of seen articles: {}", seen_articles.len());
+
+        // Fetch subscribed topics
         let subscribed_topics = sqlx::query_as::<_, (String,)>(
             "SELECT topic FROM device_subscriptions ds
              JOIN devices d ON ds.device_id = d.id
@@ -961,6 +964,8 @@ impl Database {
         .into_iter()
         .map(|r| r.0)
         .collect::<Vec<String>>();
+
+        info!("Subscribed topics: {:?}", subscribed_topics);
 
         let topic_placeholders = subscribed_topics
             .iter()
@@ -1010,14 +1015,18 @@ impl Database {
             query_builder = query_builder.bind(topic);
         }
 
-        info!(
-            "Executing query to fetch unseen articles for device_id: {}",
-            device_id
-        );
         let rows = query_builder.fetch_all(&self.pool).await?;
         let unseen_articles: Vec<String> = rows.into_iter().map(|row| row.get("r2_url")).collect();
 
-        info!("Fetched unseen articles: {:?}", unseen_articles);
+        info!(
+            "Number of unseen articles fetched: {}",
+            unseen_articles.len()
+        );
+        info!(
+            "Sample of unseen articles (up to 5): {:?}",
+            &unseen_articles.iter().take(5).collect::<Vec<_>>()
+        );
+
         if unseen_articles.is_empty() {
             info!("No unseen articles found for the given list of seen articles and device_id.");
         }
