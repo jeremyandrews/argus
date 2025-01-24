@@ -158,6 +158,12 @@ async fn authenticate(
         payload.device_id, client_ip,
     );
 
+    // Record IP address.
+    let db = Database::instance().await;
+    if let Err(e) = db.log_ip_address(&payload.device_id, &client_ip).await {
+        warn!("Failed to log IP address: {:?}", e);
+    }
+
     // Basic validation for iOS device token
     if payload.device_id.len() != 64 || !payload.device_id.chars().all(|c| c.is_ascii_hexdigit()) {
         tracing::error!("Invalid iOS device token format: {}", payload.device_id);
@@ -189,6 +195,7 @@ async fn subscribe_to_topic(
         "app::api subscribe_to_topic request from IP {} for topic: {}",
         client_ip, payload.topic
     );
+
     let token = auth_header.token();
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
         .map_err(|e| {
@@ -203,6 +210,13 @@ async fn subscribe_to_topic(
         "app::api subscribe_to_topic validated JWT for device_id: {}",
         device_id
     );
+
+    // Record IP address.
+    let db = Database::instance().await;
+    if let Err(e) = db.log_ip_address(&device_id, &client_ip).await {
+        warn!("Failed to log IP address: {:?}", e);
+    }
+
     // Validate the provided topic
     if !VALID_TOPICS.contains(&payload.topic) {
         warn!(
@@ -216,7 +230,6 @@ async fn subscribe_to_topic(
         "app::api subscribe_to_topic subscribing device_id: {} to topic: {}",
         device_id, payload.topic
     );
-    let db: &Database = Database::instance().await;
     match db
         .subscribe_to_topic(&device_id, &payload.topic, payload.priority.as_deref())
         .await
@@ -267,6 +280,12 @@ async fn unsubscribe_from_topic(
         "app::api unsubscribe_from_topic validated JWT for device_id: {}",
         device_id
     );
+
+    // Record IP address.
+    let db = Database::instance().await;
+    if let Err(e) = db.log_ip_address(&device_id, &client_ip).await {
+        warn!("Failed to log IP address: {:?}", e);
+    }
 
     // Validate the provided topic
     if !VALID_TOPICS.contains(&payload.topic) {
@@ -339,6 +358,11 @@ async fn sync_seen_articles(
 
     let device_id = claims.claims.sub;
     info!("Syncing seen articles for device_id: {}", device_id);
+
+    let db = Database::instance().await;
+    if let Err(e) = db.log_ip_address(&device_id, &client_ip).await {
+        warn!("Failed to log IP address: {:?}", e);
+    }
 
     let db: &Database = Database::instance().await;
 

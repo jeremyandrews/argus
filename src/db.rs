@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use rand::Rng;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
@@ -139,6 +140,18 @@ impl Database {
             
             CREATE INDEX IF NOT EXISTS idx_topic_device_id ON device_subscriptions (topic, device_id);
             CREATE INDEX IF NOT EXISTS idx_device_subscriptions_device_id_topic ON device_subscriptions (device_id, topic);
+
+            CREATE TABLE IF NOT EXISTS ip_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER NOT NULL,
+                ip_address TEXT NOT NULL,
+                first_seen INTEGER NOT NULL,
+                last_seen INTEGER NOT NULL,
+                FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
+                UNIQUE (device_id, ip_address)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ip_logs_device_id ON ip_logs (device_id);
+            CREATE INDEX IF NOT EXISTS idx_ip_logs_ip_address ON ip_logs (ip_address);
             "#,
         )
         .execute(&mut conn)
@@ -1033,5 +1046,67 @@ impl Database {
         }
 
         Ok(unseen_articles)
+    }
+
+    pub async fn log_ip_address(
+        &self,
+        device_id: &str,
+        ip_address: &str,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now().timestamp(); // This gives us the Unix timestamp
+        sqlx::query(
+            r#"
+            INSERT INTO ip_logs (device_id, ip_address, first_seen, last_seen)
+            VALUES (
+                (SELECT id FROM devices WHERE device_id = ?1),
+                ?2,
+                ?3,
+                ?3
+            )
+            ON CONFLICT (device_id, ip_address) DO UPDATE SET
+                last_seen = excluded.last_seen
+            "#,
+        )
+        .bind(device_id)
+        .bind(ip_address)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_ip_logs_for_device(
+        &self,
+        device_id: &str,
+    ) -> Result<Vec<(String, DateTime<Utc>, DateTime<Utc>)>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, (String, i64, i64)>(
+            r#"
+            SELECT ip_address, first_seen, last_seen
+            FROM ip_logs
+            JOIN devices ON ip_logs.device_id = devices.id
+            WHERE devices.device_id = ?1
+            ORDER BY last_seen DESC
+            "#,
+        )
+        .bind(device_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(ip, first, last)| {
+                (
+                    ip,
+                    match Utc.timestamp_opt(first, 0) {
+                        chrono::LocalResult::Single(dt) => dt,
+                        _ => Utc::now(), // Fallback to current time if timestamp is ambiguous or out of range
+                    },
+                    match Utc.timestamp_opt(last, 0) {
+                        chrono::LocalResult::Single(dt) => dt,
+                        _ => Utc::now(), // Fallback to current time if timestamp is ambiguous or out of range
+                    },
+                )
+            })
+            .collect())
     }
 }
