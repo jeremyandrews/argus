@@ -1,11 +1,13 @@
 use anyhow::Result;
-use axum::{extract::Json, http::StatusCode, routing::post, Router};
+use axum::extract::{ConnectInfo, Json};
+use axum::{http::StatusCode, routing::post, Router};
 use axum_extra::extract::TypedHeader;
 use axum_extra::headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::{collections::HashSet, sync::Mutex};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
@@ -105,16 +107,26 @@ pub async fn app_api_loop() -> Result<()> {
 
     info!("Server running on http://{}", addr);
 
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 
     Ok(())
 }
 
 /// Handles authentication requests by validating the device ID and returning a JWT token.
-async fn authenticate(Json(payload): Json<AuthRequest>) -> Json<AuthResponse> {
-    info!("Authenticating device_id: {}", payload.device_id);
+async fn authenticate(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(payload): Json<AuthRequest>,
+) -> Json<AuthResponse> {
+    info!(
+        "Authenticating device_id: {} from IP: {}",
+        payload.device_id,
+        addr.ip()
+    );
 
     // Basic validation for iOS device token
     if payload.device_id.len() != 64 || !payload.device_id.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -137,15 +149,16 @@ async fn authenticate(Json(payload): Json<AuthRequest>) -> Json<AuthResponse> {
 
 /// Subscribes a device to a topic after validating the JWT and topic validity.
 async fn subscribe_to_topic(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let token = auth_header.token();
-    // Validate JWT and extract claims
     info!(
-        "app::api subscribe_to_topic starting for topic: {}",
+        "app::api subscribe_to_topic request from IP {} for topic: {}",
+        addr.ip(),
         payload.topic
     );
+    let token = auth_header.token();
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
         .map_err(|e| {
             warn!(
@@ -197,16 +210,17 @@ async fn subscribe_to_topic(
 
 /// Unsubscribes a device from a topic after validating the JWT and topic validity.
 async fn unsubscribe_from_topic(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let token = auth_header.token();
-
-    // Validate JWT and extract claims
     info!(
-        "app::api unsubscribe_from_topic starting for topic: {}",
+        "app::api unsusbcribe_from_topic request from IP {} for topic: {}",
+        addr.ip(),
         payload.topic
     );
+    let token = auth_header.token();
+
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
         .map_err(|e| {
             warn!(
@@ -255,8 +269,10 @@ async fn unsubscribe_from_topic(
 
 /// Checks the server's status, optionally validating a JWT if provided.
 async fn status_check(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
 ) -> Result<&'static str, StatusCode> {
+    info!("app::api status_check request from IP {} ", addr.ip(),);
     if let Some(TypedHeader(auth_header)) = auth_header {
         let token = auth_header.token();
         if decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256)).is_ok() {
@@ -274,9 +290,11 @@ async fn status_check(
 
 /// Handles syncing seen articles and returning unseen articles.
 async fn sync_seen_articles(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<SyncSeenArticlesRequest>,
 ) -> Result<Json<SyncSeenArticlesResponse>, StatusCode> {
+    info!("app::api sync_seen_articles request from IP {} ", addr.ip(),);
     let token = auth_header.token();
 
     // Validate JWT and extract claims
