@@ -1,6 +1,7 @@
 use anyhow::Result;
 use axum::extract::{ConnectInfo, Json};
-use axum::{http::StatusCode, routing::post, Router};
+use axum::http::{HeaderMap, StatusCode};
+use axum::{routing::post, Router};
 use axum_extra::extract::TypedHeader;
 use axum_extra::headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -115,6 +116,21 @@ pub async fn app_api_loop() -> Result<()> {
     .unwrap();
 
     Ok(())
+}
+
+// Helper to extract proxied client address.
+fn get_client_ip(headers: &HeaderMap, socket_addr: &SocketAddr) -> String {
+    headers
+        .get("CF-Connecting-IP")
+        .and_then(|hv| hv.to_str().ok())
+        .or_else(|| {
+            headers
+                .get("X-Forwarded-For")
+                .and_then(|hv| hv.to_str().ok())
+                .and_then(|s| s.split(',').next())
+        })
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| socket_addr.ip().to_string())
 }
 
 /// Handles authentication requests by validating the device ID and returning a JWT token.
@@ -291,10 +307,12 @@ async fn status_check(
 /// Handles syncing seen articles and returning unseen articles.
 async fn sync_seen_articles(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    auth_header: TypedHeader<Authorization<Bearer>>,
+    headers: HeaderMap,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<SyncSeenArticlesRequest>,
 ) -> Result<Json<SyncSeenArticlesResponse>, StatusCode> {
-    info!("app::api sync_seen_articles request from IP {} ", addr.ip(),);
+    let client_ip = get_client_ip(&headers, &addr);
+    info!("app::api sync_seen_articles request from IP {}", client_ip);
     let token = auth_header.token();
 
     // Validate JWT and extract claims
