@@ -149,12 +149,13 @@ fn get_client_ip(headers: &HeaderMap, socket_addr: &SocketAddr) -> String {
 /// Handles authentication requests by validating the device ID and returning a JWT token.
 async fn authenticate(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(payload): Json<AuthRequest>,
 ) -> Json<AuthResponse> {
+    let client_ip = get_client_ip(&headers, &addr);
     info!(
         "Authenticating device_id: {} from IP: {}",
-        payload.device_id,
-        addr.ip()
+        payload.device_id, client_ip,
     );
 
     // Basic validation for iOS device token
@@ -179,13 +180,14 @@ async fn authenticate(
 /// Subscribes a device to a topic after validating the JWT and topic validity.
 async fn subscribe_to_topic(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
+    let client_ip = get_client_ip(&headers, &addr);
     info!(
         "app::api subscribe_to_topic request from IP {} for topic: {}",
-        addr.ip(),
-        payload.topic
+        client_ip, payload.topic
     );
     let token = auth_header.token();
     let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
@@ -240,13 +242,14 @@ async fn subscribe_to_topic(
 /// Unsubscribes a device from a topic after validating the JWT and topic validity.
 async fn unsubscribe_from_topic(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     auth_header: TypedHeader<Authorization<Bearer>>,
     Json(payload): Json<TopicRequest>,
 ) -> Result<StatusCode, StatusCode> {
+    let client_ip = get_client_ip(&headers, &addr);
     info!(
         "app::api unsusbcribe_from_topic request from IP {} for topic: {}",
-        addr.ip(),
-        payload.topic
+        client_ip, payload.topic
     );
     let token = auth_header.token();
 
@@ -299,9 +302,11 @@ async fn unsubscribe_from_topic(
 /// Checks the server's status, optionally validating a JWT if provided.
 async fn status_check(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     auth_header: Option<TypedHeader<Authorization<Bearer>>>,
 ) -> Result<&'static str, StatusCode> {
-    info!("app::api status_check request from IP {} ", addr.ip(),);
+    let client_ip = get_client_ip(&headers, &addr);
+    info!("app::api status_check request from IP {} ", client_ip,);
     if let Some(TypedHeader(auth_header)) = auth_header {
         let token = auth_header.token();
         if decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256)).is_ok() {
