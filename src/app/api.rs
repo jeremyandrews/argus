@@ -8,7 +8,7 @@ use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, 
 use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::{collections::HashSet, sync::Mutex};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
@@ -120,7 +120,7 @@ pub async fn app_api_loop() -> Result<()> {
 
 // Helper to extract proxied client address.
 fn get_client_ip(headers: &HeaderMap, socket_addr: &SocketAddr) -> String {
-    headers
+    let ip_from_headers = headers
         .get("CF-Connecting-IP")
         .and_then(|hv| hv.to_str().ok())
         .or_else(|| {
@@ -128,9 +128,22 @@ fn get_client_ip(headers: &HeaderMap, socket_addr: &SocketAddr) -> String {
                 .get("X-Forwarded-For")
                 .and_then(|hv| hv.to_str().ok())
                 .and_then(|s| s.split(',').next())
-        })
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| socket_addr.ip().to_string())
+        });
+
+    if let Some(ip_str) = ip_from_headers {
+        // Try to parse as IPv4 first
+        if let Ok(ip) = ip_str.parse::<std::net::Ipv4Addr>() {
+            return ip.to_string();
+        }
+        // If IPv4 parsing fails, return the original string (could be IPv6)
+        return ip_str.to_string();
+    }
+
+    // Fallback to socket address
+    match socket_addr.ip() {
+        IpAddr::V4(ip) => ip.to_string(),
+        IpAddr::V6(ip) => ip.to_string(),
+    }
 }
 
 /// Handles authentication requests by validating the device ID and returning a JWT token.
