@@ -113,11 +113,7 @@ impl Database {
                 article_html TEXT NOT NULL,
                 article_hash TEXT NOT NULL,
                 title_domain_hash TEXT NOT NULL,
-                affected_regions TEXT,
-                affected_people TEXT,
-                affected_places TEXT,
-                non_affected_people TEXT,
-                non_affected_places TEXT,
+                threat TEXT,
                 timestamp TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_life_safety_article_url ON life_safety_queue (article_url);
@@ -404,17 +400,17 @@ impl Database {
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(article_url) DO NOTHING
         "#,
-    )
-    .bind(article_text)
-    .bind(article_html)
-    .bind(article_url)
-    .bind(article_title)
-    .bind(article_hash)
-    .bind(title_domain_hash)
-    .bind(topic_matched)
-    .bind(timestamp)
-    .execute(&self.pool)
-    .await;
+        )
+        .bind(article_text)
+        .bind(article_html)
+        .bind(article_url)
+        .bind(article_title)
+        .bind(article_hash)
+        .bind(title_domain_hash)
+        .bind(topic_matched)
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await;
 
         match result {
             Ok(_) => {
@@ -437,17 +433,13 @@ impl Database {
     #[instrument(target = "db", level = "info", skip(self))]
     pub async fn add_to_life_safety_queue(
         &self,
+        threat: &str,
         article_url: &str,
         article_title: &str,
         article_text: &str,
         article_html: &str,
         article_hash: &str,
         title_domain_hash: &str,
-        affected_regions: &BTreeSet<String>,
-        affected_people: &BTreeSet<String>,
-        affected_places: &BTreeSet<String>,
-        non_affected_people: &BTreeSet<String>,
-        non_affected_places: &BTreeSet<String>,
     ) -> Result<(), sqlx::Error> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -456,36 +448,25 @@ impl Database {
             .to_string();
 
         let result = sqlx::query(
-            r#"
+        r#"
         INSERT INTO life_safety_queue (
-            article_url, article_title, article_text, article_html, article_hash, title_domain_hash,
-            affected_regions, affected_people, affected_places,
-            non_affected_people, non_affected_places, timestamp
+            article_url, article_title, article_text, article_html, article_hash, title_domain_hash, 
+            threat, timestamp
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(article_url) DO NOTHING
         "#,
-        )
-        .bind(article_url)
-        .bind(article_title)
-        .bind(article_text)
-        .bind(article_html)
-        .bind(article_hash)
-        .bind(title_domain_hash)
-        .bind(serde_json::to_string(affected_regions).expect("failed to encode affected_regions"))
-        .bind(serde_json::to_string(affected_people).expect("failed to encode affected_people"))
-        .bind(serde_json::to_string(affected_places).expect("failed to encode affected_places"))
-        .bind(
-            serde_json::to_string(non_affected_people)
-                .expect("failed to encode non_affected_people"),
-        )
-        .bind(
-            serde_json::to_string(non_affected_places)
-                .expect("failed to encode non_affected_places"),
-        )
-        .bind(timestamp)
-        .execute(&self.pool)
-        .await;
+    )
+    .bind(article_url)
+    .bind(article_title)
+    .bind(article_text)
+    .bind(article_html)
+    .bind(article_hash)
+    .bind(title_domain_hash)
+    .bind(threat)
+    .bind(timestamp)
+    .execute(&self.pool)
+    .await;
 
         match result {
             Ok(_) => {

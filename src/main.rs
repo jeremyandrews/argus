@@ -305,22 +305,6 @@ async fn main() -> Result<()> {
             0.0
         });
 
-    // Load JSON data if PLACES_JSON_PATH environment variable is set
-    let places = if let Ok(json_path) = env::var(PLACES_JSON_PATH_ENV) {
-        if Path::new(&json_path).exists() {
-            let json_data = fs::read_to_string(&json_path)?;
-            let places: Value = serde_json::from_str(&json_data)?;
-            info!(target: TARGET_DB, "Loaded places data from {}: {:?}", json_path, places);
-            Some(places)
-        } else {
-            warn!(target: TARGET_DB, "Specified PLACES_JSON_PATH does not exist: {}", json_path);
-            None
-        }
-    } else {
-        debug!(target: TARGET_DB, "PLACES_JSON_PATH environment variable not set.");
-        None
-    };
-
     // Define panic notification mechanism
     let panic_notify = Arc::new(Notify::new());
 
@@ -364,7 +348,6 @@ async fn main() -> Result<()> {
         let decision_worker_topics = topics.clone();
         let decision_worker_slack_token = slack_token.clone();
         let decision_worker_slack_channel = slack_channel.clone();
-        let decision_worker_places = places.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Decision Worker {}", decision_id);
         let decision_worker_handle = tokio::spawn(async move {
@@ -377,7 +360,6 @@ async fn main() -> Result<()> {
                 temperature,
                 &decision_worker_slack_token,
                 &decision_worker_slack_channel,
-                decision_worker_places,
             )
             .await
             {
