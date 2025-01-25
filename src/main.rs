@@ -2,13 +2,10 @@ use anyhow::Result;
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use futures::future::join_all;
 use ollama_rs::Ollama;
-use serde_json::Value;
 use std::env;
-use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Notify;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
 const ANALYSIS_OLLAMA_CONFIGS_ENV: &str = "ANALYSIS_OLLAMA_CONFIGS";
@@ -17,7 +14,6 @@ const ANALYSIS_OPENAI_CONFIGS_ENV: &str = "ANALYSIS_OPENAI_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
-const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
 use argus::analysis_worker;
 use argus::app::api;
@@ -25,7 +21,7 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::{FallbackConfig, LLMClient, TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
+use argus::{FallbackConfig, LLMClient, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 use environment::get_env_var_as_vec;
 

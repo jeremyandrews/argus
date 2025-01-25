@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde_json::json;
+use std::collections::BTreeMap;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -9,6 +10,7 @@ use crate::decision_worker::FeedItem;
 use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
+use crate::util::parse_places_data_hierarchical;
 use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 // Import necessary items from decision_worker
@@ -46,6 +48,12 @@ pub async fn analysis_loop(
         name: "analysis worker".to_string(),
         id: worker_id,
         model: model.to_string(),
+    };
+
+    // If analysis_worker will switch to a decision_worker, we need this.
+    let places = match parse_places_data_hierarchical() {
+        Ok(hierarchy) => hierarchy,
+        Err(err) => panic!("Error: {}", err),
     };
 
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: starting analysis_loop using {:?}.", worker_detail.name, worker_detail.id, worker_detail.model, llm_client);
@@ -139,6 +147,8 @@ pub async fn analysis_loop(
                         }
                     }
 
+                    let places_clone = places.clone();
+
                     // Process a single Decision task
                     process_decision_item(
                         &worker_detail,
@@ -147,6 +157,7 @@ pub async fn analysis_loop(
                         slack_token,
                         default_slack_channel,
                         topics,
+                        places_clone,
                     )
                     .await;
 
@@ -628,6 +639,7 @@ async fn process_decision_item(
     slack_token: &str,
     slack_channel: &str,
     topics: &[String],
+    places: BTreeMap<std::string::String, BTreeMap<std::string::String, Vec<std::string::String>>>,
 ) {
     // Fetch from rss_queue similar to decision_worker::decision_loop
     match db.fetch_and_delete_url_from_rss_queue("random").await {
@@ -652,7 +664,7 @@ async fn process_decision_item(
                 db,
                 slack_token,
                 slack_channel,
-                places: None, // No places needed for fallback Decision mode
+                places: places,
             };
 
             // Reuse the existing process_item logic from decision_worker
