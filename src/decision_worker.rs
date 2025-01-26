@@ -274,25 +274,32 @@ async fn determine_threat_location(
     // Extract LLM parameters
     let llm_params = extract_llm_params(params);
 
-    // Send the prompt to the LLM and process the response
     if let Some(response) =
         generate_llm_response(&threat_locations_prompt, &llm_params, worker_detail).await
     {
         let trimmed_response = response.trim();
-
-        // Check if the response contains any listed regions
-        if places.iter().any(|(continent, countries)| {
-            countries.iter().any(|(country, regions)| {
-                regions.iter().any(|region| {
-                    // Check if any region name appears in the response
-                    trimmed_response.contains(continent)
-                        || trimmed_response.contains(country)
-                        || trimmed_response.contains(region)
+        // Parse the JSON response
+        if let Ok(json_response) = serde_json::from_str::<serde_json::Value>(trimmed_response) {
+            // Check if the response contains any listed regions
+            if json_response["impacted_regions"]
+                .as_array()
+                .map_or(false, |regions| {
+                    regions.iter().any(|region| {
+                        let continent = region["continent"].as_str().unwrap_or("");
+                        let country = region["country"].as_str().unwrap_or("");
+                        let region_name = region["region"].as_str().unwrap_or("");
+                        places.iter().any(|(c, countries)| {
+                            c == continent
+                                || countries.iter().any(|(co, regions)| {
+                                    co == country || regions.iter().any(|r| r == region_name)
+                                })
+                        })
+                    })
                 })
-            })
-        }) {
-            // If any region is mentioned, return the response
-            return trimmed_response.to_string();
+            {
+                // If any region is mentioned, return the JSON response
+                return trimmed_response.to_string();
+            }
         }
     }
 

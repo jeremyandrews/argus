@@ -282,7 +282,6 @@ async fn process_analysis_item(
         BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<String>>>>,
     >,
 ) -> bool {
-    // Fetch from life_safety_queue
     match db.fetch_and_delete_from_life_safety_queue().await {
         Ok(Some((
             article_url,
@@ -294,10 +293,8 @@ async fn process_analysis_item(
             threat_regions,
         ))) => {
             let start_time = Instant::now();
-
             info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from life safety queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
-            // Check if the article has already been processed
             if db.has_hash(&article_hash).await.unwrap_or(false)
                 || db
                     .has_title_domain_hash(&title_domain_hash)
@@ -312,101 +309,77 @@ async fn process_analysis_item(
                 return false;
             }
 
-            // Parse and validate the threat regions from the simplified structure
-            let threat_regions: Vec<String> =
-                serde_json::from_str(&threat_regions).unwrap_or_else(|_| Vec::new());
+            // Parse the JSON threat_regions
+            let threat_regions: serde_json::Value = serde_json::from_str(&threat_regions)
+                .unwrap_or_else(|_| json!({"impacted_regions": []}));
 
             let mut directly_affected_people = Vec::new();
             let mut indirectly_affected_people = Vec::new();
 
             // Iterate through the threat regions
-            for threat_region in threat_regions.iter() {
-                for (continent, countries) in places_detailed.iter() {
-                    for (country, regions) in countries.iter() {
-                        if let Some((region_name, cities)) =
-                            regions.iter().find(|(region_name, _)| {
-                                region_name.eq_ignore_ascii_case(threat_region)
-                            })
-                        {
-                            // Validate if the region truly has a threat
-                            let region_prompt = prompts::region_threat_prompt(
-                                &article_text,
-                                region_name,
-                                country,
-                                continent,
-                            );
+            if let Some(impacted_regions) = threat_regions["impacted_regions"].as_array() {
+                for region in impacted_regions {
+                    let continent = region["continent"].as_str().unwrap_or("");
+                    let country = region["country"].as_str().unwrap_or("");
+                    let region_name = region["region"].as_str().unwrap_or("");
 
-                            // Clone the LLMParams and set require_json to true for this specific query
-                            let mut json_llm_params = llm_params.clone();
-                            json_llm_params.require_json = Some(true);
+                    if let Some(countries) = places_detailed.get(continent) {
+                        if let Some(regions) = countries.get(country) {
+                            if let Some(cities) = regions.get(region_name) {
+                                // Validate if the region truly has a threat
+                                let region_prompt = prompts::region_threat_prompt(
+                                    &article_text,
+                                    region_name,
+                                    country,
+                                    continent,
+                                );
 
-                            let region_response = generate_llm_response(
-                                &region_prompt,
-                                &json_llm_params,
-                                worker_detail,
-                            )
-                            .await
-                            .unwrap_or_default();
+                                let mut json_llm_params = llm_params.clone();
+                                json_llm_params.require_json = Some(true);
+                                let region_response = generate_llm_response(
+                                    &region_prompt,
+                                    &json_llm_params,
+                                    worker_detail,
+                                )
+                                .await
+                                .unwrap_or_default();
 
-                            // Parse the response JSON
-                            match serde_json::from_str::<serde_json::Value>(&region_response) {
-                                Ok(json_response) => {
-                                    if let Some(impacted_regions) =
-                                        json_response.get("impacted_regions")
+                                // Parse the response JSON
+                                if let Ok(json_response) =
+                                    serde_json::from_str::<serde_json::Value>(&region_response)
+                                {
+                                    if json_response["impacted_regions"]
+                                        .as_array()
+                                        .map_or(false, |regions| !regions.is_empty())
                                     {
-                                        if let Some(regions) = impacted_regions.as_array() {
-                                            for region in regions {
-                                                let continent = region
-                                                    .get("continent")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("");
-                                                let country = region
-                                                    .get("country")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("");
-                                                let region_name = region
-                                                    .get("region")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("");
-
-                                                // Process each region based on the hierarchy
-                                                for (city_name, people) in cities.iter() {
-                                                    let city_prompt = prompts::city_threat_prompt(
-                                                        &article_text,
-                                                        city_name,
-                                                        region_name,
-                                                        country,
-                                                        continent,
-                                                    );
-
-                                                    let city_response = generate_llm_response(
-                                                        &city_prompt,
-                                                        llm_params,
-                                                        worker_detail,
-                                                    )
-                                                    .await
-                                                    .unwrap_or_default();
-
-                                                    if city_response.to_lowercase().contains("yes")
-                                                    {
-                                                        directly_affected_people
-                                                            .extend(people.clone());
-                                                    } else {
-                                                        indirectly_affected_people
-                                                            .extend(people.clone());
-                                                    }
-                                                }
+                                        for (city_name, people) in cities.iter() {
+                                            let city_prompt = prompts::city_threat_prompt(
+                                                &article_text,
+                                                city_name,
+                                                region_name,
+                                                country,
+                                                continent,
+                                            );
+                                            let city_response = generate_llm_response(
+                                                &city_prompt,
+                                                llm_params,
+                                                worker_detail,
+                                            )
+                                            .await
+                                            .unwrap_or_default();
+                                            if city_response.to_lowercase().contains("yes") {
+                                                directly_affected_people.extend(people.clone());
+                                            } else {
+                                                indirectly_affected_people.extend(people.clone());
                                             }
                                         }
                                     }
-                                }
-                                Err(err) => {
+                                } else {
                                     error!(
                                         target: TARGET_LLM_REQUEST,
-                                        "Failed to parse JSON response: {:?}. Response: {}",
-                                        err, region_response
+                                        "Failed to parse JSON response for region. Response: {}",
+                                        region_response
                                     );
-                                    return false;
                                 }
                             }
                         }
