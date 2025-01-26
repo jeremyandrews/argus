@@ -4,7 +4,6 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Pool, Row, Sqlite,
 };
-use std::collections::BTreeSet;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -105,6 +104,8 @@ impl Database {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_matched_topics_article_url ON matched_topics_queue (article_url);
 
+            -- Upgrade to new life_safety_queue table:
+            -- ALTER TABLE life_safety_queue RENAME TO life_safety_queue_old;
             CREATE TABLE IF NOT EXISTS life_safety_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 article_url TEXT NOT NULL UNIQUE,
@@ -491,17 +492,13 @@ impl Database {
         &self,
     ) -> Result<
         Option<(
-            String,           // article_url
-            String,           // article_title
-            String,           // article_text
-            String,           // article_html
-            String,           // article_hash
-            String,           // title_domain_hash
-            BTreeSet<String>, // affected_regions
-            BTreeSet<String>, // affected_people
-            BTreeSet<String>, // affected_places
-            BTreeSet<String>, // non_affected_people
-            BTreeSet<String>, // non_affected_places
+            String, // article_url
+            String, // article_title
+            String, // article_text
+            String, // article_html
+            String, // article_hash
+            String, // title_domain_hash
+            String, // threat
         )>,
         sqlx::Error,
     > {
@@ -518,11 +515,7 @@ impl Database {
             article_html,
             article_hash,
             title_domain_hash,
-            affected_regions,
-            affected_people,
-            affected_places,
-            non_affected_people,
-            non_affected_places
+            threat
         FROM life_safety_queue
         ORDER BY timestamp ASC
         LIMIT 1
@@ -539,23 +532,7 @@ impl Database {
             let article_html: String = row.get("article_html");
             let article_hash: String = row.get("article_hash");
             let title_domain_hash: String = row.get("title_domain_hash");
-
-            // Deserialize JSON strings into BTreeSet<String>
-            let affected_regions: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("affected_regions"))
-                    .expect("failed to deserialize affected_regions");
-            let affected_people: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("affected_people"))
-                    .expect("failed to deserialize affected_regions");
-            let affected_places: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("affected_places"))
-                    .expect("failed to deserialize affected_regions");
-            let non_affected_people: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("non_affected_people"))
-                    .expect("failed to deserialize affected_regions");
-            let non_affected_places: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("non_affected_places"))
-                    .expect("failed to deserialize affected_regions");
+            let threat: String = row.get("threat");
 
             sqlx::query("DELETE FROM life_safety_queue WHERE id = ?1")
                 .bind(id)
@@ -571,11 +548,7 @@ impl Database {
                 article_html,
                 article_hash,
                 title_domain_hash,
-                affected_regions,
-                affected_people,
-                affected_places,
-                non_affected_people,
-                non_affected_places,
+                threat,
             )))
         } else {
             debug!(target: TARGET_DB, "No new items found in life safety queue");

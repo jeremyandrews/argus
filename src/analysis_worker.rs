@@ -10,7 +10,7 @@ use crate::decision_worker::FeedItem;
 use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
-use crate::util::parse_places_data_hierarchical;
+use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
 use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 // Import necessary items from decision_worker
@@ -56,6 +56,12 @@ pub async fn analysis_loop(
         Err(err) => panic!("Error: {}", err),
     };
 
+    // And we need this to analyze life safety threats.
+    let places_detailed = match parse_places_data_detailed() {
+        Ok(hierarchy) => hierarchy,
+        Err(err) => panic!("Error: {}", err),
+    };
+
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: starting analysis_loop using {:?}.", worker_detail.name, worker_detail.id, worker_detail.model, llm_client);
 
     loop {
@@ -68,7 +74,7 @@ pub async fn analysis_loop(
                     &db,
                     slack_token,
                     default_slack_channel,
-                    temperature,
+                    &places_detailed,
                 )
                 .await;
 
@@ -266,7 +272,10 @@ async fn process_analysis_item(
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
-    _temperature: f32,
+    places_detailed: &BTreeMap<
+        String,
+        BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<String>>>>,
+    >,
 ) -> bool {
     // Fetch from life_safety_queue
     match db.fetch_and_delete_from_life_safety_queue().await {
@@ -274,14 +283,10 @@ async fn process_analysis_item(
             article_url,
             article_title,
             article_text,
-            article_html,
+            _article_html,
             article_hash,
             title_domain_hash,
-            affected_regions,
-            affected_people,
-            affected_places_set,
-            non_affected_people,
-            non_affected_places,
+            threat_regions,
         ))) => {
             let start_time = Instant::now();
 
@@ -299,188 +304,126 @@ async fn process_analysis_item(
                     "Article with hash {} or title_domain_hash {} was already processed. Skipping.",
                     article_hash, title_domain_hash
                 );
-                // No item processed, this was a duplicate.
                 return false;
             }
 
-            let mut llm_params_clone = llm_params.clone();
+            // Parse and validate the threat regions from the simplified structure
+            let threat_regions: Vec<String> =
+                serde_json::from_str(&threat_regions).unwrap_or_else(|_| Vec::new());
 
-            let (
-                summary,
-                tiny_summary,
-                tiny_title,
-                critical_analysis,
-                logical_fallacies,
-                source_analysis,
-                _relation_to_topic,
-            ) = process_analysis(
-                &article_text,
-                &article_html,
-                &article_url,
-                None,
-                &mut llm_params_clone,
-                worker_detail,
+            let mut directly_affected_people = Vec::new();
+            let mut indirectly_affected_people = Vec::new();
+
+            // Iterate through the threat regions
+            for threat_region in threat_regions.iter() {
+                for (continent, countries) in places_detailed.iter() {
+                    for (country, regions) in countries.iter() {
+                        if let Some((region_name, cities)) =
+                            regions.iter().find(|(region_name, _)| {
+                                region_name.eq_ignore_ascii_case(threat_region)
+                            })
+                        {
+                            // Validate if the region truly has a threat
+                            let region_prompt = prompts::region_threat_prompt(
+                                &article_text,
+                                region_name,
+                                country,
+                                continent,
+                            );
+
+                            let region_response =
+                                generate_llm_response(&region_prompt, llm_params, worker_detail)
+                                    .await
+                                    .unwrap_or_default();
+
+                            if region_response.to_lowercase().contains("yes") {
+                                // If the region is confirmed to have a threat, check cities within the region
+                                for (city_name, people) in cities.iter() {
+                                    let city_prompt = prompts::city_threat_prompt(
+                                        &article_text,
+                                        city_name,
+                                        region_name,
+                                        country,
+                                        continent,
+                                    );
+
+                                    let city_response = generate_llm_response(
+                                        &city_prompt,
+                                        llm_params,
+                                        worker_detail,
+                                    )
+                                    .await
+                                    .unwrap_or_default();
+
+                                    if city_response.to_lowercase().contains("yes") {
+                                        // Add all people in the city to directly affected
+                                        directly_affected_people.extend(people.clone());
+                                    } else {
+                                        // Add all people in the city to indirectly affected
+                                        indirectly_affected_people.extend(people.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let affected_summary = if !directly_affected_people.is_empty() {
+                format!(
+                    "This article directly affects people in these locations: {}.",
+                    directly_affected_people.join(", ")
+                )
+            } else {
+                String::new()
+            };
+
+            let non_affected_summary = if !indirectly_affected_people.is_empty() {
+                format!(
+                    "This article indirectly affects people in these locations: {}.",
+                    indirectly_affected_people.join(", ")
+                )
+            } else {
+                String::new()
+            };
+
+            let detailed_response_json = json!({
+                "article_url": article_url,
+                "title": article_title,
+                "affected_summary": affected_summary,
+                "non_affected_summary": non_affected_summary,
+                "article_body": article_text,
+                "elapsed_time": start_time.elapsed().as_secs_f64(),
+            });
+
+            // Save the validated analysis back to the database
+            if let Err(e) = db
+                .add_article(
+                    &article_url,
+                    true,
+                    None,
+                    Some(&detailed_response_json.to_string()),
+                    None,
+                    Some(&article_hash),
+                    Some(&title_domain_hash),
+                    None, // Placeholder for future updates
+                )
+                .await
+            {
+                error!(target: TARGET_LLM_REQUEST, "Failed to save article to database: {:?}", e);
+                return false;
+            }
+
+            // Notify Slack
+            send_to_slack(
+                &format!("*<{}|{}>*", article_url, article_title),
+                &detailed_response_json.to_string(),
+                slack_token,
+                slack_channel,
             )
             .await;
 
-            let mut relation_to_topic_str = String::new();
-
-            // Generate relation to topic (affected and non-affected summary)
-            let affected_summary;
-
-            // For affected places
-            if !affected_people.is_empty() {
-                affected_summary = format!(
-                    "This article affects these people in {}: {}",
-                    affected_regions
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    affected_people
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                let affected_places_str = affected_places_set
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let how_prompt =
-                    prompts::how_does_it_affect_prompt(&article_text, &affected_places_str);
-                let how_response = generate_llm_response(&how_prompt, llm_params, worker_detail)
-                    .await
-                    .unwrap_or_default();
-                relation_to_topic_str
-                    .push_str(&format!("\n\n{}\n\n{}", affected_summary, how_response));
-            } else {
-                affected_summary = String::new();
-            }
-
-            // For non-affected places
-            let non_affected_summary;
-            if !non_affected_people.is_empty() {
-                non_affected_summary = format!(
-                    "This article does not affect these people in {}: {}",
-                    affected_regions
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    non_affected_people
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                let why_not_prompt = prompts::why_not_affect_prompt(
-                    &article_text,
-                    &non_affected_places
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                );
-                let why_not_response =
-                    generate_llm_response(&why_not_prompt, llm_params, worker_detail)
-                        .await
-                        .unwrap_or_default();
-                relation_to_topic_str.push_str(&format!(
-                    "\n\n{}\n\n{}",
-                    non_affected_summary, why_not_response
-                ));
-            }
-
-            if !summary.is_empty()
-                && !tiny_summary.is_empty()
-                && !critical_analysis.is_empty()
-                && !logical_fallacies.is_empty()
-                && !relation_to_topic_str.is_empty()
-            {
-                // Collect database statistics
-                let stats = match db.collect_stats().await {
-                    Ok(stats) => stats,
-                    Err(e) => {
-                        error!(target: TARGET_LLM_REQUEST, "Failed to collect database stats: {:?}", e);
-                        String::from("N/A")
-                    }
-                };
-
-                // If affected_summary is empty, then a location alert doesn't
-                // directly affect anyone monitored.
-                let topic = if affected_summary.is_empty() {
-                    "Alert: Close"
-                } else {
-                    "Alert: Direct"
-                };
-
-                let detailed_response_json = json!({
-                    "topic": topic,
-                    "title": article_title,
-                    "url": article_url,
-                    "affected": affected_summary,
-                    "article_body": article_text,
-                    "tiny_summary": tiny_summary,
-                    "tiny_title": tiny_title,
-                    "summary": summary,
-                    "critical_analysis": critical_analysis,
-                    "logical_fallacies": logical_fallacies,
-                    "relation_to_topic": relation_to_topic_str,
-                    "source_analysis": source_analysis,
-                    "elapsed_time": start_time.elapsed().as_secs_f64(),
-                    "model": llm_params.model,
-                    "stats": stats
-                });
-
-                // Save the article first
-                if let Err(e) = db
-                    .add_article(
-                        &article_url,
-                        true,
-                        None,
-                        Some(&detailed_response_json.to_string()),
-                        Some(&tiny_summary),
-                        Some(&article_hash),
-                        Some(&title_domain_hash),
-                        None, // R2 URL will be updated later
-                    )
-                    .await
-                {
-                    error!(
-                        target: TARGET_LLM_REQUEST,
-                        "Failed to save article to database: {:?}", e
-                    );
-                    return false; // Skip processing if saving fails
-                }
-
-                // Send notification to app
-                if let Some(r2_url) = send_to_app(&detailed_response_json).await {
-                    // Update the article with R2 details
-                    if let Err(e) = db
-                        .update_article_with_r2_details(&article_url, &r2_url)
-                        .await
-                    {
-                        error!(
-                            target: TARGET_LLM_REQUEST,
-                            "Failed to update R2 details in database: {:?}", e
-                        );
-                    }
-                } else {
-                    warn!("failed to send Alert: {} to app...", article_url);
-                }
-
-                // Send notification to Slack
-                send_to_slack(
-                    &format!("*<{}|{}>*", article_url, article_title),
-                    &detailed_response_json.to_string(),
-                    slack_token,
-                    slack_channel,
-                )
-                .await;
-            }
-            // An item was processed, return to process another.
+            // Item processed successfully
             return true;
         }
         Ok(None) => {

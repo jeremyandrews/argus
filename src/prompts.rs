@@ -273,9 +273,10 @@ pub fn region_threat_prompt(
     country: &str,
     continent: &str,
 ) -> String {
-    format!("{article} |
-Is this article about an ongoing or imminent life-threatening event affecting people in the region of
-{region}, {country}, {continent}? Answer yes or no.",
+    format!(
+        "{article} |
+This article mentions that people in {region}, {country}, {continent} may be affected by an ongoing or imminent life-threatening event. 
+Please confirm if the article is indeed about such an event in this region. Answer yes or no, and explain briefly why.",
         article = article_text,
         region = region,
         country = country,
@@ -292,8 +293,8 @@ pub fn city_threat_prompt(
 ) -> String {
     format!(
         "{article} |
-Is this article about an ongoing or imminent life-threatening event affecting people in or near the
-city of {city}, {region}, {country}, {continent}? Answer yes or no.",
+This article mentions that people in or near {city}, {region}, {country}, {continent} may be affected by an ongoing or imminent life-threatening event. 
+Please confirm if the article is indeed about such an event in this city. Answer yes or no, and explain briefly why.",
         article = article_text,
         city = city_name,
         region = region,
