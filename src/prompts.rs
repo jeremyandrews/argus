@@ -225,13 +225,12 @@ pub fn threat_locations(
 
     // Instructions for the model
     prompt.push_str(
-        "Your task is to list the impacted regions in a hierarchical format based on the provided structure. "
+        "Your task is to list the impacted regions in a hierarchical JSON format based on the provided structure. ",
     );
     prompt.push_str("For each impacted region, provide the continent, country, and region name. ");
-    prompt
-        .push_str("If a region is not mentioned in or directly impacted by the text of the article, do not include it in the output. ");
-    prompt.push_str("The format should be:\n\n");
-    prompt.push_str("Continent:\n  Country:\n    - Region\n\n");
+    prompt.push_str("If a region is not mentioned in or directly impacted by the text of the article, do not include it in the output. ");
+    prompt.push_str("The JSON format should be:\n\n");
+    prompt.push_str("{\n  \"impacted_regions\": [\n    {\n      \"continent\": \"<continent_name>\",\n      \"country\": \"<country_name>\",\n      \"region\": \"<region_name>\"\n    },\n    ...\n  ]\n}\n\n");
 
     // Add the hierarchical data for reference
     prompt.push_str("Here is the list of geographical regions for reference:\n\n");
@@ -250,7 +249,7 @@ pub fn threat_locations(
     prompt.push_str(article);
     prompt.push_str("\n\n---\n\n");
     prompt.push_str(
-        "Based on the article, extract the impacted regions using the hierarchical format specified above.",
+        "Based on the article, extract the impacted regions using the hierarchical JSON format specified above.",
     );
 
     prompt

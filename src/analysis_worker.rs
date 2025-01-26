@@ -38,6 +38,7 @@ pub async fn analysis_loop(
         llm_client: llm_client.clone(),
         model: model.to_string(),
         temperature,
+        require_json: None,
     };
 
     let mut mode = Mode::Analysis;
@@ -97,6 +98,7 @@ pub async fn analysis_loop(
                             llm_client: fallback_config.llm_client.clone(),
                             model: fallback_config.model.clone(),
                             temperature,
+                            require_json: None,
                         };
 
                         // Wait for the new model to be operational
@@ -116,6 +118,7 @@ pub async fn analysis_loop(
                                 llm_client: llm_client.clone(),
                                 model: model.to_string(),
                                 temperature,
+                                require_json: None,
                             };
                             // Give time for the original model to restore.
                             let _ =
@@ -142,6 +145,7 @@ pub async fn analysis_loop(
                                 llm_client: llm_client.clone(),
                                 model: model.to_string(),
                                 temperature,
+                                require_json: None,
                             };
 
                             worker_detail.model = model.to_string();
@@ -193,6 +197,7 @@ pub async fn analysis_loop(
                         llm_client: llm_client.clone(),
                         model: model.to_string(),
                         temperature,
+                        require_json: None,
                     };
 
                     // Wait for the original model to be operational
@@ -331,37 +336,77 @@ async fn process_analysis_item(
                                 continent,
                             );
 
-                            let region_response =
-                                generate_llm_response(&region_prompt, llm_params, worker_detail)
-                                    .await
-                                    .unwrap_or_default();
+                            // Clone the LLMParams and set require_json to true for this specific query
+                            let mut json_llm_params = llm_params.clone();
+                            json_llm_params.require_json = Some(true);
 
-                            if region_response.to_lowercase().contains("yes") {
-                                // If the region is confirmed to have a threat, check cities within the region
-                                for (city_name, people) in cities.iter() {
-                                    let city_prompt = prompts::city_threat_prompt(
-                                        &article_text,
-                                        city_name,
-                                        region_name,
-                                        country,
-                                        continent,
-                                    );
+                            let region_response = generate_llm_response(
+                                &region_prompt,
+                                &json_llm_params,
+                                worker_detail,
+                            )
+                            .await
+                            .unwrap_or_default();
 
-                                    let city_response = generate_llm_response(
-                                        &city_prompt,
-                                        llm_params,
-                                        worker_detail,
-                                    )
-                                    .await
-                                    .unwrap_or_default();
+                            // Parse the response JSON
+                            match serde_json::from_str::<serde_json::Value>(&region_response) {
+                                Ok(json_response) => {
+                                    if let Some(impacted_regions) =
+                                        json_response.get("impacted_regions")
+                                    {
+                                        if let Some(regions) = impacted_regions.as_array() {
+                                            for region in regions {
+                                                let continent = region
+                                                    .get("continent")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
+                                                let country = region
+                                                    .get("country")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
+                                                let region_name = region
+                                                    .get("region")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
 
-                                    if city_response.to_lowercase().contains("yes") {
-                                        // Add all people in the city to directly affected
-                                        directly_affected_people.extend(people.clone());
-                                    } else {
-                                        // Add all people in the city to indirectly affected
-                                        indirectly_affected_people.extend(people.clone());
+                                                // Process each region based on the hierarchy
+                                                for (city_name, people) in cities.iter() {
+                                                    let city_prompt = prompts::city_threat_prompt(
+                                                        &article_text,
+                                                        city_name,
+                                                        region_name,
+                                                        country,
+                                                        continent,
+                                                    );
+
+                                                    let city_response = generate_llm_response(
+                                                        &city_prompt,
+                                                        llm_params,
+                                                        worker_detail,
+                                                    )
+                                                    .await
+                                                    .unwrap_or_default();
+
+                                                    if city_response.to_lowercase().contains("yes")
+                                                    {
+                                                        directly_affected_people
+                                                            .extend(people.clone());
+                                                    } else {
+                                                        indirectly_affected_people
+                                                            .extend(people.clone());
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
+                                }
+                                Err(err) => {
+                                    error!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "Failed to parse JSON response: {:?}. Response: {}",
+                                        err, region_response
+                                    );
+                                    return false;
                                 }
                             }
                         }

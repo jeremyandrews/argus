@@ -38,6 +38,7 @@ fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
         llm_client: params.llm_client.clone(),
         model: params.model.to_string(),
         temperature: params.temperature,
+        require_json: None,
     }
 }
 
