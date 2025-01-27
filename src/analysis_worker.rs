@@ -56,12 +56,14 @@ pub async fn analysis_loop(
         Ok(hierarchy) => hierarchy,
         Err(err) => panic!("Error: {}", err),
     };
+    info!("loaded places: {:#?}", places);
 
     // And we need this to analyze life safety threats.
     let places_detailed = match parse_places_data_detailed() {
         Ok(hierarchy) => hierarchy,
         Err(err) => panic!("Error: {}", err),
     };
+    info!("loaded places_detailed: {:#?}", places_detailed);
 
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: starting analysis_loop using {:?}.", worker_detail.name, worker_detail.id, worker_detail.model, llm_client);
 
