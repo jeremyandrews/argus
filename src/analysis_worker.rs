@@ -662,11 +662,18 @@ async fn process_analysis(
     String,
     Option<String>,
 ) {
+    debug!("Starting analysis for article: {}", article_url);
+
     // Re-summarize the article with the analysis worker.
     let summary_prompt = prompts::summary_prompt(article_text);
+    debug!("Generated summary prompt: {:?}", summary_prompt);
     let summary = generate_llm_response(&summary_prompt, llm_params, worker_detail)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warn!("Failed to generate summary");
+            String::new()
+        });
+    info!("Generated summary: {:?}", summary);
 
     // Now perform the rest of the analysis.
     let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary);
@@ -675,34 +682,77 @@ async fn process_analysis(
     let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
     let source_analysis_prompt = prompts::source_analysis_prompt(article_html, article_url);
 
+    debug!("Generated tiny summary prompt: {:?}", tiny_summary_prompt);
     let tiny_summary = generate_llm_response(&tiny_summary_prompt, llm_params, worker_detail)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warn!("Failed to generate tiny summary");
+            String::new()
+        });
+    info!("Generated tiny summary: {:?}", tiny_summary);
+
+    debug!("Generated tiny title prompt: {:?}", tiny_title_prompt);
     let tiny_title = generate_llm_response(&tiny_title_prompt, llm_params, worker_detail)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warn!("Failed to generate tiny title");
+            String::new()
+        });
+    info!("Generated tiny title: {:?}", tiny_title);
+
+    debug!(
+        "Generated critical analysis prompt: {:?}",
+        critical_analysis_prompt
+    );
     let critical_analysis =
         generate_llm_response(&critical_analysis_prompt, llm_params, worker_detail)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Failed to generate critical analysis");
+                String::new()
+            });
+    info!("Generated critical analysis: {:?}", critical_analysis);
+
+    debug!(
+        "Generated logical fallacies prompt: {:?}",
+        logical_fallacies_prompt
+    );
     let logical_fallacies =
         generate_llm_response(&logical_fallacies_prompt, llm_params, worker_detail)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                warn!("Failed to generate logical fallacies");
+                String::new()
+            });
+    info!("Generated logical fallacies: {:?}", logical_fallacies);
+
+    debug!(
+        "Generated source analysis prompt: {:?}",
+        source_analysis_prompt
+    );
     let source_analysis = generate_llm_response(&source_analysis_prompt, llm_params, worker_detail)
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            warn!("Failed to generate source analysis");
+            String::new()
+        });
+    info!("Generated source analysis: {:?}", source_analysis);
 
     let relation_response = if let Some(topic) = topic {
         let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic);
-        Some(
-            generate_llm_response(&relation_prompt, &llm_params, worker_detail)
-                .await
-                .unwrap_or_default(),
-        )
+        debug!("Generated relation to topic prompt: {:?}", relation_prompt);
+        generate_llm_response(&relation_prompt, llm_params, worker_detail)
+            .await
+            .or_else(|| {
+                warn!("Failed to generate relation to topic");
+                None
+            })
     } else {
         None
     };
+    info!("Generated relation response: {:?}", relation_response);
+
+    info!("Completed analysis for article: {}", article_url);
 
     (
         summary,
