@@ -35,8 +35,9 @@ pub async fn generate_llm_response(
                     request.format = Some(FormatType::StructuredJson(JsonStructure::new::<()>()));
                 }
 
-                let options = GenerationOptions::default().temperature(params.temperature);
-
+                let options = GenerationOptions::default()
+                    .temperature(params.temperature)
+                    .num_ctx(32768); // Set this to your desired context window size
                 request.options = Some(options);
 
                 debug!(
