@@ -37,7 +37,7 @@ pub async fn generate_llm_response(
 
                 let options = GenerationOptions::default()
                     .temperature(params.temperature)
-                    .num_ctx(32768); // Set this to your desired context window size
+                    .num_ctx(4096);
                 request.options = Some(options);
 
                 debug!(
