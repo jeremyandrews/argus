@@ -289,7 +289,7 @@ async fn process_analysis_item(
             article_url,
             article_title,
             article_text,
-            _article_html,
+            article_html,
             article_hash,
             title_domain_hash,
             threat_regions,
@@ -407,41 +407,93 @@ async fn process_analysis_item(
                 String::new()
             };
 
-            let detailed_response_json = json!({
-                "article_url": article_url,
-                "title": article_title,
-                "affected_summary": affected_summary,
-                "non_affected_summary": non_affected_summary,
-                "article_body": article_text,
-                "elapsed_time": start_time.elapsed().as_secs_f64(),
-            });
-
-            // Save the validated analysis back to the database
-            if let Err(e) = db
-                .add_article(
+            if !affected_summary.is_empty() || !non_affected_summary.is_empty() {
+                let (
+                    summary,
+                    tiny_summary,
+                    tiny_title,
+                    critical_analysis,
+                    logical_fallacies,
+                    source_analysis,
+                    _relation,
+                ) = process_analysis(
+                    &article_text,
+                    &article_html,
                     &article_url,
-                    true,
-                    None,
-                    Some(&detailed_response_json.to_string()),
-                    None,
-                    Some(&article_hash),
-                    Some(&title_domain_hash),
-                    None, // Placeholder for future updates
+                    None, // No specific topic for life safety items
+                    llm_params,
+                    worker_detail,
                 )
-                .await
-            {
-                error!(target: TARGET_LLM_REQUEST, "Failed to save article to database: {:?}", e);
-                return false;
-            }
+                .await;
 
-            // Notify Slack
-            send_to_slack(
-                &format!("*<{}|{}>*", article_url, article_title),
-                &detailed_response_json.to_string(),
-                slack_token,
-                slack_channel,
-            )
-            .await;
+                // Construct the response JSON using the results from process_analysis
+                let response_json = json!({
+                    "article_url": article_url,
+                    "title": article_title,
+                    "affected_summary": affected_summary,
+                    "non_affected_summary": non_affected_summary,
+                    "summary": summary,
+                    "tiny_summary": tiny_summary,
+                    "tiny_title": tiny_title,
+                    "critical_analysis": critical_analysis,
+                    "logical_fallacies": logical_fallacies,
+                    "source_analysis": source_analysis,
+                    "article_body": article_text,
+                    "elapsed_time": start_time.elapsed().as_secs_f64(),
+                });
+
+                // Save the article first
+                if let Err(e) = db
+                    .add_article(
+                        &article_url,
+                        true,
+                        None,
+                        Some(&response_json.to_string()),
+                        Some(&tiny_summary),
+                        Some(&article_hash),
+                        Some(&title_domain_hash),
+                        None, // Placeholder for R2 URL, will update later
+                    )
+                    .await
+                {
+                    error!(
+                        target: TARGET_LLM_REQUEST,
+                        "Failed to save article to database: {:?}", e
+                    );
+                    return false; // Skip processing if saving fails
+                }
+
+                // Send notification to app
+                if let Some(r2_url) = send_to_app(&response_json).await {
+                    // Update the article with R2 details
+                    if let Err(e) = db
+                        .update_article_with_r2_details(&article_url, &r2_url)
+                        .await
+                    {
+                        error!(
+                            target: TARGET_LLM_REQUEST,
+                            "Failed to update R2 details in database: {:?}", e
+                        );
+                    }
+                } else {
+                    warn!("failed to send analysis: {} to app...", article_url);
+                }
+
+                // Notify Slack
+                send_to_slack(
+                    &format!("*<{}|{}>*", article_url, article_title),
+                    &response_json.to_string(),
+                    slack_token,
+                    slack_channel,
+                )
+                .await;
+
+                debug!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: sent analysis to slack: {}.",
+                    worker_detail.name, worker_detail.id, worker_detail.model, article_url
+                );
+            }
 
             // Item processed successfully
             return true;
