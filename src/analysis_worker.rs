@@ -408,6 +408,10 @@ async fn process_analysis_item(
             };
 
             if !affected_summary.is_empty() || !non_affected_summary.is_empty() {
+                info!(
+                    "article_url: {}, affected_summary({}) non_affected_summary({})",
+                    article_url, affected_summary, non_affected_summary
+                );
                 let (
                     summary,
                     tiny_summary,
