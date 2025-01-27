@@ -279,6 +279,7 @@ async fn determine_threat_location(
     if let Some(response) =
         generate_llm_response(&threat_locations_prompt, &json_llm_params, worker_detail).await
     {
+        info!("response: {}", response);
         let trimmed_response = response.trim();
         // Parse the JSON response
         info!("trimmed_response: {}", trimmed_response);
