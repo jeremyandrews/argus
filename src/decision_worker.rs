@@ -281,7 +281,9 @@ async fn determine_threat_location(
     {
         let trimmed_response = response.trim();
         // Parse the JSON response
+        info!("trimmed_response: {}", trimmed_response);
         if let Ok(json_response) = serde_json::from_str::<serde_json::Value>(trimmed_response) {
+            info!("json_response: {:#}", json_response);
             // Check if the response contains any listed regions
             if json_response["impacted_regions"]
                 .as_array()
