@@ -310,10 +310,12 @@ async fn process_analysis_item(
                 );
                 return false;
             }
+            info!("flat threat_regions: {:?}", threat_regions);
 
             // Parse the JSON threat_regions
             let threat_regions: serde_json::Value = serde_json::from_str(&threat_regions)
                 .unwrap_or_else(|_| json!({"impacted_regions": []}));
+            info!("json threat_regions: {:?}", threat_regions);
 
             let mut directly_affected_people = Vec::new();
             let mut indirectly_affected_people = Vec::new();
@@ -324,6 +326,10 @@ async fn process_analysis_item(
                     let continent = region["continent"].as_str().unwrap_or("");
                     let country = region["country"].as_str().unwrap_or("");
                     let region_name = region["region"].as_str().unwrap_or("");
+                    info!(
+                        "url: {} checking continent: {}, country: {}, region_name: {}",
+                        article_url, continent, country, region_name
+                    );
 
                     if let Some(countries) = places_detailed.get(continent) {
                         if let Some(regions) = countries.get(country) {
@@ -335,6 +341,7 @@ async fn process_analysis_item(
                                     country,
                                     continent,
                                 );
+                                info!("region_prompt: {}", region_prompt);
                                 let region_response = generate_llm_response(
                                     &region_prompt,
                                     &llm_params,
