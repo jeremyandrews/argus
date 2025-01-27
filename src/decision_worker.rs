@@ -273,9 +273,11 @@ async fn determine_threat_location(
 
     // Extract LLM parameters
     let llm_params = extract_llm_params(params);
+    let mut json_llm_params = llm_params.clone();
+    json_llm_params.require_json = Some(true);
 
     if let Some(response) =
-        generate_llm_response(&threat_locations_prompt, &llm_params, worker_detail).await
+        generate_llm_response(&threat_locations_prompt, &json_llm_params, worker_detail).await
     {
         let trimmed_response = response.trim();
         // Parse the JSON response

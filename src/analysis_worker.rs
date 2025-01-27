@@ -335,53 +335,37 @@ async fn process_analysis_item(
                                     country,
                                     continent,
                                 );
-
-                                let mut json_llm_params = llm_params.clone();
-                                json_llm_params.require_json = Some(true);
                                 let region_response = generate_llm_response(
                                     &region_prompt,
-                                    &json_llm_params,
+                                    &llm_params,
                                     worker_detail,
                                 )
                                 .await
                                 .unwrap_or_default();
 
-                                // Parse the response JSON
-                                if let Ok(json_response) =
-                                    serde_json::from_str::<serde_json::Value>(&region_response)
-                                {
-                                    if json_response["impacted_regions"]
-                                        .as_array()
-                                        .map_or(false, |regions| !regions.is_empty())
-                                    {
-                                        for (city_name, people) in cities.iter() {
-                                            let city_prompt = prompts::city_threat_prompt(
-                                                &article_text,
-                                                city_name,
-                                                region_name,
-                                                country,
-                                                continent,
-                                            );
-                                            let city_response = generate_llm_response(
-                                                &city_prompt,
-                                                llm_params,
-                                                worker_detail,
-                                            )
-                                            .await
-                                            .unwrap_or_default();
-                                            if city_response.to_lowercase().contains("yes") {
-                                                directly_affected_people.extend(people.clone());
-                                            } else {
-                                                indirectly_affected_people.extend(people.clone());
-                                            }
+                                // Parse the response for yes/no
+                                if region_response.trim().to_lowercase().starts_with("yes") {
+                                    for (city_name, people) in cities.iter() {
+                                        let city_prompt = prompts::city_threat_prompt(
+                                            &article_text,
+                                            city_name,
+                                            region_name,
+                                            country,
+                                            continent,
+                                        );
+                                        let city_response = generate_llm_response(
+                                            &city_prompt,
+                                            llm_params,
+                                            worker_detail,
+                                        )
+                                        .await
+                                        .unwrap_or_default();
+                                        if city_response.to_lowercase().contains("yes") {
+                                            directly_affected_people.extend(people.clone());
+                                        } else {
+                                            indirectly_affected_people.extend(people.clone());
                                         }
                                     }
-                                } else {
-                                    error!(
-                                        target: TARGET_LLM_REQUEST,
-                                        "Failed to parse JSON response for region. Response: {}",
-                                        region_response
-                                    );
                                 }
                             }
                         }
