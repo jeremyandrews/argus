@@ -8,7 +8,7 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::db::Database;
-use crate::llm::generate_llm_response;
+use crate::llm::{generate_llm_response, ThreatLocationResponse};
 use crate::prompts;
 use crate::util::{parse_places_data_hierarchical, weighted_sleep};
 use crate::{LLMClient, LLMParams, WorkerDetail};
@@ -283,27 +283,28 @@ async fn determine_threat_location(
         let trimmed_response = response.trim();
         // Parse the JSON response
         info!("trimmed_response: {}", trimmed_response);
-        if let Ok(json_response) = serde_json::from_str::<serde_json::Value>(trimmed_response) {
-            info!("json_response: {:#}", json_response);
-            // Check if the response contains any listed regions
-            if json_response["impacted_regions"]
-                .as_array()
-                .map_or(false, |regions| {
-                    regions.iter().any(|region| {
-                        let continent = region["continent"].as_str().unwrap_or("");
-                        let country = region["country"].as_str().unwrap_or("");
-                        let region_name = region["region"].as_str().unwrap_or("");
-                        places.iter().any(|(c, countries)| {
-                            c == continent
-                                || countries.iter().any(|(co, regions)| {
-                                    co == country || regions.iter().any(|r| r == region_name)
-                                })
-                        })
+
+        match serde_json::from_str::<ThreatLocationResponse>(trimmed_response) {
+            Ok(json_response) => {
+                info!("json_response: {:?}", json_response);
+
+                // Check if any region is impacted
+                if json_response.impacted_regions.iter().any(|region| {
+                    let continent = region.continent.as_deref().unwrap_or("");
+                    let country = region.country.as_deref().unwrap_or("");
+                    let region_name = region.region.as_deref().unwrap_or("");
+                    places.iter().any(|(c, countries)| {
+                        c == continent
+                            || countries.iter().any(|(co, regions)| {
+                                co == country || regions.iter().any(|r| r == region_name)
+                            })
                     })
-                })
-            {
-                // If any region is mentioned, return the JSON response
-                return trimmed_response.to_string();
+                }) {
+                    return trimmed_response.to_string();
+                }
+            }
+            Err(e) => {
+                warn!("Failed to parse JSON response: {}", e);
             }
         }
     }

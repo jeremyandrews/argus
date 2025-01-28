@@ -4,12 +4,26 @@ use ollama_rs::generation::{
     options::GenerationOptions,
     parameters::{FormatType, JsonStructure},
 };
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
 use crate::TARGET_LLM_REQUEST;
 use crate::{LLMClient, LLMParams, WorkerDetail};
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct ThreatLocationResponse {
+    pub impacted_regions: Vec<ImpactedRegion>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct ImpactedRegion {
+    pub continent: Option<String>,
+    pub country: Option<String>,
+    pub region: Option<String>,
+}
 
 pub async fn generate_llm_response(
     prompt: &str,
@@ -32,7 +46,9 @@ pub async fn generate_llm_response(
                 let mut request = GenerationRequest::new(params.model.clone(), prompt.to_string());
 
                 if params.require_json.unwrap_or(false) {
-                    request.format = Some(FormatType::StructuredJson(JsonStructure::new::<()>()));
+                    request.format = Some(FormatType::StructuredJson(JsonStructure::new::<
+                        ThreatLocationResponse,
+                    >()));
                 }
 
                 let options = GenerationOptions::default()
