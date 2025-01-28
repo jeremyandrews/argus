@@ -465,20 +465,52 @@ Please confirm if the article is indeed about such an event in this city. Answer
     )
 }
 
-pub fn confirm_prompt(summary_response: &str, topic_name: &str) -> String {
+pub fn is_this_about(article_text: &str, topic_name: &str) -> String {
     format!(
-        "{summary} |
-Is this article really about {topic} with enough content to analyze, and not a promotion or advertisement? Answer yes or no.",
-        summary = summary_response,
+        r#"{article}
+
+Question: Does this article primarily focus on and provide substantial information about {topic}?
+
+Instructions:
+1. Carefully read the article summary above.
+2. Compare the main focus of the article to the topic: {topic}
+3. Answer ONLY 'Yes' or 'No' based on the following criteria:
+   - Answer 'Yes' if the article is specifically about {topic} AND contains enough content for analysis.
+   - Answer 'No' if the article is not primarily about {topic}, only mentions it briefly, or is unrelated.
+4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
+
+Answer:"#,
+        article = article_text,
         topic = topic_name
     )
 }
 
-pub fn is_this_about(article_text: &str, topic_name: &str) -> String {
+pub fn confirm_prompt(summary_response: &str, topic_name: &str) -> String {
     format!(
-        "{article} |
-Is this article specifically about {topic} with enough content to analyze? Answer yes or no.",
-        article = article_text,
+        r#"{summary}
+
+Question: Confirm if this article is specifically about {topic} and not a promotion or advertisement.
+
+Instructions:
+1. Carefully re-read the article summary above.
+2. Compare the main focus of the article to the topic: {topic}
+3. Check if the article provides substantial, analytical content about {topic}.
+4. Verify that the article is not primarily promotional or advertorial.
+5. Answer ONLY 'Yes' or 'No' based on the following criteria:
+   - Answer 'Yes' ONLY if ALL of these are true:
+     a) The article is specifically about {topic}
+     b) It contains enough content for analysis
+     c) It is not primarily a promotion or advertisement
+   - Answer 'No' if ANY of these are true:
+     a) The article is not primarily about {topic}
+     b) It only mentions {topic} briefly
+     c) It is unrelated to {topic}
+     d) It is primarily a promotion or advertisement
+     e) It is an error message, not an article
+6. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
+
+Answer:"#,
+        summary = summary_response,
         topic = topic_name
     )
 }
