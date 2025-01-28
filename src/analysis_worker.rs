@@ -421,6 +421,12 @@ async fn process_analysis_item(
                         non_affected_summary.clone()
                     };
 
+                let affected = if !affected_summary.is_empty() {
+                    affected_summary.clone()
+                } else {
+                    String::new()
+                };
+
                 let (
                     summary,
                     tiny_summary,
@@ -457,6 +463,7 @@ async fn process_analysis_item(
                     "tiny_summary": tiny_summary,
                     "tiny_title": tiny_title,
                     "summary": summary,
+                    "affected": affected,
                     "critical_analysis": critical_analysis,
                     "logical_fallacies": logical_fallacies,
                     "relation_to_topic": relation_to_topic,
