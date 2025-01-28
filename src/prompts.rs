@@ -1,4 +1,5 @@
 use chrono::Local;
+use std::collections::BTreeMap;
 
 const DONT_TELL_ME: &str =
     "Do not tell me what you're doing, do not explain that you're writing in American English.";
@@ -212,33 +213,56 @@ Analyze the source of the article, including if possible its background, ownersh
     )
 }
 
+/// Generates a prompt for the model to extract impacted regions from an article, using parsed place data.
+///
+/// - `article`: The text of the article to analyze.
+/// - `places_hierarchy`: A hierarchical map of continents, countries, and regions derived from places.json.
+pub fn threat_locations(
+    article: &str,
+    places_hierarchy: &BTreeMap<String, BTreeMap<String, Vec<String>>>,
+) -> String {
+    let mut prompt = String::from("You are analyzing a news article to determine the geographical regions impacted by the events described. ");
+
+    // Instructions for the model
+    prompt.push_str(
+        "Your task is to list the impacted regions in a hierarchical JSON format based on the provided structure. ",
+    );
+    prompt.push_str("For each impacted region, provide the continent, country, and region name. ");
+    prompt.push_str("If a region is not mentioned in or directly impacted by the text of the article, do not include it in the output. ");
+    prompt.push_str("The JSON format should be:\n\n");
+    prompt.push_str("{\n  \"impacted_regions\": [\n    {\n      \"continent\": \"<continent_name>\",\n      \"country\": \"<country_name>\",\n      \"region\": \"<region_name>\"\n    },\n    ...\n  ]\n}\n\n");
+
+    // Add the hierarchical data for reference
+    prompt.push_str("Here is the list of geographical regions for reference:\n\n");
+    for (continent, countries) in places_hierarchy {
+        prompt.push_str(&format!("- {}\n", continent));
+        for (country, regions) in countries {
+            prompt.push_str(&format!("  - {}\n", country));
+            for region in regions {
+                prompt.push_str(&format!("    - {}\n", region));
+            }
+        }
+    }
+
+    prompt.push_str("\n---\n\n");
+    prompt.push_str("Here is the article:\n\n");
+    prompt.push_str(article);
+    prompt.push_str("\n\n---\n\n");
+    prompt.push_str(
+        "Based on the article, extract the impacted regions using the hierarchical JSON format specified above.",
+    );
+
+    prompt
+}
+
 /** The following prompts expect a 'yes' or 'no' answer. */
 
 pub fn threat_prompt(article_text: &str) -> String {
     format!(
         "{article} |
-Is this article about any ongoing or imminent life-threatening event or situation? Answer yes or no.",
+Is this article describing an **ongoing** or **imminent** event or situation that might pose
+a threat to human life or health? Answer ONLY 'yes' or 'no'.",
         article = article_text
-    )
-}
-
-pub fn continent_threat_prompt(article_text: &str, continent: &str) -> String {
-    format!("{article} |
-Is this article about an ongoing or imminent life-threatening event affecting people on the continent
- of {continent}? Answer yes or no.",
-        article = article_text,
-        continent = continent
-    )
-}
-
-pub fn country_threat_prompt(article_text: &str, country: &str, continent: &str) -> String {
-    format!(
-        "{article} |
-Is this article about an ongoing or imminent life-threatening event affecting people in {country} on
-the continent of {continent}? Answer yes or no.",
-        article = article_text,
-        country = country,
-        continent = continent
     )
 }
 
@@ -248,9 +272,10 @@ pub fn region_threat_prompt(
     country: &str,
     continent: &str,
 ) -> String {
-    format!("{article} |
-Is this article about an ongoing or imminent life-threatening event affecting people in the region of
-{region}, {country}, {continent}? Answer yes or no.",
+    format!(
+        "{article} |
+This article mentions that people in {region}, {country}, {continent} may be affected by an ongoing or imminent life-threatening event. 
+Please confirm if the article is indeed about such an event in this region. Answer yes or no, and explain briefly why.",
         article = article_text,
         region = region,
         country = country,
@@ -267,8 +292,8 @@ pub fn city_threat_prompt(
 ) -> String {
     format!(
         "{article} |
-Is this article about an ongoing or imminent life-threatening event affecting people in or near the
-city of {city}, {region}, {country}, {continent}? Answer yes or no.",
+This article mentions that people in or near {city}, {region}, {country}, {continent} may be affected by an ongoing or imminent life-threatening event. 
+Please confirm if the article is indeed about such an event in this city. Answer yes or no, and explain briefly why.",
         article = article_text,
         city = city_name,
         region = region,

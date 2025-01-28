@@ -31,6 +31,7 @@ pub struct LLMParams {
     pub llm_client: LLMClient,
     pub model: String,
     pub temperature: f32,
+    pub require_json: Option<bool>, // Optional field to specify JSON requirement
 }
 
 // New: Struct to hold fallback configuration for Analysis Workers

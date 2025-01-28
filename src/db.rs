@@ -4,7 +4,6 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     Pool, Row, Sqlite,
 };
-use std::collections::BTreeSet;
 use std::path::Path;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -105,6 +104,8 @@ impl Database {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_matched_topics_article_url ON matched_topics_queue (article_url);
 
+            -- Upgrade to new life_safety_queue table:
+            -- ALTER TABLE life_safety_queue RENAME TO life_safety_queue_old;
             CREATE TABLE IF NOT EXISTS life_safety_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 article_url TEXT NOT NULL UNIQUE,
@@ -113,11 +114,7 @@ impl Database {
                 article_html TEXT NOT NULL,
                 article_hash TEXT NOT NULL,
                 title_domain_hash TEXT NOT NULL,
-                affected_regions TEXT,
-                affected_people TEXT,
-                affected_places TEXT,
-                non_affected_people TEXT,
-                non_affected_places TEXT,
+                threat TEXT,
                 timestamp TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_life_safety_article_url ON life_safety_queue (article_url);
@@ -404,17 +401,17 @@ impl Database {
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(article_url) DO NOTHING
         "#,
-    )
-    .bind(article_text)
-    .bind(article_html)
-    .bind(article_url)
-    .bind(article_title)
-    .bind(article_hash)
-    .bind(title_domain_hash)
-    .bind(topic_matched)
-    .bind(timestamp)
-    .execute(&self.pool)
-    .await;
+        )
+        .bind(article_text)
+        .bind(article_html)
+        .bind(article_url)
+        .bind(article_title)
+        .bind(article_hash)
+        .bind(title_domain_hash)
+        .bind(topic_matched)
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await;
 
         match result {
             Ok(_) => {
@@ -437,17 +434,13 @@ impl Database {
     #[instrument(target = "db", level = "info", skip(self))]
     pub async fn add_to_life_safety_queue(
         &self,
+        threat: &str,
         article_url: &str,
         article_title: &str,
         article_text: &str,
         article_html: &str,
         article_hash: &str,
         title_domain_hash: &str,
-        affected_regions: &BTreeSet<String>,
-        affected_people: &BTreeSet<String>,
-        affected_places: &BTreeSet<String>,
-        non_affected_people: &BTreeSet<String>,
-        non_affected_places: &BTreeSet<String>,
     ) -> Result<(), sqlx::Error> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -456,36 +449,25 @@ impl Database {
             .to_string();
 
         let result = sqlx::query(
-            r#"
+        r#"
         INSERT INTO life_safety_queue (
-            article_url, article_title, article_text, article_html, article_hash, title_domain_hash,
-            affected_regions, affected_people, affected_places,
-            non_affected_people, non_affected_places, timestamp
+            article_url, article_title, article_text, article_html, article_hash, title_domain_hash, 
+            threat, timestamp
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ON CONFLICT(article_url) DO NOTHING
         "#,
-        )
-        .bind(article_url)
-        .bind(article_title)
-        .bind(article_text)
-        .bind(article_html)
-        .bind(article_hash)
-        .bind(title_domain_hash)
-        .bind(serde_json::to_string(affected_regions).expect("failed to encode affected_regions"))
-        .bind(serde_json::to_string(affected_people).expect("failed to encode affected_people"))
-        .bind(serde_json::to_string(affected_places).expect("failed to encode affected_places"))
-        .bind(
-            serde_json::to_string(non_affected_people)
-                .expect("failed to encode non_affected_people"),
-        )
-        .bind(
-            serde_json::to_string(non_affected_places)
-                .expect("failed to encode non_affected_places"),
-        )
-        .bind(timestamp)
-        .execute(&self.pool)
-        .await;
+    )
+    .bind(article_url)
+    .bind(article_title)
+    .bind(article_text)
+    .bind(article_html)
+    .bind(article_hash)
+    .bind(title_domain_hash)
+    .bind(threat)
+    .bind(timestamp)
+    .execute(&self.pool)
+    .await;
 
         match result {
             Ok(_) => {
@@ -510,17 +492,13 @@ impl Database {
         &self,
     ) -> Result<
         Option<(
-            String,           // article_url
-            String,           // article_title
-            String,           // article_text
-            String,           // article_html
-            String,           // article_hash
-            String,           // title_domain_hash
-            BTreeSet<String>, // affected_regions
-            BTreeSet<String>, // affected_people
-            BTreeSet<String>, // affected_places
-            BTreeSet<String>, // non_affected_people
-            BTreeSet<String>, // non_affected_places
+            String, // article_url
+            String, // article_title
+            String, // article_text
+            String, // article_html
+            String, // article_hash
+            String, // title_domain_hash
+            String, // threat
         )>,
         sqlx::Error,
     > {
@@ -537,11 +515,7 @@ impl Database {
             article_html,
             article_hash,
             title_domain_hash,
-            affected_regions,
-            affected_people,
-            affected_places,
-            non_affected_people,
-            non_affected_places
+            threat
         FROM life_safety_queue
         ORDER BY timestamp ASC
         LIMIT 1
@@ -558,23 +532,7 @@ impl Database {
             let article_html: String = row.get("article_html");
             let article_hash: String = row.get("article_hash");
             let title_domain_hash: String = row.get("title_domain_hash");
-
-            // Deserialize JSON strings into BTreeSet<String>
-            let affected_regions: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("affected_regions"))
-                    .expect("failed to deserialize affected_regions");
-            let affected_people: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("affected_people"))
-                    .expect("failed to deserialize affected_regions");
-            let affected_places: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("affected_places"))
-                    .expect("failed to deserialize affected_regions");
-            let non_affected_people: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("non_affected_people"))
-                    .expect("failed to deserialize affected_regions");
-            let non_affected_places: BTreeSet<String> =
-                serde_json::from_str(&row.get::<String, _>("non_affected_places"))
-                    .expect("failed to deserialize affected_regions");
+            let threat: String = row.get("threat");
 
             sqlx::query("DELETE FROM life_safety_queue WHERE id = ?1")
                 .bind(id)
@@ -590,11 +548,7 @@ impl Database {
                 article_html,
                 article_hash,
                 title_domain_hash,
-                affected_regions,
-                affected_people,
-                affected_places,
-                non_affected_people,
-                non_affected_places,
+                threat,
             )))
         } else {
             debug!(target: TARGET_DB, "No new items found in life safety queue");

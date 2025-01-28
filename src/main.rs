@@ -2,13 +2,10 @@ use anyhow::Result;
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use futures::future::join_all;
 use ollama_rs::Ollama;
-use serde_json::Value;
 use std::env;
-use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Notify;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
 const ANALYSIS_OLLAMA_CONFIGS_ENV: &str = "ANALYSIS_OLLAMA_CONFIGS";
@@ -17,7 +14,6 @@ const ANALYSIS_OPENAI_CONFIGS_ENV: &str = "ANALYSIS_OPENAI_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
-const PLACES_JSON_PATH_ENV: &str = "PLACES_JSON_PATH";
 
 use argus::analysis_worker;
 use argus::app::api;
@@ -25,7 +21,7 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::{FallbackConfig, LLMClient, TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
+use argus::{FallbackConfig, LLMClient, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 use environment::get_env_var_as_vec;
 
@@ -305,22 +301,6 @@ async fn main() -> Result<()> {
             0.0
         });
 
-    // Load JSON data if PLACES_JSON_PATH environment variable is set
-    let places = if let Ok(json_path) = env::var(PLACES_JSON_PATH_ENV) {
-        if Path::new(&json_path).exists() {
-            let json_data = fs::read_to_string(&json_path)?;
-            let places: Value = serde_json::from_str(&json_data)?;
-            info!(target: TARGET_DB, "Loaded places data from {}: {:?}", json_path, places);
-            Some(places)
-        } else {
-            warn!(target: TARGET_DB, "Specified PLACES_JSON_PATH does not exist: {}", json_path);
-            None
-        }
-    } else {
-        debug!(target: TARGET_DB, "PLACES_JSON_PATH environment variable not set.");
-        None
-    };
-
     // Define panic notification mechanism
     let panic_notify = Arc::new(Notify::new());
 
@@ -364,7 +344,6 @@ async fn main() -> Result<()> {
         let decision_worker_topics = topics.clone();
         let decision_worker_slack_token = slack_token.clone();
         let decision_worker_slack_channel = slack_channel.clone();
-        let decision_worker_places = places.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Decision Worker {}", decision_id);
         let decision_worker_handle = tokio::spawn(async move {
@@ -377,7 +356,6 @@ async fn main() -> Result<()> {
                 temperature,
                 &decision_worker_slack_token,
                 &decision_worker_slack_channel,
-                decision_worker_places,
             )
             .await
             {
