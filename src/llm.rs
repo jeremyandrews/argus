@@ -14,7 +14,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::TARGET_LLM_REQUEST;
 use crate::{LLMClient, LLMParams, WorkerDetail};
 
-const CONTEXT_WINDOW: u32 = 4096;
+const CONTEXT_WINDOW: u32 = 6144;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct ThreatLocationResponse {
