@@ -1,30 +1,99 @@
 use chrono::Local;
 use std::collections::BTreeMap;
 
-const DONT_TELL_ME: &str =
-    "Do not tell me what you're doing, do not explain that you're writing in American English.";
-const FORMAT_INSTRUCTIONS: &str =
-    "To ensure our conversation is easy to follow and understand, use the
-following formatting options when they make the text more readable:
+const DONT_TELL_ME: &str = r#"
+Important instructions for your responses:
+
+1. Do not narrate or describe your actions.
+2. Do not explain or mention that you're writing in American English.
+3. Do not summarize or restate the instructions I've given you.
+4. Do not preface your responses with phrases like "Here's a summary..." or "I will now..."
+5. Do not acknowledge or confirm that you understand these instructions.
+6. Simply proceed with the task or answer directly, without any meta-commentary.
+7. If asked a question, answer it directly without restating the question.
+8. Avoid phrases like "As an AI language model..." or similar self-referential statements.
+
+Your responses should appear as if they're coming from a knowledgeable human expert who naturally follows these guidelines without needing to mention them.
+"#;
+
+const FORMAT_INSTRUCTIONS: &str = r#"
+To ensure our conversation is easy to follow and understand, use the following Markdown formatting options when they enhance readability:
+
+### Headings
+Use headings to organize content hierarchically:
+# H1 for main titles
+## H2 for subtitles
+### H3 for section headers
 
 ### Emphasis and Special Words
-Use **bold** text to draw attention to important information, like **key takeaways** or **main points**.
-Use _italic_ formatting to indicate a word or phrase is being used in a special way, such as when referring to a _foreign word_ or a _technical term_.
+- Use **bold** text for important information, like **key takeaways** or **main points**.
+- Use _italic_ formatting for special terms, like _technical jargon_ or _foreign words_.
 
 ### Quotes and Block Quotes
-Use the > block quote formatting to set apart a large section of text or to quote someone, like this:
-> This is an example of a block quote, which can be used to set apart a
-> large section of text or to quote someone or to quote the article.
-Use this format to make it clear that you are referencing someone else's words.
+- For short, inline quotes, use quotation marks: "This is a short quote."
+- For larger quotes or to set apart text, use block quotes on new lines:
+
+> This is an example of a block quote.
+> It can span multiple lines and is useful for
+> quoting articles or emphasizing larger sections of text.
 
 ### Code and Technical Terms
-Use `code` formatting when specifically referencing code, commands, or specific technical terms, such as when talking about a `programming language` or a `specific software feature` or `function`.
+- Use `inline code` formatting for short code snippets, commands, or technical terms.
+- For larger code blocks, use triple backticks with an optional language specifier:
+
+```python
+def hello_world():
+    print("Hello, World!")
+```
+
+### Lists
+Use ordered (numbered) or unordered (bullet) lists as appropriate:
+
+1. First item
+2. Second item
+3. Third item
+
+- Bullet point one
+- Bullet point two
+- Bullet point three
+
+### Links and Images
+- Create links like this: [Link Text](URL)
+- Insert images like this: ![Alt Text](Image URL)
+
+### Horizontal Rule
+Use three dashes to create a horizontal line for separating content:
+
+---
+
+### Tables
+Use tables for organizing data:
+
+| Header 1 | Header 2 |
+|----------|----------|
+| Cell 1   | Cell 2   |
 
 ### General Guidelines
-Only use special formatting when it makes the text more readable. Avoid excessive formatting, as it can make the text harder to understand. Use these formatting styles to make your text more readable and engaging.
+- Use formatting to enhance readability, not for decoration.
+- Avoid excessive formatting, as it can make the text harder to understand.
+- Always start a new line for block elements like quotes, code blocks, and lists.
+- Use appropriate spacing between elements for clarity.
 
-By following these guidelines, you'll be able to create clear and concise text that is easy to understand and engaging to read.";
-const WRITE_IN_CLEAR_ENGLISH: &str = "Write in accessible and clear American English.";
+By following these guidelines, you'll create clear, concise, and engaging text that is easy to read and understand.
+"#;
+
+const WRITE_IN_CLEAR_ENGLISH: &str = r#"
+Regardless of the source language of the article or content being discussed:
+1. Write all responses in clear, accessible American English.
+2. Use standard American spelling and grammar conventions.
+3. Translate any non-English terms, phrases, or quotes into American English.
+4. If a non-English term is crucial and doesn't have a direct English equivalent, provide the original term followed by an explanation in parentheses.
+5. Aim for a writing style that is easily understood by a general American audience.
+6. Avoid idioms or cultural references that may not be familiar to all English speakers.
+7. When discussing measurements, provide both metric and imperial units where applicable.
+
+Your goal is to ensure that the output is consistently in American English and easily comprehensible to American English speakers, regardless of the original language of the source material.
+"#;
 
 const CONTEXT: &str = "
 In Q1 2024, BRICS expanded, shifting global economic power, while record temperatures highlighted climate concerns. Japan's 7.6 earthquake and U.S. winter storms exposed vulnerabilities. France enshrined abortion rights, Sweden joined NATO, and the U.S. Supreme Court ruled on key legal precedents. Major wildfires and geopolitical tensions added to global challenges.
@@ -35,19 +104,37 @@ In Q4 2024, Trump’s re-election and U.S. economic growth highlighted domestic 
 
 pub fn summary_prompt(article_text: &str) -> String {
     format!(
-        "{article} |
-Carefully read and thoroughly understand the provided text. Create a comprehensive summary
-in bullet points that cover all the main ideas and key points from the entire text, maintains the
-original text's structure and flow, and uses clear and concise language. For really short texts
-(up to 25 words): simply quote the text, for short texts (up to 100 words): 2-4 bullet points, for
-medium-length texts (501-1000 words): 3-5 bullet points, for long texts (1001-2000 words): 4-8
-bullet points, and for very long texts (over 2000 words): 6-10 bullet points.
+        r#"{article}
+
+Instructions for summarizing the provided text:
+
+1. Carefully read and thoroughly understand the entire text.
+2. Create a comprehensive summary in bullet points that:
+   - Covers all main ideas and key points from the entire text
+   - Maintains the original text's structure and flow
+   - Uses clear, concise, and objective language
+   - Avoids introducing new information or personal interpretation
+
+3. Adjust the number of bullet points based on the text length:
+   - For very short texts (up to 25 words): Simply quote the text verbatim
+   - For short texts (26-100 words): Use 2-4 bullet points
+   - For medium-length texts (101-500 words): Use 3-5 bullet points
+   - For long texts (501-2000 words): Use 4-8 bullet points
+   - For very long texts (over 2000 words): Use 6-10 bullet points
+
+4. Ensure each bullet point is self-contained and meaningful on its own.
+5. Use sub-bullets if necessary to organize related ideas under a main point.
+6. Include any crucial statistics, dates, or figures mentioned in the text.
+7. If the text contains distinct sections, reflect this structure in your summary.
+8. For scientific or technical texts, maintain the precise terminology used in the original.
+
+Remember: The goal is to provide a clear, accurate, and concise representation of the original text that allows readers to quickly grasp its essential content.
 
 {write_in_clear_english}
 
 {dont_tell_me}
 
-{format_instructions}",
+{format_instructions}"#,
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
@@ -83,25 +170,44 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
 
 pub fn critical_analysis_prompt(article_text: &str) -> String {
     format!(
-        "{article} |
-Carefully read and thoroughly understand the provided text.
+        r#"{article}
 
-Provide a credibility score from 1 to 10, where 1 represents highly biased content and 10
-represents unbiased content. Explain the score in no more than 15 words.
+Provide a critical analysis of the text above, addressing the following points:
 
-Provide a style score from 1 to 10, where 1 represents poorly written text and 10 represents
-eloquent text. Explain the score in no more than 15 words.
+1. Credibility Score:
+   - Score: [1-10]
+   - Explanation: (max 15 words)
+   - Criteria: 1 = highly biased, 10 = unbiased and fact-based
+   - Consider: sources cited, factual accuracy, balance of perspectives
 
-Provide a political weight (Left, Center Left, Center, Center Right, Right, or not applicable).
-Explain in no more than 15 words.
+2. Style Score:
+   - Score: [1-10]
+   - Explanation: (max 15 words)
+   - Criteria: 1 = poorly written, 10 = eloquent and engaging
+   - Consider: clarity, coherence, appropriate language, effective structure
 
-Provide a concise two to three sentence critical analysis.
+3. Political Leaning:
+   - Category: [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | Not Applicable]
+   - Explanation: (max 15 words)
+   - Consider: language used, sources cited, topics emphasized, overall narrative
+
+4. Tone:
+   - Category: [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other (specify)]
+   - Explanation: (max 15 words)
+
+5. Target Audience:
+   - Identify the likely intended audience (max 10 words)
+
+6. Critical Analysis:
+   - Provide a concise 2-3 sentence critical analysis
+   - Address strengths, weaknesses, potential biases, and overall effectiveness
+
+7. Key Takeaway:
+   - Summarize the most important point or insight in one sentence
 
 {write_in_clear_english}
-
 {dont_tell_me}
-
-{format_instructions}",
+{format_instructions}"#,
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
@@ -111,17 +217,44 @@ Provide a concise two to three sentence critical analysis.
 
 pub fn logical_fallacies_prompt(article_text: &str) -> String {
     format!(
-        "{article} |
-Carefully read and thoroughly understand the provided text. Explain any biases or logical fallacies
-in one or two sentences. If there are none, state that in no more than five words.
+        r#"{article}
 
-Identify the strength of arguments and evidence presented in one or two sentences.
+Analyze the provided text for logical fallacies and argument strength:
+
+1. Logical Fallacies:
+   - Identify any logical fallacies or biases present in the text.
+   - For each fallacy found:
+     a) Name the fallacy
+     b) Provide a brief explanation (max 15 words)
+     c) Quote or paraphrase the relevant part of the text
+   - If no fallacies are found, state: "No apparent logical fallacies detected."
+
+2. Argument Strength:
+   - Evaluate the overall strength of arguments on a scale of 1-10
+     (1 = very weak, 10 = very strong)
+   - Provide a brief explanation for the score (max 20 words)
+   - Consider:
+     a) Quality and relevance of evidence presented
+     b) Logical consistency of arguments
+     c) Consideration of counterarguments
+     d) Use of credible sources (if any)
+
+3. Evidence Quality:
+   - Rate the quality of evidence on a scale of 1-10
+     (1 = poor/no evidence, 10 = excellent evidence)
+   - Provide a brief explanation for the score (max 20 words)
+   - Consider:
+     a) Relevance to the main arguments
+     b) Credibility of sources
+     c) Comprehensiveness of data presented
+
+4. Overall Assessment:
+   - Summarize the logical strength and evidence quality in 1-2 sentences.
+   - Highlight any particularly strong or weak aspects of the argumentation.
 
 {write_in_clear_english}
-
 {dont_tell_me}
-
-{format_instructions}",
+{format_instructions}"#,
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
@@ -185,22 +318,52 @@ Why does this article not affect the life and safety of people in the following 
 }
 
 pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
-    // Get today's date
     let today = Local::now();
-    let day = today.format("%-d").to_string(); // Day without leading zero
-    let month = today.format("%B").to_string(); // Full month name
-    let year = today.format("%Y").to_string(); // Full year
+    let day = today.format("%-d").to_string();
+    let month = today.format("%B").to_string();
+    let year = today.format("%Y").to_string();
 
     format!(
-        " A small sampling of events since your knowledge cutoff in 2022: `{context}` |
-Article to review: `{article}` | Source URL: `{source_url}` |
-Analyze the source of the article, including if possible its background, ownership, purpose, and notable achievements or controversies. Consider factors such as awards, scandals, and any relevant historical context. Given the current date is {month} {day} {year}, assess whether the content appears to be recent or if there are indications it may be outdated. Please provide your analysis in 2-4 sentences.
+        r#"Context: A small sampling of events since your knowledge cutoff in 2022: `{context}`
+
+Article to review: `{article}`
+Source URL: `{source_url}`
+Current date: {month} {day}, {year}
+
+Provide a comprehensive source analysis addressing the following points:
+
+1. Source Background:
+   - Ownership and affiliation
+   - Purpose and target audience
+   - Founding date and brief history
+
+2. Credibility Assessment:
+   - Notable achievements or awards
+   - Controversies or scandals
+   - Overall reputation in the media landscape
+
+3. Content Analysis:
+   - Primary focus areas or topics covered
+   - Political leaning or ideological stance, if any
+   - Quality of reporting and fact-checking practices
+
+4. Timeliness:
+   - Assess whether the content appears recent or potentially outdated
+   - Identify any time-sensitive information or references
+
+5. Comparison:
+   - Briefly compare to similar sources in the same niche
+   - Highlight any unique features or approaches
+
+6. Overall Evaluation:
+   - Summarize the source's strengths and weaknesses
+   - Provide a general recommendation for readers (e.g., reliable for certain topics, approach with caution, etc.)
+
+Please provide your analysis in 4-6 concise sentences, focusing on the most relevant and insightful points from the above categories.
 
 {write_in_clear_english}
-
 {dont_tell_me}
-
-{format_instructions}",
+{format_instructions}"#,
         context = CONTEXT,
         article = article_html,
         source_url = source_url,
