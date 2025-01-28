@@ -404,6 +404,40 @@ async fn process_analysis_item(
                     article_url, affected_summary, non_affected_summary
                 );
 
+                // Determine how it does or does not affect.
+                let how_does_it_affect = if !affected_summary.is_empty() {
+                    let how_does_it_affect_prompt =
+                        prompts::how_does_it_affect_prompt(&article_text, &affected_summary);
+                    debug!(
+                        "Generated how_does_it_affect prompt: {:?}",
+                        how_does_it_affect_prompt
+                    );
+                    generate_llm_response(&how_does_it_affect_prompt, llm_params, worker_detail)
+                        .await
+                        .unwrap_or_else(|| {
+                            warn!("Failed to generate how_does_it_affect");
+                            String::new()
+                        })
+                } else {
+                    String::new()
+                };
+                let why_not_affect = if !non_affected_summary.is_empty() {
+                    let why_not_affect_prompt =
+                        prompts::why_not_affect_prompt(&article_text, &non_affected_summary);
+                    debug!(
+                        "Generated why_not_affect prompt: {:?}",
+                        why_not_affect_prompt
+                    );
+                    generate_llm_response(&why_not_affect_prompt, llm_params, worker_detail)
+                        .await
+                        .unwrap_or_else(|| {
+                            warn!("Failed to generate why_not_affect");
+                            String::new()
+                        })
+                } else {
+                    String::new()
+                };
+
                 // Determine the topic based on the match type
                 let topic = if !affected_summary.is_empty() {
                     "Alert: Direct"
@@ -412,15 +446,20 @@ async fn process_analysis_item(
                 };
 
                 // Construct relation_to_topic
-                let relation_to_topic =
-                    if !affected_summary.is_empty() && !non_affected_summary.is_empty() {
-                        format!("{}\n\n{}", affected_summary, non_affected_summary)
-                    } else if !affected_summary.is_empty() {
-                        affected_summary.clone()
-                    } else {
-                        non_affected_summary.clone()
-                    };
+                let relation_to_topic = if !affected_summary.is_empty()
+                    && !non_affected_summary.is_empty()
+                {
+                    format!(
+                        "{}\n\n{}\n\n{}\n\n{}",
+                        affected_summary, how_does_it_affect, non_affected_summary, why_not_affect
+                    )
+                } else if !affected_summary.is_empty() {
+                    format!("{}\n\n{}", affected_summary, how_does_it_affect)
+                } else {
+                    format!("{}\n\n{}", non_affected_summary, why_not_affect)
+                };
 
+                // Determine if there's an affected hint to share.
                 let affected = if !affected_summary.is_empty() {
                     affected_summary.clone()
                 } else {
