@@ -1,6 +1,6 @@
 # Argus
 
-Argus is a Rust-based program designed to read RSS feeds, summarize articles based on specified topics, and post these summaries to a Slack channel via webhook.
+Argus is a Rust-based artificial intelligence (AI) agent designed to monitor and analyze numerous information sources. As an "AI agent", Argus performs tasks autonomously, making decisions based on the data it receives.
 
 <img src="https://github.com/jeremyandrews/argus/blob/main/assets/argus-logo.png" alt="Argus Logo" width="200"/>
 
