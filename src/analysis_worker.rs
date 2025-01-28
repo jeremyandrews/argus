@@ -403,6 +403,24 @@ async fn process_analysis_item(
                     "article_url: {}, affected_summary({}) non_affected_summary({})",
                     article_url, affected_summary, non_affected_summary
                 );
+
+                // Determine the topic based on the match type
+                let topic = if !affected_summary.is_empty() {
+                    "Alert: Direct"
+                } else {
+                    "Alert: Near"
+                };
+
+                // Construct relation_to_topic
+                let relation_to_topic =
+                    if !affected_summary.is_empty() && !non_affected_summary.is_empty() {
+                        format!("{}\n\n{}", affected_summary, non_affected_summary)
+                    } else if !affected_summary.is_empty() {
+                        affected_summary.clone()
+                    } else {
+                        non_affected_summary.clone()
+                    };
+
                 let (
                     summary,
                     tiny_summary,
@@ -421,20 +439,31 @@ async fn process_analysis_item(
                 )
                 .await;
 
+                // Collect database statistics
+                let stats = match db.collect_stats().await {
+                    Ok(stats) => stats,
+                    Err(e) => {
+                        error!(target: TARGET_LLM_REQUEST, "Failed to collect database stats: {:?}", e);
+                        String::from("N/A")
+                    }
+                };
+
                 // Construct the response JSON using the results from process_analysis
                 let response_json = json!({
-                    "article_url": article_url,
+                    "topic": topic,
                     "title": article_title,
-                    "affected_summary": affected_summary,
-                    "non_affected_summary": non_affected_summary,
-                    "summary": summary,
+                    "url": article_url,
+                    "article_body": article_text,
                     "tiny_summary": tiny_summary,
                     "tiny_title": tiny_title,
+                    "summary": summary,
                     "critical_analysis": critical_analysis,
                     "logical_fallacies": logical_fallacies,
+                    "relation_to_topic": relation_to_topic,
                     "source_analysis": source_analysis,
-                    "article_body": article_text,
                     "elapsed_time": start_time.elapsed().as_secs_f64(),
+                    "model": llm_params.model,
+                    "stats": stats
                 });
 
                 // Save the article first
@@ -442,7 +471,7 @@ async fn process_analysis_item(
                     .add_article(
                         &article_url,
                         true,
-                        None,
+                        Some(topic),
                         Some(&response_json.to_string()),
                         Some(&tiny_summary),
                         Some(&article_hash),
