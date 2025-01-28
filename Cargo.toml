@@ -32,6 +32,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
+unicode-segmentation = "1.12"
 url = "2.5"
 urlnorm = "0.1.6"
 uuid = "1.11"

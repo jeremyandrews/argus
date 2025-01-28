@@ -9,9 +9,12 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::TARGET_LLM_REQUEST;
 use crate::{LLMClient, LLMParams, WorkerDetail};
+
+const CONTEXT_WINDOW: u32 = 4096;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct ThreatLocationResponse {
@@ -23,6 +26,23 @@ pub struct ImpactedRegion {
     pub continent: Option<String>,
     pub country: Option<String>,
     pub region: Option<String>,
+}
+
+fn estimate_token_count(text: &str) -> u32 {
+    // Split into words, considering Unicode graphemes
+    let words: Vec<&str> = text.unicode_words().collect();
+
+    // Count of words
+    let word_count = words.len();
+
+    // Count of punctuation and special characters
+    let punct_count = text.chars().filter(|c| c.is_ascii_punctuation()).count();
+
+    // Rough estimate: assume each word is one token, each punctuation is one token
+    // and add some extra tokens for potential subword tokenization
+    (word_count + punct_count + (word_count / 2))
+        .try_into()
+        .unwrap()
 }
 
 pub async fn generate_llm_response(
@@ -40,6 +60,23 @@ pub async fn generate_llm_response(
         worker_detail.name, worker_detail.id, worker_detail.model, prompt
     );
 
+    // Estimate token count
+    let estimated_tokens = estimate_token_count(prompt);
+
+    if estimated_tokens <= CONTEXT_WINDOW {
+        info!(
+            target: TARGET_LLM_REQUEST,
+            "[{} {} {}]: Estimated token count ({}) should fit within context window ({}).",
+            worker_detail.name, worker_detail.id, worker_detail.model, estimated_tokens, CONTEXT_WINDOW
+        );
+    } else {
+        warn!(
+            target: TARGET_LLM_REQUEST,
+            "[{} {} {}]: Estimated token count ({}) may exceed context window ({}). Response may be incomplete.",
+            worker_detail.name, worker_detail.id, worker_detail.model, estimated_tokens, CONTEXT_WINDOW
+        );
+    }
+
     for retry_count in 0..max_retries {
         match &params.llm_client {
             LLMClient::Ollama(ref ollama) => {
@@ -53,7 +90,7 @@ pub async fn generate_llm_response(
 
                 let options = GenerationOptions::default()
                     .temperature(params.temperature)
-                    .num_ctx(4096);
+                    .num_ctx(CONTEXT_WINDOW);
                 request.options = Some(options);
 
                 debug!(
