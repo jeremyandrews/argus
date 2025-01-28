@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde_json::json;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -317,8 +317,8 @@ async fn process_analysis_item(
                 .unwrap_or_else(|_| json!({"impacted_regions": []}));
             info!("json threat_regions: {:?}", threat_regions);
 
-            let mut directly_affected_people = Vec::new();
-            let mut indirectly_affected_people = Vec::new();
+            let mut directly_affected_people = HashSet::new();
+            let mut indirectly_affected_people = HashSet::new();
 
             // Iterate through the threat regions
             if let Some(impacted_regions) = threat_regions["impacted_regions"].as_array() {
@@ -368,9 +368,10 @@ async fn process_analysis_item(
                                         .await
                                         .unwrap_or_default();
                                         if city_response.to_lowercase().contains("yes") {
-                                            directly_affected_people.extend(people.clone());
+                                            directly_affected_people.extend(people.iter().cloned());
                                         } else {
-                                            indirectly_affected_people.extend(people.clone());
+                                            indirectly_affected_people
+                                                .extend(people.iter().cloned());
                                         }
                                     }
                                 }
@@ -381,18 +382,22 @@ async fn process_analysis_item(
             }
 
             let affected_summary = if !directly_affected_people.is_empty() {
+                let mut affected_vec: Vec<_> = directly_affected_people.into_iter().collect();
+                affected_vec.sort();
                 format!(
                     "This article directly affects people in these locations: {}.",
-                    directly_affected_people.join(", ")
+                    affected_vec.join(", ")
                 )
             } else {
                 String::new()
             };
 
             let non_affected_summary = if !indirectly_affected_people.is_empty() {
+                let mut non_affected_vec: Vec<_> = indirectly_affected_people.into_iter().collect();
+                non_affected_vec.sort();
                 format!(
                     "This article indirectly affects people in these locations: {}.",
-                    indirectly_affected_people.join(", ")
+                    non_affected_vec.join(", ")
                 )
             } else {
                 String::new()
