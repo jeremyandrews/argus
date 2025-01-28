@@ -114,6 +114,7 @@ Instructions for summarizing the provided text:
    - Maintains the original text's structure and flow
    - Uses clear, concise, and objective language
    - Avoids introducing new information or personal interpretation
+   - Is not overly verbose
 
 3. Adjust the number of bullet points based on the text length:
    - For very short texts (up to 25 words): Simply quote the text verbatim
@@ -250,7 +251,7 @@ Analyze the provided text for logical fallacies and argument strength:
 
 4. Overall Assessment:
    - Summarize the logical strength and evidence quality in 1-2 sentences.
-   - Highlight any particularly strong or weak aspects of the argumentation.
+   - Highlight any particularly strong or weak aspects of the argumentation in those 1-2 sentences.
 
 {write_in_clear_english}
 {dont_tell_me}
