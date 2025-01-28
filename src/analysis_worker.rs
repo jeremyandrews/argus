@@ -317,8 +317,8 @@ async fn process_analysis_item(
                 .unwrap_or_else(|_| json!({"impacted_regions": []}));
             info!("json threat_regions: {:?}", threat_regions);
 
-            let mut directly_affected_people = HashSet::new();
-            let mut indirectly_affected_people = HashSet::new();
+            let mut directly_affected_people: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+            let mut indirectly_affected_people: BTreeMap<String, HashSet<String>> = BTreeMap::new();
 
             // Iterate through the threat regions
             if let Some(impacted_regions) = threat_regions["impacted_regions"].as_array() {
@@ -368,10 +368,29 @@ async fn process_analysis_item(
                                         .await
                                         .unwrap_or_default();
                                         if city_response.to_lowercase().contains("yes") {
-                                            directly_affected_people.extend(people.iter().cloned());
+                                            for person in people {
+                                                let parts: Vec<&str> = person.split(", ").collect();
+                                                if parts.len() >= 3 {
+                                                    let name = parts[0].to_string();
+                                                    let city = parts[2].to_string();
+                                                    directly_affected_people
+                                                        .entry(city.clone())
+                                                        .or_insert_with(HashSet::new)
+                                                        .insert(name);
+                                                }
+                                            }
                                         } else {
-                                            indirectly_affected_people
-                                                .extend(people.iter().cloned());
+                                            for person in people {
+                                                let parts: Vec<&str> = person.split(", ").collect();
+                                                if parts.len() >= 3 {
+                                                    let name = parts[0].to_string();
+                                                    let city = parts[2].to_string();
+                                                    indirectly_affected_people
+                                                        .entry(city.clone())
+                                                        .or_insert_with(HashSet::new)
+                                                        .insert(name);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -382,23 +401,35 @@ async fn process_analysis_item(
             }
 
             let affected_summary = if !directly_affected_people.is_empty() {
-                let mut affected_vec: Vec<_> = directly_affected_people.into_iter().collect();
-                affected_vec.sort();
-                format!(
-                    "This article directly affects people in these locations: {}.",
-                    affected_vec.join(", ")
-                )
+                let mut summary =
+                    String::from("This article directly affects people in these locations: ");
+                let mut city_summaries = Vec::new();
+                for (city, names) in directly_affected_people.iter() {
+                    let mut sorted_names: Vec<String> = names.iter().cloned().collect();
+                    sorted_names.sort();
+                    let names_str = sorted_names.join(", ");
+                    city_summaries.push(format!("{} ({})", city, names_str));
+                }
+                summary.push_str(&city_summaries.join("; "));
+                summary.push('.');
+                summary
             } else {
                 String::new()
             };
 
             let non_affected_summary = if !indirectly_affected_people.is_empty() {
-                let mut non_affected_vec: Vec<_> = indirectly_affected_people.into_iter().collect();
-                non_affected_vec.sort();
-                format!(
-                    "This article indirectly affects people in these locations: {}.",
-                    non_affected_vec.join(", ")
-                )
+                let mut summary =
+                    String::from("This article indirectly affects people in these locations: ");
+                let mut city_summaries = Vec::new();
+                for (city, names) in indirectly_affected_people.iter() {
+                    let mut sorted_names: Vec<String> = names.iter().cloned().collect();
+                    sorted_names.sort();
+                    let names_str = sorted_names.join(", ");
+                    city_summaries.push(format!("{} ({})", city, names_str));
+                }
+                summary.push_str(&city_summaries.join("; "));
+                summary.push('.');
+                summary
             } else {
                 String::new()
             };
