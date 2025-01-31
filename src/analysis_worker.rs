@@ -624,6 +624,16 @@ async fn process_analysis_item(
 
                     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from matched topics queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
+                    if db.has_hash(&article_hash).await.unwrap_or(false)
+                        || db
+                            .has_title_domain_hash(&title_domain_hash)
+                            .await
+                            .unwrap_or(false)
+                    {
+                        info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: already processed, skipping {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
+                        return false;
+                    }
+
                     let (
                         summary,
                         tiny_summary,
