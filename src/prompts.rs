@@ -104,7 +104,11 @@ In Q4 2024, Trump’s re-election and U.S. economic growth highlighted domestic 
 
 pub fn summary_prompt(article_text: &str) -> String {
     format!(
-        r#"{article}
+        r#"
+Article text:
+```
+{article}
+```
 
 Instructions for summarizing the provided text:
 
@@ -171,7 +175,11 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
 
 pub fn critical_analysis_prompt(article_text: &str) -> String {
     format!(
-        r#"{article}
+        r#"
+Article text:        
+```
+{article}
+```
 
 Provide a critical analysis of the text above, addressing the following points:
 
@@ -218,7 +226,11 @@ Provide a critical analysis of the text above, addressing the following points:
 
 pub fn logical_fallacies_prompt(article_text: &str) -> String {
     format!(
-        r#"{article}
+        r#"
+Article text:        
+```
+{article}
+```
 
 Analyze the provided text for logical fallacies and argument strength:
 
@@ -264,7 +276,12 @@ Analyze the provided text for logical fallacies and argument strength:
 }
 
 pub fn relation_to_topic_prompt(article_text: &str, topic_prompt: &str) -> String {
-    format!( "{article} |
+    format!( "
+Article text:        
+```
+{article}
+```
+
 Briefly explain in one or two sentences how this relates to {topic}, starting with 'This relates to {topic}.'.
 
 {write_in_clear_english}
@@ -282,7 +299,11 @@ Briefly explain in one or two sentences how this relates to {topic}, starting wi
 
 pub fn how_does_it_affect_prompt(article_text: &str, affected_places: &str) -> String {
     format!(
-        "{article} |
+        "
+Article text:        
+```
+{article}
+```
 How does this article affect the life and safety of people in the following places: {places}?
 Answer in no more than two sentences.
 
@@ -301,7 +322,12 @@ Answer in no more than two sentences.
 
 pub fn why_not_affect_prompt(article_text: &str, non_affected_places: &str) -> String {
     format!(
-        "{article} |
+        "
+Article text:        
+```
+{article}
+```
+
 Why does this article not affect the life and safety of people in the following places:
 {places}? Answer in no more than two sentences.
 
@@ -327,7 +353,11 @@ pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
     format!(
         r#"Context: A small sampling of events since your knowledge cutoff in 2022: `{context}`
 
-Article to review: `{article}`
+Article text:        
+```
+{article}
+```
+
 Source URL: `{source_url}`
 Current date: {month} {day}, {year}
 
