@@ -187,124 +187,139 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
 pub fn critical_analysis_prompt(article_text: &str) -> String {
     format!(
         r#"
-Article text:        
-```
+Below is the text of an article between ~~~ markers:
+~~~
 {article}
-```
+~~~
 
-Provide a critical analysis of the text above, addressing the following points:
+Provide a concise critical analysis with these specific points:
 
-1. Credibility Score:
-   - Score: [1-10]
-   - Explanation: (max 15 words)
-   - Criteria: 1 = highly biased, 10 = unbiased and fact-based
-   - Consider: sources cited, factual accuracy, balance of perspectives
+1. Credibility Score: [1-10]
+   Brief reason (max 15 words)
 
-2. Style Score:
-   - Score: [1-10]
-   - Explanation: (max 15 words)
-   - Criteria: 1 = poorly written, 10 = eloquent and engaging
-   - Consider: clarity, coherence, appropriate language, effective structure
+2. Style Score: [1-10]
+   Brief reason (max 15 words)
 
-3. Political Leaning:
-   - Category: [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | Not Applicable]
-   - Explanation: (max 15 words)
-   - Consider: language used, sources cited, topics emphasized, overall narrative
+3. Political Leaning: [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
+   Brief reason (max 15 words)
 
-4. Tone:
-   - Category: [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other (specify)]
-   - Explanation: (max 15 words)
+4. Tone: [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
+   Brief reason (max 15 words)
 
-5. Target Audience:
-   - Identify the likely intended audience (max 10 words)
+5. Target Audience: (max 10 words)
 
-6. Critical Analysis:
-   - Provide a concise 2-3 sentence critical analysis
-   - Address strengths, weaknesses, potential biases, and overall effectiveness
+6. Critical Analysis: (2-3 bullet points)
 
-7. Key Takeaway:
-   - Summarize the most important point or insight in one sentence
+7. Key Takeaway: (1-2 bullet points)
 
 {write_in_clear_english}
-{dont_tell_me}
-{format_instructions}"#,
+{dont_tell_me}"#,
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
-        dont_tell_me = DONT_TELL_ME,
-        format_instructions = FORMAT_INSTRUCTIONS
+        dont_tell_me = DONT_TELL_ME
     )
 }
 
 pub fn logical_fallacies_prompt(article_text: &str) -> String {
     format!(
         r#"
-Article text:        
-```
+Below is the text of an article between ~~~ markers:
+~~~
 {article}
-```
+~~~
 
-Analyze the provided text for logical fallacies and argument strength:
+Analyze for logical fallacies and argument strength:
 
-1. Logical Fallacies:
-   - Identify any logical fallacies or biases present in the text.
-   - For each fallacy found:
-     a) Name the fallacy
-     b) Provide a brief explanation (max 15 words)
-     c) Quote or paraphrase the relevant part of the text
-   - If no fallacies are found, state: "No apparent logical fallacies detected."
+1. Logical Fallacies Found:
+   - Name: [fallacy type]
+     Context: (max 15 words)
+   (List up to 3 most significant fallacies, or state "No apparent logical fallacies detected")
 
-2. Argument Strength:
-   - Evaluate the overall strength of arguments on a scale of 1-10
-     (1 = very weak, 10 = very strong)
-   - Provide a brief explanation for the score (max 20 words)
-   - Consider:
-     a) Quality and relevance of evidence presented
-     b) Logical consistency of arguments
-     c) Consideration of counterarguments
-     d) Use of credible sources (if any)
+2. Argument Strength: [1-10]
+   Reason: (max 20 words)
 
-3. Evidence Quality:
-   - Rate the quality of evidence on a scale of 1-10
-     (1 = poor/no evidence, 10 = excellent evidence)
-   - Provide a brief explanation for the score (max 20 words)
-   - Consider:
-     a) Relevance to the main arguments
-     b) Credibility of sources
-     c) Comprehensiveness of data presented
+3. Evidence Quality: [1-10]
+   Reason: (max 20 words)
 
-4. Overall Assessment:
-   - Summarize the logical strength and evidence quality in 1-2 sentences.
-   - Highlight any particularly strong or weak aspects of the argumentation in those 1-2 sentences.
+4. Overall Assessment: (1-2 bullet points)
 
 {write_in_clear_english}
-{dont_tell_me}
-{format_instructions}"#,
+{dont_tell_me}"#,
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
-        dont_tell_me = DONT_TELL_ME,
-        format_instructions = FORMAT_INSTRUCTIONS
+        dont_tell_me = DONT_TELL_ME
+    )
+}
+
+pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
+    let today = Local::now();
+    let day = today.format("%-d").to_string();
+    let month = today.format("%B").to_string();
+    let year = today.format("%Y").to_string();
+    format!(
+        r#"
+This is a small sampling of events since January of 2023 between ~~~ markers:
+~~~
+{context}
+~~~
+Below is the article text and source URL between ~~~ markers:
+~~~
+{article}
+Source URL: {source_url}
+~~~
+The article's URL was `{source_url}`.
+Today's date is: {month} {day}, {year}
+
+Create a three bullet-point source analysis that STRICTLY follows this format:
+
+Format example using a generic news source:
+- Operates as a subsidiary of Global Media Holdings since 1985, focusing on business professionals and policy analysts across North America and Europe, with headquarters in Toronto serving 2.3 million monthly readers.
+- Maintains an A+ rating from NewsGuard with 15 industry awards since 2020, though faced criticism over data privacy practices in 2022, while consistently ranking among top 10 most trusted business news sources.
+- Published this article on February 1, 2025, showing current coverage, with URL structure indicating regular updates and an active news desk operating on EST timezone.
+
+Now analyze the source of the article above using these categories:
+1. Source Background:
+   - Ownership/affiliation
+   - Target audience
+   - Founding date
+2. Credibility:
+   - Notable achievements
+   - Known controversies
+   - Overall reputation
+3. Currentness
+   - Dates found in URL or article compared to today
+
+{write_in_clear_english}
+
+{dont_tell_me}"#,
+        article = article_html,
+        source_url = source_url,
+        context = CONTEXT,
+        day = day,
+        month = month,
+        year = year,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
+        dont_tell_me = DONT_TELL_ME
     )
 }
 
 pub fn relation_to_topic_prompt(article_text: &str, topic_prompt: &str) -> String {
-    format!( "
-Article text:        
-```
+    format!(
+        r#"
+Below is the text of an article between ~~~ markers:
+~~~
 {article}
-```
+~~~
 
-Briefly explain in one or two sentences how this relates to {topic}, starting with 'This relates to {topic}.'.
+Explain in exactly two sentences how this article relates to {topic}. 
+First sentence must begin with "This article relates to {topic} because..."
 
 {write_in_clear_english}
-
-{dont_tell_me}
-
-{format_instructions}",
+{dont_tell_me}"#,
         article = article_text,
         topic = topic_prompt,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
-        dont_tell_me = DONT_TELL_ME,
-        format_instructions = FORMAT_INSTRUCTIONS
+        dont_tell_me = DONT_TELL_ME
     )
 }
 
@@ -349,69 +364,6 @@ Why does this article not affect the life and safety of people in the following 
 {format_instructions}",
         article = article_text,
         places = non_affected_places,
-        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
-        dont_tell_me = DONT_TELL_ME,
-        format_instructions = FORMAT_INSTRUCTIONS
-    )
-}
-
-pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
-    let today = Local::now();
-    let day = today.format("%-d").to_string();
-    let month = today.format("%B").to_string();
-    let year = today.format("%Y").to_string();
-
-    format!(
-        r#"Context: A small sampling of events since your knowledge cutoff in 2022: `{context}`
-
-Article text:        
-```
-{article}
-```
-
-Source URL: `{source_url}`
-Current date: {month} {day}, {year}
-
-Provide a comprehensive source analysis addressing the following points:
-
-1. Source Background:
-   - Ownership and affiliation
-   - Purpose and target audience
-   - Founding date and brief history
-
-2. Credibility Assessment:
-   - Notable achievements or awards
-   - Controversies or scandals
-   - Overall reputation in the media landscape
-
-3. Content Analysis:
-   - Primary focus areas or topics covered
-   - Political leaning or ideological stance, if any
-   - Quality of reporting and fact-checking practices
-
-4. Timeliness:
-   - Assess whether the content appears recent or potentially outdated
-   - Identify any time-sensitive information or references
-
-5. Comparison:
-   - Briefly compare to similar sources in the same niche
-   - Highlight any unique features or approaches
-
-6. Overall Evaluation:
-   - Summarize the source's strengths and weaknesses
-   - Provide a general recommendation for readers (e.g., reliable for certain topics, approach with caution, etc.)
-
-Please provide your analysis in 4-6 concise sentences, focusing on the most relevant and insightful points from the above categories.
-
-{write_in_clear_english}
-{dont_tell_me}
-{format_instructions}"#,
-        context = CONTEXT,
-        article = article_html,
-        source_url = source_url,
-        day = day,
-        month = month,
-        year = year,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
         format_instructions = FORMAT_INSTRUCTIONS
