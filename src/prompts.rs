@@ -105,35 +105,27 @@ In Q4 2024, Trump’s re-election and U.S. economic growth highlighted domestic 
 pub fn summary_prompt(article_text: &str) -> String {
     format!(
         r#"
-Article text:
-```
+Below is the text of an article between ~~~ markers:
+~~~
 {article}
-```
+~~~
 
-Instructions for summarizing the provided text:
+First, carefully read and thoroughly understand the entire text.
 
-1. Carefully read and thoroughly understand the entire text.
-2. Create a comprehensive summary in bullet points that:
-   - Covers all main ideas and key points from the entire text
-   - Maintains the original text's structure and flow
-   - Uses clear, concise, and objective language
-   - Avoids introducing new information or personal interpretation
-   - Is not overly verbose
+Then, create a bullet-point summary of the article following these rules:
+- Very short texts (≤25 words): Quote verbatim
+- Short texts (26-100 words): 2-3 bullets
+- Medium texts (101-500 words): 3-4 bullets
+- Long texts (501-2000 words): 4-6 bullets
+- Very long texts (>2000 words): 6-8 bullets
 
-3. Adjust the number of bullet points based on the text length:
-   - For very short texts (up to 25 words): Simply quote the text verbatim
-   - For short texts (26-100 words): Use 2-4 bullet points
-   - For medium-length texts (101-500 words): Use 3-5 bullet points
-   - For long texts (501-2000 words): Use 4-8 bullet points
-   - For very long texts (over 2000 words): Use 6-10 bullet points
-
-4. Ensure each bullet point is self-contained and meaningful on its own.
-5. Use sub-bullets if necessary to organize related ideas under a main point.
-6. Include any crucial statistics, dates, or figures mentioned in the text.
-7. If the text contains distinct sections, reflect this structure in your summary.
-8. For scientific or technical texts, maintain the precise terminology used in the original.
-
-Remember: The goal is to provide a clear, accurate, and concise representation of the original text that allows readers to quickly grasp its essential content.
+Requirements:
+- Each bullet must be a single sentence
+- Use clear, concise language
+- Include only key information
+- Maintain chronological order if present
+- Start each bullet with a verb
+- No sub-bullets or nested structure
 
 {write_in_clear_english}
 
@@ -149,7 +141,12 @@ Remember: The goal is to provide a clear, accurate, and concise representation o
 
 pub fn tiny_summary_prompt(summary_response: &str) -> String {
     format!(
-        "{summary} | Please summarize down to 400 characters or less.
+        "Below is the summary of an article between ~~~ markers:
+~~~
+{summary}
+~~~
+
+Create a single sentence summary of maximum 400 characters that captures the most essential information. Focus on the main event or finding only.
 
 {write_in_clear_english}
 
