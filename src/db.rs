@@ -950,7 +950,7 @@ impl Database {
                 "SELECT r2_url
                  FROM articles
                  WHERE r2_url IS NOT NULL
-                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-12 hours')
                  AND {}
                  AND is_relevant = 1;",
                 category_condition
@@ -966,7 +966,7 @@ impl Database {
                  FROM articles
                  WHERE r2_url IS NOT NULL
                  AND r2_url NOT IN ({})
-                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-1 day')
+                 AND datetime(seen_at, 'unixepoch') > datetime('now', '-12 hours')
                  AND {}
                  AND is_relevant = 1;",
                 seen_placeholders, category_condition
