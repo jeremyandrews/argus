@@ -64,7 +64,7 @@ pub async fn generate_llm_response(
     let estimated_tokens = estimate_token_count(prompt);
 
     if estimated_tokens <= CONTEXT_WINDOW {
-        info!(
+        debug!(
             target: TARGET_LLM_REQUEST,
             "[{} {} {}]: Estimated token count ({}) should fit within context window ({}).",
             worker_detail.name, worker_detail.id, worker_detail.model, estimated_tokens, CONTEXT_WINDOW
