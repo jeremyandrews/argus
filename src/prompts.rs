@@ -123,7 +123,6 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
 
 3. Each bullet point MUST:
    - Start with a dash (-)
-   - Begin with an action verb
    - Include specific data points (numbers, dates, percentages)
    - Contain multiple related facts in a single coherent sentence
    - Provide complete context for each point
@@ -133,8 +132,6 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
 4. DO NOT:
    - Use headings or sections
    - Include nested bullets
-   - Use block quotes
-   - Add formatting (bold, italic, etc.)
    - Include commentary or analysis
 
 Format example using a generic topic:
@@ -194,23 +191,23 @@ Below is the text of an article between ~~~ markers:
 
 Provide a concise critical analysis with these specific points:
 
-1. Credibility Score: [1-10]
-   Brief reason (max 15 words)
+### Credibility Score: [1-10]
+   Briefly justify (max 15 words)
 
-2. Style Score: [1-10]
-   Brief reason (max 15 words)
+### Style Score: [1-10]
+   Briefly justify (max 15 words)
 
-3. Political Leaning: [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
-   Brief reason (max 15 words)
+### Political Leaning: [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
+   Briefly justify (max 15 words)
 
-4. Tone: [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
-   Brief reason (max 15 words)
+### Tone: [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
+   Briefly justify (max 15 words)
 
-5. Target Audience: (max 10 words)
+### Target Audience: (max 10 words)
 
-6. Critical Analysis: (2-3 bullet points)
+### Critical Analysis: (2-3 bullet points)
 
-7. Key Takeaway: (1-2 bullet points)
+### Key Takeaway: (1-2 bullet points)
 
 {write_in_clear_english}
 {dont_tell_me}"#,
@@ -230,18 +227,18 @@ Below is the text of an article between ~~~ markers:
 
 Analyze for logical fallacies and argument strength:
 
-1. Logical Fallacies Found:
+### Logical Fallacies Found:
    - Name: [fallacy type]
-     Context: (max 15 words)
+     Briefly explain (max 15 words)
    (List up to 3 most significant fallacies, or state "No apparent logical fallacies detected")
 
-2. Argument Strength: [1-10]
-   Reason: (max 20 words)
+### Argument Strength: [1-10]
+   Briefly justify (max 20 words)
 
-3. Evidence Quality: [1-10]
-   Reason: (max 20 words)
+### Evidence Quality: [1-10]
+   Briefly justify (max 20 words)
 
-4. Overall Assessment: (1-2 bullet points)
+### Overall Assessment: (1-2 bullet points)
 
 {write_in_clear_english}
 {dont_tell_me}"#,
