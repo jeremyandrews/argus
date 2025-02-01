@@ -264,27 +264,31 @@ Below is the article text and source URL between ~~~ markers:
 {article}
 Source URL: {source_url}
 ~~~
-The article's URL was `{source_url}`.
 Today's date is: {month} {day}, {year}
+
+Extract just the domain (e.g., 'nytimes.com' from 'https://www.nytimes.com/2024/02/01/article') from this URL: `{source_url}`
 
 Create a three bullet-point source analysis that STRICTLY follows this format:
 
 Format example using a generic news source:
-- Operates as a subsidiary of Global Media Holdings since 1985, focusing on business professionals and policy analysts across North America and Europe, with headquarters in Toronto serving 2.3 million monthly readers.
-- Maintains an A+ rating from NewsGuard with 15 industry awards since 2020, though faced criticism over data privacy practices in 2022, while consistently ranking among top 10 most trusted business news sources.
-- Published this article on February 1, 2025, showing current coverage, with URL structure indicating regular updates and an active news desk operating on EST timezone.
+- businessnews.com owned by Global Media Holdings owned by Berkshire Hathaway
+- Reaches 2.3M monthly readers across North America and Europe since 1985, focusing on business professionals and policy analysts, with headquarters in Toronto and 15 regional offices
+- Published this article on February 1, 2025, showing current coverage, with URL structure indicating regular updates and an active news desk operating on EST timezone
 
 Now analyze the source of the article above using these categories:
-1. Source Background:
-   - Ownership/affiliation
+1. Domain and Ownership:
+   - Base domain name only
+   - Direct owner
+   - Parent companies/organizations (if any)
+2. Reach and Background:
    - Target audience
+   - Geographic coverage
+   - Key statistics
    - Founding date
-2. Credibility:
-   - Notable achievements
-   - Known controversies
-   - Overall reputation
 3. Currentness
-   - Dates found in URL or article compared to today
+   - Publication timing
+   - Update frequency
+   - Time zone indicators
 
 {write_in_clear_english}
 
