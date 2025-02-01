@@ -112,21 +112,35 @@ Below is the text of an article between ~~~ markers:
 
 First, carefully read and thoroughly understand the entire text.
 
-Then, create a bullet-point summary of the article following these rules:
-- Very short texts (≤25 words): Quote verbatim
-- Short texts (26-100 words): 2-3 bullets
-- Medium texts (101-500 words): 3-4 bullets
-- Long texts (501-2000 words): 4-6 bullets
-- Very long texts (>2000 words): 6-8 bullets
+Then, create a comprehensive bullet-point summary that follows these STRICT rules:
+1. Format: Use ONLY simple bullet points with a single dash (-)
+2. Length:
+   - Very short texts (≤25 words): Quote verbatim
+   - Short texts (26-100 words): 2-3 bullets
+   - Medium texts (101-500 words): 3-4 bullets
+   - Long texts (501-2000 words): 4-6 bullets
+   - Very long texts (>2000 words): 6-8 bullets
 
-Requirements:
-- Each bullet must be a single sentence
-- Use clear, concise language
-- Include only key information
-- Maintain chronological order if present
-- Start each bullet with a verb
-- No sub-bullets or nested structure
+3. Each bullet point MUST:
+   - Start with a dash (-)
+   - Begin with an action verb
+   - Include specific data points (numbers, dates, percentages)
+   - Contain multiple related facts in a single coherent sentence
+   - Provide complete context for each point
+   - Use active voice
+   - Be substantial (25-40 words each)
 
+4. DO NOT:
+   - Use headings or sections
+   - Include nested bullets
+   - Use block quotes
+   - Add formatting (bold, italic, etc.)
+   - Include commentary or analysis
+
+Format example using a generic topic:
+- Introduces new environmental regulations affecting 15 major industries across 3 continents, requiring a 45% reduction in carbon emissions by 2025, while providing $12 billion in transition funding for affected companies.
+
+Now summarize the article text above using these rules:
 {write_in_clear_english}
 
 {dont_tell_me}
