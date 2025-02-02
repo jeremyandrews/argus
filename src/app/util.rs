@@ -104,10 +104,8 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
             }
         });
 
-        let apns_url = format!(
-            "https://api.sandbox.push.apple.com/3/device/{}",
-            device_token
-        );
+        //"https://api.sandbox.push.apple.com/3/device/{}",
+        let apns_url = format!("https://api.push.apple.com/3/device/{}", device_token);
 
         match client
             .post(&apns_url)
