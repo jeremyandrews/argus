@@ -20,6 +20,32 @@ curl -X POST http://localhost:8080/authenticate \
      -d '{ "device_id": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" }'
 ```
 
+### Get Subscriptions
+- **Endpoint**: `/subscriptions`
+- **Method**: `POST`
+- **Headers**: `Authorization: Bearer <JWT_TOKEN>`
+- **Response**: 
+  ```json
+  {
+    "subscriptions": [
+      {
+        "topic": "<TOPIC_NAME>",
+        "priority": "<PRIORITY>"
+      },
+      ...
+    ]
+  }
+  - HTTP 200 OK with subscriptions list on success
+  - HTTP 401 UNAUTHORIZED if JWT is invalid
+  - HTTP 500 INTERNAL SERVER ERROR on server error
+- **Note** : Returns a list of all active subscriptions for the authenticated device with their priorities.
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/subscriptions \
+     -H "Authorization: Bearer <JWT_TOKEN>"
+```
+
 ### Subscribe to a Topic
 - **Endpoint**: `/subscribe`
 - **Method**: `POST`

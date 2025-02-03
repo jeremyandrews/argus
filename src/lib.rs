@@ -15,6 +15,7 @@ pub mod util;
 
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
+use serde::Serialize;
 
 pub const TARGET_WEB_REQUEST: &str = "web_request";
 pub const TARGET_LLM_REQUEST: &str = "llm_request";
@@ -48,4 +49,15 @@ pub struct WorkerDetail {
     pub model: String,
     // @TODO: Ollama or OpenAI
     //pub client: String,
+}
+
+#[derive(Serialize)]
+pub struct SubscriptionInfo {
+    pub topic: String,
+    pub priority: String,
+}
+
+#[derive(Serialize)]
+pub struct SubscriptionsResponse {
+    pub subscriptions: Vec<SubscriptionInfo>,
 }

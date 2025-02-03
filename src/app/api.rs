@@ -14,6 +14,7 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 
 use crate::db::Database;
+use crate::SubscriptionsResponse;
 
 /// Represents the response for an authentication request, containing a JWT token.
 #[derive(Serialize)]
@@ -92,6 +93,7 @@ pub async fn app_api_loop() -> Result<()> {
     let app = Router::new()
         .route("/status", post(status_check))
         .route("/authenticate", post(authenticate))
+        .route("/subscriptions", post(get_subscriptions))
         .route("/subscribe", post(subscribe_to_topic))
         .route("/unsubscribe", post(unsubscribe_from_topic))
         .route("/articles/sync", post(sync_seen_articles));
@@ -379,4 +381,47 @@ async fn sync_seen_articles(
     };
 
     Ok(Json(SyncSeenArticlesResponse { unseen_articles }))
+}
+
+async fn get_subscriptions(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    auth_header: TypedHeader<Authorization<Bearer>>,
+) -> Result<Json<SubscriptionsResponse>, StatusCode> {
+    let client_ip = get_client_ip(&headers, &addr);
+    info!("app::api get_subscriptions request from IP {}", client_ip);
+
+    let token = auth_header.token();
+    let claims = decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256))
+        .map_err(|e| {
+            warn!("app::api get_subscriptions JWT validation failed: {:#?}", e);
+            StatusCode::UNAUTHORIZED
+        })?;
+    let device_id = claims.claims.sub;
+
+    info!(
+        "app::api get_subscriptions validated JWT for device_id: {}",
+        device_id
+    );
+
+    // Record IP address
+    let db = Database::instance().await;
+    if let Err(e) = db.log_ip_address(&device_id, &client_ip).await {
+        warn!("Failed to log IP address: {:?}", e);
+    }
+
+    // Get subscriptions from database
+    match db.get_device_subscriptions(&device_id).await {
+        Ok(subscriptions) => {
+            info!(
+                "app::api get_subscriptions successfully retrieved subscriptions for device_id: {}",
+                device_id
+            );
+            Ok(Json(SubscriptionsResponse { subscriptions }))
+        }
+        Err(e) => {
+            warn!("app::api get_subscriptions unexpected error: {:#?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

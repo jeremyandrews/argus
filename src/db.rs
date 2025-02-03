@@ -13,7 +13,7 @@ use tracing::{debug, error, info, instrument};
 use url::Url;
 use urlnorm::UrlNormalizer;
 
-use crate::TARGET_DB;
+use crate::{SubscriptionInfo, TARGET_DB};
 
 #[derive(Clone)]
 pub struct Database {
@@ -1061,6 +1061,29 @@ impl Database {
                     },
                 )
             })
+            .collect())
+    }
+
+    pub async fn get_device_subscriptions(
+        &self,
+        device_id: &str,
+    ) -> Result<Vec<SubscriptionInfo>, sqlx::Error> {
+        let rows = sqlx::query_as::<_, (String, String)>(
+            r#"
+            SELECT ds.topic, COALESCE(ds.priority, 'low') as priority
+            FROM device_subscriptions ds
+            JOIN devices d ON ds.device_id = d.id
+            WHERE d.device_id = ?1
+            ORDER BY ds.topic;
+            "#,
+        )
+        .bind(device_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(topic, priority)| SubscriptionInfo { topic, priority })
             .collect())
     }
 }
