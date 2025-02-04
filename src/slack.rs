@@ -1,3 +1,4 @@
+use regex::Regex;
 use reqwest::{header::HeaderValue, Client};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -8,18 +9,42 @@ use crate::TARGET_WEB_REQUEST;
 
 /// Converts standard Markdown to Slack-compatible formatting.
 fn deduplicate_markdown(text: &str) -> String {
-    text.replace("**", "*") // Convert bold from **text** to *text*
-        .replace("__", "*") // Convert bold from __text__ to *text*
-        .replace("~~", "~") // Strikethrough remains the same
-        .replace("```", "```\n") // Ensure code blocks have a newline after ```
-        .replace("`", "`") // Inline code remains the same
-        .replace("# ", "*") // Convert H1 headers to bold
-        .replace("## ", "*") // Convert H2 headers to bold
-        .replace("### ", "*") // Convert H3 headers to bold
-        .replace("> ", ">") // Blockquotes remain the same
-        .replace("- ", "• ") // Convert unordered list dashes to bullets
-        .replace("* ", "• ") // Convert unordered list asterisks to bullets
-        .replace("\n", "\n") // Ensure newlines are preserved
+    let mut output = text.to_string();
+
+    // Convert bold (**text** or __text__) to *text*
+    output = output.replace("**", "*").replace("__", "*");
+
+    // Convert strikethrough (~~text~~) to ~text~
+    output = output.replace("~~", "~");
+
+    // Ensure code blocks are properly formatted
+    output = output.replace("```", "```\n");
+
+    // Convert Markdown headers (###, ##, #) to bold text for Slack
+    output = output
+        .replace("### ", "*")
+        .replace("## ", "*")
+        .replace("# ", "*");
+
+    // Remove extra `*` added in some cases where a header had a prefix
+    let header_fix = Regex::new(r"\*\*?\*").unwrap();
+    output = header_fix.replace_all(&output, "*").to_string();
+
+    // Convert unordered lists (- or *) to bullet points (•)
+    let bullet_fix = Regex::new(r"(?m)^[-*]\s+").unwrap();
+    output = bullet_fix.replace_all(&output, "• ").to_string();
+
+    // Ensure newlines are preserved properly
+    output = output.replace("\r\n", "\n").replace("\r", "\n");
+
+    // Convert [text](link) style links to Slack's <link|text> format
+    let link_regex = Regex::new(r"\[(.*?)\]\((.*?)\)").unwrap();
+    output = link_regex.replace_all(&output, "<$2|$1>").to_string();
+
+    // Ensure extra newlines don't cause formatting issues
+    output = output.replace("\n\n\n", "\n\n");
+
+    output
 }
 
 /// Sends the formatted article to the Slack channel.

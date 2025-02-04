@@ -128,7 +128,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "argus"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -147,6 +147,7 @@ dependencies = [
  "once_cell",
  "rand 0.8.5",
  "readability",
+ "regex",
  "reqwest 0.12.12",
  "ring 0.17.8",
  "schemars",
