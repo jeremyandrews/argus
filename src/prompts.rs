@@ -266,7 +266,7 @@ Source URL: {source_url}
 ~~~
 Today's date is: {month} {day}, {year}
 
-Please analyze this source, extracting only verified information. Begin by extracting just the domain from the URL, then provide factual details in exactly four bullet points covering ownership, operations, track record, and current status. Skip any bullet point entirely if information is not known.
+Please analyze this source, extracting only verified information. Begin by extracting just the domain from the URL, followed by the publication date (or best estimate based on content), then provide factual details in exactly four bullet points covering ownership, operations, track record, and current status. Skip any bullet point entirely if information is not known.
 
 Example response format:
 businessnews.com
