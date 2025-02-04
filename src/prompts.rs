@@ -270,6 +270,7 @@ Please analyze this source, extracting only verified information. Begin by extra
 
 Example response format:
 businessnews.com
+Published: February 4, 2024
 
 - BusinessNews.com operates under Global Media Holdings Corporation, which was acquired by Berkshire Hathaway in 2019 for $2.3 billion, and maintains editorial independence through a trust structure established in 2020.
 
