@@ -266,21 +266,20 @@ Source URL: {source_url}
 ~~~
 Today's date is: {month} {day}, {year}
 
-Please analyze this source, extracting only verified information. Begin by extracting just the domain from the URL, followed by the publication date (or best estimate based on content), then provide factual details in exactly four bullet points covering ownership, operations, track record, and current status. Skip any bullet point entirely if information is not known.
+Please analyze the WEBSITE DOMAIN ITSELF as a publication source, not the specific article content. Begin by extracting just the domain from the URL, then provide factual details about the website and its operating organization in exactly four bullet points. Skip any bullet points for which you do not know the answer.
 
 Example response format:
 businessnews.com
-Published: February 4, 2024
 
-- BusinessNews.com operates under Global Media Holdings Corporation, which was acquired by Berkshire Hathaway in 2019 for $2.3 billion, and maintains editorial independence through a trust structure established in 2020.
+- The domain is owned and operated by Global Media Holdings Corporation, which was acquired by Berkshire Hathaway in 2019 for $2.3 billion, with a trust structure ensuring editorial independence.
 
-- The publication serves primarily C-suite executives and financial analysts across North America from its Toronto headquarters, with 15 regional bureaus across major financial centers and 234 full-time journalists and editors as of 2023.
+- This business news website reaches approximately 12 million monthly readers globally, primarily serving financial professionals and business leaders from its headquarters in Toronto with 15 international bureaus.
 
-- The outlet has received multiple Gerald Loeb Awards for Business Journalism, issued a major correction in 2021 regarding Tesla earnings, and consistently ranks in the top 5 business news websites by ComScore since 2018.
+- The publication has earned six Pulitzer Prizes for financial reporting, faced a notable libel lawsuit in 2021 that was settled out of court, and maintains an A+ rating from NewsGuard's transparency index.
 
-- Content is published 24/7 with updates every 3-5 minutes during NYSE trading hours, operating primarily on Eastern Time with global coverage teams maintaining round-the-clock operations.
+- The site publishes approximately 200 stories daily across its digital platforms, operates on a subscription model with 800,000 paid subscribers, and maintains a 24/7 newsroom with peak activity during US market hours.
 
-Now please provide a similar analysis for the source URL provided above, using only verified information and omitting any bullet points where information is uncertain.
+Now please provide a similar institutional analysis for the domain {source_url}, focusing on the WEBSITE/ORGANIZATION itself rather than any specific article content. Use only verified information and omit any bullet points where information is uncertain.
 
 {write_in_clear_english}
 {dont_tell_me}"#,
