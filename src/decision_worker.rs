@@ -52,7 +52,7 @@ pub async fn decision_loop(
     slack_channel: &str,
 ) -> Result<()> {
     let db = Database::instance().await;
-    let mut rng = StdRng::from_entropy();
+    let mut rng = StdRng::seed_from_u64(rand::random());
 
     let worker_detail = WorkerDetail {
         name: "decision worker".to_string(),
@@ -71,7 +71,7 @@ pub async fn decision_loop(
     loop {
         // Determine which article to select next: 30% of the time seelct the newest
         // (latest news), 25% oldest (stale queue), 45% random.
-        let roll = rng.gen_range(0..100);
+        let roll = rng.random_range(0..100);
         let order = if roll < 30 {
             "newest"
         } else if roll < 55 {

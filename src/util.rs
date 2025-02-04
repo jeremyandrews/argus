@@ -1,4 +1,6 @@
-use rand::{distributions::WeightedIndex, prelude::*, rngs::StdRng, SeedableRng};
+use rand::distr::weighted::WeightedIndex;
+use rand::distr::Distribution;
+use rand::{rngs::StdRng, SeedableRng};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::env;
@@ -19,7 +21,7 @@ pub async fn weighted_sleep() {
     let dist = WeightedIndex::new(&weights).unwrap();
 
     // Create a random number generator that is `Send`
-    let mut rng = StdRng::from_entropy();
+    let mut rng = StdRng::seed_from_u64(rand::random());
 
     // Select a duration based on the weighted distribution
     let duration_index = dist.sample(&mut rng);

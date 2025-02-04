@@ -630,7 +630,7 @@ impl Database {
                     backoff = backoff.saturating_mul(2); // exponential backoff
                     if attempt == max_retries {
                         // Introduce some randomness to avoid the "thundering herd problem"
-                        let random_jitter = rand::thread_rng().gen_range(0..200);
+                        let random_jitter = rand::rng().random_range(0..200);
                         backoff += random_jitter;
                         sleep(Duration::from_millis(backoff)).await;
                     }
