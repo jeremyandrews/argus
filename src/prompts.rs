@@ -266,32 +266,22 @@ Source URL: {source_url}
 ~~~
 Today's date is: {month} {day}, {year}
 
-Extract just the domain (e.g., 'nytimes.com' from 'https://www.nytimes.com/2024/02/01/article') from this URL: `{source_url}`
+Please analyze this source, extracting only verified information. Begin by extracting just the domain from the URL, then provide factual details in exactly four bullet points covering ownership, operations, track record, and current status. Skip any bullet point entirely if information is not known.
 
-Create a three bullet-point source analysis that STRICTLY follows this format:
+Example response format:
+businessnews.com
 
-Format example using a generic news source:
-- businessnews.com owned by Global Media Holdings owned by Berkshire Hathaway
-- Reaches 2.3M monthly readers across North America and Europe since 1985, focusing on business professionals and policy analysts, with headquarters in Toronto and 15 regional offices
-- Published this article on February 1, 2025, showing current coverage, with URL structure indicating regular updates and an active news desk operating on EST timezone
+- BusinessNews.com operates under Global Media Holdings Corporation, which was acquired by Berkshire Hathaway in 2019 for $2.3 billion, and maintains editorial independence through a trust structure established in 2020.
 
-Now analyze the source of the article above using these categories:
-1. Domain and Ownership:
-   - Base domain name only
-   - Direct owner
-   - Parent companies/organizations (if any)
-2. Reach and Background:
-   - Target audience
-   - Geographic coverage
-   - Key statistics
-   - Founding date
-3. Currentness
-   - Publication timing
-   - Update frequency
-   - Time zone indicators
+- The publication serves primarily C-suite executives and financial analysts across North America from its Toronto headquarters, with 15 regional bureaus across major financial centers and 234 full-time journalists and editors as of 2023.
+
+- The outlet has received multiple Gerald Loeb Awards for Business Journalism, issued a major correction in 2021 regarding Tesla earnings, and consistently ranks in the top 5 business news websites by ComScore since 2018.
+
+- Content is published 24/7 with updates every 3-5 minutes during NYSE trading hours, operating primarily on Eastern Time with global coverage teams maintaining round-the-clock operations.
+
+Now please provide a similar analysis for the source URL provided above, using only verified information and omitting any bullet points where information is uncertain.
 
 {write_in_clear_english}
-
 {dont_tell_me}"#,
         article = article_html,
         source_url = source_url,
