@@ -6,10 +6,20 @@ use tracing::{debug, error, info, warn};
 
 use crate::TARGET_WEB_REQUEST;
 
+/// Converts standard Markdown to Slack-compatible formatting.
 fn deduplicate_markdown(text: &str) -> String {
-    text.replace("**", "*")
-        .replace("__", "_")
-        .replace("~~", "~")
+    text.replace("**", "*") // Convert bold from **text** to *text*
+        .replace("__", "*") // Convert bold from __text__ to *text*
+        .replace("~~", "~") // Strikethrough remains the same
+        .replace("```", "```\n") // Ensure code blocks have a newline after ```
+        .replace("`", "`") // Inline code remains the same
+        .replace("# ", "*") // Convert H1 headers to bold
+        .replace("## ", "*") // Convert H2 headers to bold
+        .replace("### ", "*") // Convert H3 headers to bold
+        .replace("> ", ">") // Blockquotes remain the same
+        .replace("- ", "• ") // Convert unordered list dashes to bullets
+        .replace("* ", "• ") // Convert unordered list asterisks to bullets
+        .replace("\n", "\n") // Ensure newlines are preserved
 }
 
 /// Sends the formatted article to the Slack channel.
