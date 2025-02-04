@@ -11,38 +11,33 @@ use crate::TARGET_WEB_REQUEST;
 fn deduplicate_markdown(text: &str) -> String {
     let mut output = text.to_string();
 
-    // Convert bold (**text** or __text__) to *text*
+    // Convert bold (**text** or __text__) to Slack-supported *text*
     output = output.replace("**", "*").replace("__", "*");
 
-    // Convert strikethrough (~~text~~) to ~text~
+    // Convert strikethrough (~~text~~) to Slack-supported ~text~
     output = output.replace("~~", "~");
 
     // Ensure code blocks are properly formatted
     output = output.replace("```", "```\n");
 
-    // Convert Markdown headers (###, ##, #) to bold text for Slack
-    output = output
-        .replace("### ", "*")
-        .replace("## ", "*")
-        .replace("# ", "*");
+    // Convert Markdown headers (###, ##, #) to bold text (Slack uses *text* for bold)
+    let header_regex = Regex::new(r"(?m)^#{1,3}\s*(.+)").unwrap();
+    output = header_regex.replace_all(&output, "*$1*").to_string();
 
-    // Remove extra `*` added in some cases where a header had a prefix
-    let header_fix = Regex::new(r"\*\*?\*").unwrap();
-    output = header_fix.replace_all(&output, "*").to_string();
+    // Convert list items (- or *) to proper bullets (•)
+    let bullet_regex = Regex::new(r"(?m)^\s*[-*]\s+").unwrap();
+    output = bullet_regex.replace_all(&output, "• ").to_string();
 
-    // Convert unordered lists (- or *) to bullet points (•)
-    let bullet_fix = Regex::new(r"(?m)^[-*]\s+").unwrap();
-    output = bullet_fix.replace_all(&output, "• ").to_string();
-
-    // Ensure newlines are preserved properly
-    output = output.replace("\r\n", "\n").replace("\r", "\n");
-
-    // Convert [text](link) style links to Slack's <link|text> format
+    // Convert [text](link) to Slack's <link|text> format
     let link_regex = Regex::new(r"\[(.*?)\]\((.*?)\)").unwrap();
     output = link_regex.replace_all(&output, "<$2|$1>").to_string();
 
-    // Ensure extra newlines don't cause formatting issues
-    output = output.replace("\n\n\n", "\n\n");
+    // Ensure proper newline spacing
+    output = output.replace("\r\n", "\n").replace("\r", "\n");
+
+    // Remove accidental double bold markers (e.g., "**text**" turning into "**text**")
+    let cleanup_regex = Regex::new(r"\*{3,}(.+?)\*{3,}").unwrap();
+    output = cleanup_regex.replace_all(&output, "*$1*").to_string();
 
     output
 }
