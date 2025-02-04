@@ -244,14 +244,27 @@ async fn check_if_threat_at_all(
     params: &mut ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) -> bool {
+    let llm_params = extract_llm_params(params);
+
+    // Initial threat check
     let threat_prompt = prompts::threat_prompt(&article_text);
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking LLM if about something affecting life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
 
-    let llm_params = extract_llm_params(params);
-    match generate_llm_response(&threat_prompt, &llm_params, worker_detail).await {
-        Some(response) => response.trim().to_lowercase().starts_with("yes"),
-        None => false,
+    if let Some(response) = generate_llm_response(&threat_prompt, &llm_params, worker_detail).await
+    {
+        if response.trim().to_lowercase().starts_with("yes") {
+            // Confirmation check
+            let confirm_prompt = prompts::confirm_threat_prompt(&article_text);
+            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: confirming if genuine threat to life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
+
+            if let Some(confirm_response) =
+                generate_llm_response(&confirm_prompt, &llm_params, worker_detail).await
+            {
+                return confirm_response.trim().to_lowercase().starts_with("yes");
+            }
+        }
     }
+    false
 }
 
 /// Processes the places mentioned in the article text and updates the affected people and places lists.

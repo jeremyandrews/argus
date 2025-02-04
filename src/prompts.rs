@@ -483,29 +483,58 @@ Answer:"#,
 pub fn confirm_prompt(summary_response: &str, topic_name: &str) -> String {
     format!(
         r#"{summary}
-
-Question: Confirm if this article is specifically about {topic} and not a promotion or advertisement.
-
+Question: Confirm if this is a valid article about {topic}.
 Instructions:
-1. Carefully re-read the article summary above.
-2. Compare the main focus of the article to the topic: {topic}
-3. Check if the article provides substantial, analytical content about {topic}.
-4. Verify that the article is not primarily promotional or advertorial.
-5. Answer ONLY 'Yes' or 'No' based on the following criteria:
+1. Carefully check if this is actual article content by verifying:
+   a) Contains complete sentences and coherent paragraphs
+   b) Is not an error message, loading screen, or technical issue
+   c) Is not just a headline or stub
+   d) Is not primarily an advertisement
+2. Then verify if it's about {topic}
+3. Answer ONLY 'Yes' or 'No' based on these criteria:
    - Answer 'Yes' ONLY if ALL of these are true:
-     a) The article is specifically about {topic}
-     b) It contains enough content for analysis
-     c) It is not primarily a promotion or advertisement
+     a) Is valid article content (not an error/loading message)
+     b) The article is specifically about {topic}
+     c) It contains enough content for analysis
+     d) It is not primarily a promotion or advertisement
    - Answer 'No' if ANY of these are true:
-     a) The article is not primarily about {topic}
-     b) It only mentions {topic} briefly
-     c) It is unrelated to {topic}
-     d) It is primarily a promotion or advertisement
-     e) It is an error message, not an article
-6. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
-
+     a) Contains error messages or technical issues
+     b) Is not complete article content
+     c) The article is not primarily about {topic}
+     d) It only mentions {topic} briefly
+     e) It is unrelated to {topic}
+     f) It is primarily a promotion or advertisement
+4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
 Answer:"#,
         summary = summary_response,
         topic = topic_name
+    )
+}
+
+pub fn confirm_threat_prompt(article_text: &str) -> String {
+    format!(
+        r#"{article}
+Question: Confirm if this article describes a current or imminent threat to human life or safety.
+Instructions:
+1. Carefully check if this describes an ACTUAL threat by verifying:
+   a) Contains specific details about a current or imminent danger
+   b) Is not an error message or technical issue
+   c) Is not just a headline or stub
+   d) Is not primarily an advertisement
+2. Answer ONLY 'Yes' or 'No' based on these criteria:
+   - Answer 'Yes' ONLY if ALL of these are true:
+     a) Is valid article content (not an error/loading message)
+     b) Describes a specific, current, or imminent threat
+     c) The threat could affect human life or safety
+     d) Contains enough details to understand the threat
+   - Answer 'No' if ANY of these are true:
+     a) Contains error messages or technical issues
+     b) Is not complete article content
+     c) Describes past events with no current threat
+     d) Is speculative about future possibilities
+     e) Is primarily promotional content
+4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
+Answer:"#,
+        article = article_text
     )
 }
