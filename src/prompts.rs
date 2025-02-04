@@ -266,10 +266,11 @@ Source URL: {source_url}
 ~~~
 Today's date is: {month} {day}, {year}
 
-Please analyze the WEBSITE DOMAIN ITSELF as a publication source, not the specific article content. Begin by extracting just the domain from the URL, then provide factual details about the website and its operating organization in exactly four bullet points. Skip any bullet points for which you do not know the answer.
+Please analyze the WEBSITE DOMAIN ITSELF as a publication source, not the specific article content. Begin by extracting just the domain from the URL, followed by the publication date (or best estimate based on content, then provide factual details about the website and its operating organization in exactly four bullet points. Skip any bullet points for which you do not know the answer.
 
 Example response format:
 businessnews.com
+Published: February 4, 2024
 
 - The domain is owned and operated by Global Media Holdings Corporation, which was acquired by Berkshire Hathaway in 2019 for $2.3 billion, with a trust structure ensuring editorial independence.
 
