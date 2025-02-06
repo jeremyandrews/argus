@@ -454,17 +454,18 @@ Please confirm if the article is indeed about such an event in this city. Answer
 pub fn is_this_about(article_text: &str, topic_name: &str) -> String {
     format!(
         r#"{article}
-
 Question: Does this article primarily focus on and provide substantial information about {topic}?
-
 Instructions:
-1. Carefully read the article summary above.
-2. Compare the main focus of the article to the topic: {topic}
-3. Answer ONLY 'Yes' or 'No' based on the following criteria:
-   - Answer 'Yes' if the article is specifically about {topic} AND contains enough content for analysis.
-   - Answer 'No' if the article is not primarily about {topic}, only mentions it briefly, or is unrelated.
-4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
-
+1. First, identify the article's language. If not in English:
+   - Look for topic-relevant terms in that language (e.g., "Toscana" for "Tuscany")
+   - Consider regional variations and local terminology
+2. Carefully read the article summary above.
+3. Compare the main focus of the article to the topic: {topic}
+4. Answer ONLY 'Yes' or 'No' based on the following criteria:
+   - Answer 'Yes' if the article is specifically about {topic} AND contains enough content for analysis,
+     regardless of the original language
+   - Answer 'No' if the article is not primarily about {topic}, only mentions it briefly, or is unrelated
+5. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
 Answer:"#,
         article = article_text,
         topic = topic_name
@@ -476,25 +477,32 @@ pub fn confirm_prompt(summary_response: &str, topic_name: &str) -> String {
         r#"{summary}
 Question: Confirm if this is a valid article about {topic}.
 Instructions:
-1. Carefully check if this is actual article content by verifying:
-   a) Contains complete sentences and coherent paragraphs
+1. First validate the content quality regardless of language:
+   a) Contains complete sentences and coherent paragraphs in any language
    b) Is not an error message, loading screen, or technical issue
    c) Is not just a headline or stub
    d) Is not primarily an advertisement
-2. Then verify if it's about {topic}
+
+2. For non-English content:
+   a) Consider local/native terms (e.g., "Toscana" for "Tuscany")
+   b) Account for regional spelling variations
+   c) Check for topic-specific local terminology
+   d) Include regional subdivisions or administrative terms
+
 3. Answer ONLY 'Yes' or 'No' based on these criteria:
    - Answer 'Yes' ONLY if ALL of these are true:
      a) Is valid article content (not an error/loading message)
-     b) The article is specifically about {topic}
-     c) It contains enough content for analysis
-     d) It is not primarily a promotion or advertisement
+     b) The article is specifically about {topic} (in any language)
+     c) Contains enough content for analysis
+     d) Is not primarily a promotion or advertisement
    - Answer 'No' if ANY of these are true:
      a) Contains error messages or technical issues
      b) Is not complete article content
      c) The article is not primarily about {topic}
-     d) It only mentions {topic} briefly
-     e) It is unrelated to {topic}
-     f) It is primarily a promotion or advertisement
+     d) Only mentions {topic} briefly
+     e) Is unrelated to {topic}
+     f) Is primarily a promotion or advertisement
+
 4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
 Answer:"#,
         summary = summary_response,
