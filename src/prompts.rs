@@ -102,9 +102,34 @@ In Q3 2024, the Paris Olympics fostered unity amidst record-breaking heatwaves a
 In Q4 2024, Trump’s re-election and U.S. economic growth highlighted domestic shifts. Hurricane Helene devastated the Gulf Coast, while 2024 set a record as the hottest year. South Korea’s political turmoil and Assad’s overthrow reshaped global dynamics. The Notre-Dame reopening symbolized cultural resilience.
 - In January 2025, Donald Trump is inaugurated as the 47th U.S. President, signaling a major political shift. Los Angeles faces its most destructive wildfires, causing significant damage and loss of life. A European report confirms 2024 as the hottest year on record, emphasizing climate change urgency. Ukraine halts Russian gas transit, affecting European energy dynamics. Canadian Prime Minister Justin Trudeau announces his resignation, indicating impending leadership changes.";
 
+fn current_date() -> String {
+    let today = Local::now();
+    format!(
+        "{} {}, {}",
+        today.format("%B"),
+        today.format("%-d"),
+        today.format("%Y")
+    )
+}
+
+fn global_context() -> String {
+    format!(
+        "
+This is a small sampling of events since January of 2023 between ~~~ markers:
+~~~
+{}
+~~~
+Today's date is: {}\n",
+        CONTEXT,
+        current_date()
+    )
+}
+
 pub fn summary_prompt(article_text: &str) -> String {
     format!(
         r#"
+{context}
+
 Below is the text of an article between ~~~ markers:
 ~~~
 {article}
@@ -143,6 +168,7 @@ Now summarize the article text above using these rules:
 {dont_tell_me}
 
 {format_instructions}"#,
+        context = global_context(),
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
@@ -184,6 +210,8 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
 pub fn critical_analysis_prompt(article_text: &str) -> String {
     format!(
         r#"
+{context}
+
 Below is the text of an article between ~~~ markers:
 ~~~
 {article}
@@ -211,6 +239,7 @@ Provide a concise critical analysis with these specific points:
 
 {write_in_clear_english}
 {dont_tell_me}"#,
+        context = global_context(),
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
@@ -220,6 +249,8 @@ Provide a concise critical analysis with these specific points:
 pub fn logical_fallacies_prompt(article_text: &str) -> String {
     format!(
         r#"
+{context}
+
 Below is the text of an article between ~~~ markers:
 ~~~
 {article}
@@ -242,6 +273,7 @@ Analyze for logical fallacies and argument strength:
 
 {write_in_clear_english}
 {dont_tell_me}"#,
+        context = global_context(),
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
@@ -298,6 +330,8 @@ Now please provide a similar institutional analysis for the domain {source_url},
 pub fn relation_to_topic_prompt(article_text: &str, topic_prompt: &str) -> String {
     format!(
         r#"
+{context}
+
 Below is the text of an article between ~~~ markers:
 ~~~
 {article}
@@ -308,6 +342,7 @@ First sentence must begin with "This article relates to {topic} because..."
 
 {write_in_clear_english}
 {dont_tell_me}"#,
+        context = global_context(),
         article = article_text,
         topic = topic_prompt,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
