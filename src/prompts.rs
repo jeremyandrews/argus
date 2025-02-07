@@ -100,7 +100,9 @@ In Q1 2024, BRICS expanded, shifting global economic power, while record tempera
 In Q2 2024, a solar eclipse captivated North America as record heatwaves and severe floods underscored climate urgency. Trump’s trial and free speech protests stirred U.S. discourse. Putin’s fifth term, Xi's European visit, and G7's $50B Ukraine aid shaped geopolitics. Apple’s AI integration marked tech innovation.
 In Q3 2024, the Paris Olympics fostered unity amidst record-breaking heatwaves and escalating Gaza tensions. Biden withdrew from the presidential race, endorsing Kamala Harris. The UN's 'Pact for the Future' and a historic face transplant marked milestones. Hurricane Helene and mpox emphasized urgent global challenges.
 In Q4 2024, Trump’s re-election and U.S. economic growth highlighted domestic shifts. Hurricane Helene devastated the Gulf Coast, while 2024 set a record as the hottest year. South Korea’s political turmoil and Assad’s overthrow reshaped global dynamics. The Notre-Dame reopening symbolized cultural resilience.
-- In January 2025, Donald Trump is inaugurated as the 47th U.S. President, signaling a major political shift. Los Angeles faces its most destructive wildfires, causing significant damage and loss of life. A European report confirms 2024 as the hottest year on record, emphasizing climate change urgency. Ukraine halts Russian gas transit, affecting European energy dynamics. Canadian Prime Minister Justin Trudeau announces his resignation, indicating impending leadership changes.";
+- In January 2025, Donald Trump was inaugurated as the 47th U.S. President and issued significant executive orders affecting trade and international relations. The month also recorded the warmest January globally, highlighting climate concerns. A ceasefire was reached in the Israel-Hamas conflict, and Canadian Prime Minister Justin Trudeau resigned amid a political crisis. Trump's actions included imposing tariffs on Mexico, China, and Canada, withdrawing the U.S. from the World Health Organization, and defunding the UN agency for Palestinian refugees, signaling a shift toward protectionism and unilateral foreign policy.
+- In early February 2025, President Trump imposed significant tariffs on Canada, Mexico, and China, escalating global trade tensions. The U.S. conducted airstrikes against Islamic State positions in Somalia, signaling intensified counterterrorism efforts. The administration announced the shutdown of USAID, merging it into the State Department, indicating a major shift in foreign aid policy. Additionally, the U.S. declared it would assume control over the Gaza Strip in agreement with Israel, and reinstated a maximum pressure policy against Iran, both actions with significant geopolitical implications.
+";
 
 fn current_date() -> String {
     let today = Local::now();
@@ -281,22 +283,15 @@ Analyze for logical fallacies and argument strength:
 }
 
 pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
-    let today = Local::now();
-    let day = today.format("%-d").to_string();
-    let month = today.format("%B").to_string();
-    let year = today.format("%Y").to_string();
     format!(
         r#"
-This is a small sampling of events since January of 2023 between ~~~ markers:
-~~~
 {context}
-~~~
+
 Below is the article text and source URL between ~~~ markers:
 ~~~
 {article}
 Source URL: {source_url}
 ~~~
-Today's date is: {month} {day}, {year}
 
 Please analyze the WEBSITE DOMAIN ITSELF as a publication source, not the specific article content. Begin by extracting just the domain from the URL, followed by the publication date (or best estimate based on content, then provide factual details about the website and its operating organization in exactly four bullet points. Skip any bullet points for which you do not know the answer.
 
@@ -318,10 +313,7 @@ Now please provide a similar institutional analysis for the domain {source_url},
 {dont_tell_me}"#,
         article = article_html,
         source_url = source_url,
-        context = CONTEXT,
-        day = day,
-        month = month,
-        year = year,
+        context = global_context(),
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
