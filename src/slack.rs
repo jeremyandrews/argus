@@ -11,12 +11,21 @@ use crate::TARGET_WEB_REQUEST;
 fn deduplicate_markdown(text: &str) -> String {
     let mut output = text.to_string();
 
-    // Convert bold (**text** or __text__) to Slack-supported *text*
-    let bold_regex = Regex::new(r"(\*\*|__)(.*?)\1").unwrap();
-    output = bold_regex.replace_all(&output, "*$2*").to_string();
+    // Convert bold (**text**) to Slack-supported *text*
+    let bold_asterisks_regex = Regex::new(r"\*\*(.*?)\*\*").unwrap();
+    output = bold_asterisks_regex
+        .replace_all(&output, "*$1*")
+        .to_string();
+
+    // Convert bold (__text__) to Slack-supported *text*
+    let bold_underscores_regex = Regex::new(r"__(.*?)__").unwrap();
+    output = bold_underscores_regex
+        .replace_all(&output, "*$1*")
+        .to_string();
 
     // Convert strikethrough (~~text~~) to Slack-supported ~text~
-    output = output.replace("~~", "~");
+    let strikethrough_regex = Regex::new(r"~~(.*?)~~").unwrap();
+    output = strikethrough_regex.replace_all(&output, "~$1~").to_string();
 
     // Ensure code blocks are properly formatted (no extra newlines)
     let code_block_regex = Regex::new(r"```(\s*\n)?(.*?)```").unwrap();
