@@ -248,16 +248,16 @@ Carefully read and understand the entire article.
 Then, provide a concise critical analysis following these STRICT guidelines:
 
 ### **Credibility Score:** [1–10]
-   - **Justification:** Briefly explain in no more than 15 words.
+   - Briefly explain in no more than 15 words.
 
 ### **Style Score:** [1–10]
-   - **Justification:** Briefly explain in no more than 15 words.
+   - Briefly explain in no more than 15 words.
 
 ### **Political Leaning:** [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
-   - **Justification:** Briefly explain in no more than 15 words.
+   - Briefly explain in no more than 15 words.
 
 ### **Tone:** [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
-   - **Justification:** Briefly explain in no more than 15 words.
+   - Briefly explain in no more than 15 words.
 
 ### **Target Audience:** 
    - Identify the intended audience in no more than 10 words.
@@ -309,9 +309,9 @@ Then, analyze for logical fallacies and argument strength following these STRICT
 
 ### **Logical Fallacies Found:**
 - **Format:** 
-  - **Name:** [fallacy type]  
-    **Explanation:** Briefly explain in no more than 15 words.  
-- **Instructions:** List up to 3 of the most significant fallacies found, or state:
+  # **Name:** [fallacy type]  
+    Briefly explain in no more than 15 words.  
+- **Instructions:** List up to 4 of the most significant fallacies found, or state:
   - *"No apparent logical fallacies detected."*
 
 ### **Argument Strength:** [1–10]
@@ -324,12 +324,18 @@ Then, analyze for logical fallacies and argument strength following these STRICT
 - Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.
 
 **EXAMPLE (Correct):**
-- **Name:** Strawman Fallacy  
-  **Explanation:** Misrepresents opposing argument to make it easier to refute.  
+1 **Name:** Strawman Fallacy  
+  Misrepresents opposing argument to make it easier to refute.  
+
+2 **Name:** Appeal to Feat  
+  Uses fear of actions to push for result.  
+
 - **Argument Strength:** 6  
-  **Justification:** Uses some evidence but relies heavily on assumptions without support.  
+  Uses some evidence but relies heavily on assumptions without support.  
+
 - **Evidence Quality:** 4  
-  **Justification:** Relies on anecdotal evidence with no verifiable data.  
+  Relies on anecdotal evidence with no verifiable data.  
+
 - **Overall Assessment:**  
   - Relies on emotional appeals over factual evidence, undermining the argument's logical foundation.
 
