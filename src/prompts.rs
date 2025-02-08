@@ -309,7 +309,7 @@ Then, analyze for logical fallacies and argument strength following these STRICT
 
 ### **Logical Fallacies Found:**
 - **Format:** 
-  # **Name:** [fallacy type]  
+  #. [fallacy type]  
     Briefly explain in no more than 15 words.  
 - **Instructions:** List up to 4 of the most significant fallacies found, or state:
   - *"No apparent logical fallacies detected."*
@@ -324,10 +324,10 @@ Then, analyze for logical fallacies and argument strength following these STRICT
 - Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.
 
 **EXAMPLE (Correct):**
-1 **Name:** Strawman Fallacy  
+1. Strawman Fallacy  
   Misrepresents opposing argument to make it easier to refute.  
 
-2 **Name:** Appeal to Feat  
+2. Appeal to Feat  
   Uses fear of actions to push for result.  
 
 - **Argument Strength:** 6  
