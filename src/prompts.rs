@@ -116,14 +116,21 @@ fn current_date() -> String {
 
 fn global_context() -> String {
     format!(
-        "
-This is a small sampling of events since January of 2023 between ~~~ markers:
+        r#"
+GLOBAL CONTEXT (FOR REFERENCE ONLY):
+=============================
+This section provides background information on significant global events from January 2023 to the present. 
+**IMPORTANT:** This context is for reference ONLY. **DO NOT summarize, analyze, or reference it unless the article explicitly mentions related events.**
+
 ~~~
-{}
+{context}
 ~~~
-Today's date is: {}\n",
-        CONTEXT,
-        current_date()
+
+Today's Date: {date}
+=============================
+"#,
+        context = CONTEXT,
+        date = current_date()
     )
 }
 
@@ -132,39 +139,50 @@ pub fn summary_prompt(article_text: &str) -> String {
         r#"
 {context}
 
-Below is the text of an article between ~~~ markers:
-~~~
+ARTICLE (TO BE SUMMARIZED):
+-----------------------------
 {article}
-~~~
+-----------------------------
+
+IMPORTANT INSTRUCTIONS:
+- **Summarize ONLY the article above.** 
+- **IGNORE the global context unless the article explicitly mentions related events.**
+- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
 
 First, carefully read and thoroughly understand the entire text.
 
 Then, create a comprehensive bullet-point summary that follows these STRICT rules:
-1. Format: Use ONLY simple bullet points with a single dash (-)
-2. Length:
-   - Very short texts (≤25 words): Quote verbatim
-   - Short texts (26-100 words): 2-3 bullets
-   - Medium texts (101-500 words): 3-4 bullets
-   - Long texts (501-2000 words): 4-6 bullets
-   - Very long texts (>2000 words): 6-8 bullets
 
-3. Each bullet point MUST:
-   - Start with a dash (-)
-   - Include specific data points (numbers, dates, percentages)
-   - Contain multiple related facts in a single coherent sentence
-   - Provide complete context for each point
-   - Use active voice
-   - Be substantial (25-40 words each)
+1. **Format:** Use ONLY simple bullet points starting with a dash (-).
+2. **Length:**
+   - Very short texts (≤25 words): Quote verbatim.
+   - Short texts (26–100 words): 2–3 bullets.
+   - Medium texts (101–500 words): 3–4 bullets.
+   - Long texts (501–2000 words): 4–6 bullets.
+   - Very long texts (>2000 words): 6–8 bullets.
 
-4. DO NOT:
-   - Use headings or sections
-   - Include nested bullets
-   - Include commentary or analysis
+3. **Each Bullet Point MUST:**
+   - Start with a dash (-).
+   - Include specific data points (numbers, dates, percentages).
+   - Contain multiple related facts in a single coherent sentence.
+   - Provide complete context for each point.
+   - Use active voice.
+   - Be substantial (15–35 words each).
 
-Format example using a generic topic:
+4. **DO NOT:**
+   - Use headings or sections.
+   - Include nested bullets.
+   - Include commentary or analysis.
+   - Summarize the global context instead of the article.
+
+**EXAMPLE (Correct):**
 - Introduces new environmental regulations affecting 15 major industries across 3 continents, requiring a 45% reduction in carbon emissions by 2025, while providing $12 billion in transition funding for affected companies.
 
+**EXAMPLE (Incorrect):**
+- Summarizes unrelated global events mentioned in the context above.
+
 Now summarize the article text above using these rules:
+
 {write_in_clear_english}
 
 {dont_tell_me}
@@ -214,32 +232,53 @@ pub fn critical_analysis_prompt(article_text: &str) -> String {
         r#"
 {context}
 
-Below is the text of an article between ~~~ markers:
-~~~
+ARTICLE (FOR CRITICAL ANALYSIS):
+-----------------------------
 {article}
-~~~
+-----------------------------
 
-Provide a concise critical analysis with these specific points:
+IMPORTANT INSTRUCTIONS:
+- **Analyze ONLY the article above.** 
+- **IGNORE the global context unless the article explicitly mentions related events.**
+- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
 
-### Credibility Score: [1-10]
-   Briefly justify (max 15 words)
+TASK:
+Carefully read and understand the entire article.
 
-### Style Score: [1-10]
-   Briefly justify (max 15 words)
+Then, provide a concise critical analysis following these STRICT guidelines:
 
-### Political Leaning: [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
-   Briefly justify (max 15 words)
+### **Credibility Score:** [1–10]
+   - **Justification:** Briefly explain in no more than 15 words.
 
-### Tone: [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
-   Briefly justify (max 15 words)
+### **Style Score:** [1–10]
+   - **Justification:** Briefly explain in no more than 15 words.
 
-### Target Audience: (max 10 words)
+### **Political Leaning:** [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
+   - **Justification:** Briefly explain in no more than 15 words.
 
-### Critical Analysis: (2-3 bullet points)
+### **Tone:** [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
+   - **Justification:** Briefly explain in no more than 15 words.
 
-### Key Takeaway: (1-2 bullet points)
+### **Target Audience:** 
+   - Identify the intended audience in no more than 10 words.
+
+### **Critical Analysis:** 
+   - Provide 2–3 bullet points focusing on content, logic, and evidence quality.
+   - Each bullet should highlight key observations about the article’s arguments, strengths, or weaknesses.
+
+### **Key Takeaway:** 
+   - Provide 1–2 bullet points summarizing the article’s most significant points or conclusions.
+
+**EXAMPLE (Correct):**
+- Highlights biased language favoring one political perspective despite factual accuracy, with inconsistent source citations affecting credibility.
+
+**EXAMPLE (Incorrect):**
+- Focuses on unrelated global events instead of analyzing the article content.
+
+Now perform the critical analysis using these rules:
 
 {write_in_clear_english}
+
 {dont_tell_me}"#,
         context = global_context(),
         article = article_text,
@@ -253,27 +292,54 @@ pub fn logical_fallacies_prompt(article_text: &str) -> String {
         r#"
 {context}
 
-Below is the text of an article between ~~~ markers:
-~~~
+ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
+-----------------------------
 {article}
-~~~
+-----------------------------
 
-Analyze for logical fallacies and argument strength:
+IMPORTANT INSTRUCTIONS:
+- **Analyze ONLY the article above.** 
+- **IGNORE the global context unless the article explicitly mentions related events.**
+- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
 
-### Logical Fallacies Found:
-   - Name: [fallacy type]
-     Briefly explain (max 15 words)
-   (List up to 3 most significant fallacies, or state "No apparent logical fallacies detected")
+TASK:
+Carefully read and understand the entire article.
 
-### Argument Strength: [1-10]
-   Briefly justify (max 20 words)
+Then, analyze for logical fallacies and argument strength following these STRICT guidelines:
 
-### Evidence Quality: [1-10]
-   Briefly justify (max 20 words)
+### **Logical Fallacies Found:**
+- **Format:** 
+  - **Name:** [fallacy type]  
+    **Explanation:** Briefly explain in no more than 15 words.  
+- **Instructions:** List up to 3 of the most significant fallacies found, or state:
+  - *"No apparent logical fallacies detected."*
 
-### Overall Assessment: (1-2 bullet points)
+### **Argument Strength:** [1–10]
+- **Justification:** Briefly explain in no more than 20 words.
+
+### **Evidence Quality:** [1–10]
+- **Justification:** Briefly explain in no more than 20 words.
+
+### **Overall Assessment:** 
+- Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.
+
+**EXAMPLE (Correct):**
+- **Name:** Strawman Fallacy  
+  **Explanation:** Misrepresents opposing argument to make it easier to refute.  
+- **Argument Strength:** 6  
+  **Justification:** Uses some evidence but relies heavily on assumptions without support.  
+- **Evidence Quality:** 4  
+  **Justification:** Relies on anecdotal evidence with no verifiable data.  
+- **Overall Assessment:**  
+  - Relies on emotional appeals over factual evidence, undermining the argument's logical foundation.
+
+**EXAMPLE (Incorrect):**
+- Focuses on summarizing unrelated global events or providing subjective opinions without evaluating logical structure.
+
+Now perform the logical fallacy analysis using these rules:
 
 {write_in_clear_english}
+
 {dont_tell_me}"#,
         context = global_context(),
         article = article_text,
@@ -287,29 +353,51 @@ pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
         r#"
 {context}
 
-Below is the article text and source URL between ~~~ markers:
-~~~
+ARTICLE AND SOURCE URL (FOR SOURCE ANALYSIS):
+-----------------------------
 {article}
 Source URL: {source_url}
-~~~
+-----------------------------
 
-Please analyze the WEBSITE DOMAIN ITSELF as a publication source, not the specific article content. Begin by extracting just the domain from the URL, followed by the publication date (or best estimate based on content, then provide factual details about the website and its operating organization in exactly four bullet points. Skip any bullet points for which you do not know the answer.
+IMPORTANT INSTRUCTIONS:
+- **Analyze ONLY the WEBSITE DOMAIN ITSELF, not the specific article content.** 
+- **IGNORE the global context unless the article explicitly mentions related events.**
+- **Focus on the publication source, its ownership, reputation, and background.**
 
-Example response format:
-businessnews.com
-Published: February 4, 2024
+TASK:
+Carefully extract the domain from the URL, then analyze the publication source following these STRICT guidelines:
 
-- The domain is owned and operated by Global Media Holdings Corporation, which was acquired by Berkshire Hathaway in 2019 for $2.3 billion, with a trust structure ensuring editorial independence.
+### **Domain Name:** 
+- Extract and list the domain (e.g., `example.com`).
 
-- This business news website reaches approximately 12 million monthly readers globally, primarily serving financial professionals and business leaders from its headquarters in Toronto with 15 international bureaus.
+### **Publication Date:** 
+- Identify the publication date of the article, or provide the best estimate based on content.
 
-- The publication has earned six Pulitzer Prizes for financial reporting, faced a notable libel lawsuit in 2021 that was settled out of court, and maintains an A+ rating from NewsGuard's transparency index.
+### **Institutional Analysis:** 
+- Provide up to **five bullet points** about the WEBSITE/ORGANIZATION, focusing on the following (skip any bullet if the information is unavailable):
+  - **Ownership and Management:** Who owns and operates the website? Include corporate affiliations if known.
+  - **Audience and Reach:** Describe the website's target audience, monthly readership, or geographical influence.
+  - **Reputation and History:** Mention any notable awards, controversies, or credibility ratings from reliable sources.
+  - **Publishing Practices:** Frequency of publication, editorial policies, or any relevant operational details.
+  - **Comparison:** Compare the publication to other similar sources.
 
-- The site publishes approximately 200 stories daily across its digital platforms, operates on a subscription model with 800,000 paid subscribers, and maintains a 24/7 newsroom with peak activity during US market hours.
+**EXAMPLE (Correct):**
 
-Now please provide a similar institutional analysis for the domain {source_url}, focusing on the WEBSITE/ORGANIZATION itself rather than any specific article content. Use only verified information and omit any bullet points where information is uncertain.
+businessnews.com Published: February 4, 2024
+
+    The domain is owned by Global Media Holdings, acquired by Berkshire Hathaway in 2019, maintaining editorial independence through a trust structure.
+    Reaches 12 million monthly readers, primarily financial professionals globally, with headquarters in Toronto and 15 international bureaus.
+    Earned six Pulitzer Prizes for financial reporting, faced a libel lawsuit in 2021, and holds an A+ NewsGuard rating.
+    Publishes ~200 stories daily, operates on a subscription model with 800,000 paid subscribers, and maintains a 24/7 newsroom.
+
+
+**EXAMPLE (Incorrect):**
+- Focuses on summarizing article content instead of analyzing the publication source.
+
+Now analyze the publication source using these rules:
 
 {write_in_clear_english}
+
 {dont_tell_me}"#,
         article = article_html,
         source_url = source_url,
@@ -324,15 +412,38 @@ pub fn relation_to_topic_prompt(article_text: &str, topic_prompt: &str) -> Strin
         r#"
 {context}
 
-Below is the text of an article between ~~~ markers:
-~~~
+ARTICLE (FOR RELATION TO TOPIC ANALYSIS):
+-----------------------------
 {article}
-~~~
+-----------------------------
 
-Explain in exactly two sentences how this article relates to {topic}. 
-First sentence must begin with "This article relates to {topic} because..."
+IMPORTANT INSTRUCTIONS:
+- **Analyze ONLY the article above to determine its relation to the topic.** 
+- **IGNORE the global context unless the article explicitly mentions related events.**
+- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
+
+TASK:
+Carefully read and understand the entire article.
+
+Then, explain in exactly **two sentences** how this article relates to **{topic}** following these STRICT guidelines:
+
+1. **Sentence 1 MUST begin with:**  
+   - "This article relates to {topic} because..."  
+   - Clearly explain the direct connection between the article and the topic.
+
+2. **Sentence 2 SHOULD:**  
+   - Add any relevant details that further clarify the relationship, such as specific examples, events, or data from the article.
+
+**EXAMPLE (Correct):**
+- "This article relates to climate change because it discusses rising sea levels caused by global warming in coastal cities. It highlights how recent floods in Miami are linked to increasing ocean temperatures and polar ice melt."
+
+**EXAMPLE (Incorrect):**
+- "This article is about politics, which is often related to climate change." (Too vague, lacks specific connection)
+
+Now explain how the article relates to **{topic}** using these rules:
 
 {write_in_clear_english}
+
 {dont_tell_me}"#,
         context = global_context(),
         article = article_text,
