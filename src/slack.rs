@@ -12,17 +12,21 @@ fn deduplicate_markdown(text: &str) -> String {
     let mut output = text.to_string();
 
     // Convert bold (**text** or __text__) to Slack-supported *text*
-    output = output.replace("**", "*").replace("__", "*");
+    let bold_regex = Regex::new(r"(\*\*|__)(.*?)\1").unwrap();
+    output = bold_regex.replace_all(&output, "*$2*").to_string();
 
     // Convert strikethrough (~~text~~) to Slack-supported ~text~
     output = output.replace("~~", "~");
 
-    // Ensure code blocks are properly formatted
-    output = output.replace("```", "```\n");
+    // Ensure code blocks are properly formatted (no extra newlines)
+    let code_block_regex = Regex::new(r"```(\s*\n)?(.*?)```").unwrap();
+    output = code_block_regex
+        .replace_all(&output, "```\n$2\n```")
+        .to_string();
 
-    // Convert Markdown headers (###, ##, #) to bold text (Slack uses *text* for bold)
-    let header_regex = Regex::new(r"(?m)^#{1,3}\s*(.+)").unwrap();
-    output = header_regex.replace_all(&output, "*$1*").to_string();
+    // Convert Markdown headers (###, ##, #) to bold text
+    let header_regex = Regex::new(r"(?m)^(#{1,3})\s*(.+)$").unwrap();
+    output = header_regex.replace_all(&output, "*$2*").to_string();
 
     // Convert list items (- or *) to proper bullets (•)
     let bullet_regex = Regex::new(r"(?m)^\s*[-*]\s+").unwrap();
@@ -35,7 +39,7 @@ fn deduplicate_markdown(text: &str) -> String {
     // Ensure proper newline spacing
     output = output.replace("\r\n", "\n").replace("\r", "\n");
 
-    // Remove accidental double bold markers (e.g., "**text**" turning into "**text**")
+    // Clean up any accidental multiple bold markers
     let cleanup_regex = Regex::new(r"\*{3,}(.+?)\*{3,}").unwrap();
     output = cleanup_regex.replace_all(&output, "*$1*").to_string();
 
