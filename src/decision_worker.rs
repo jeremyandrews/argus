@@ -169,6 +169,16 @@ pub async fn process_item(
 
     match extract_article_text(&article_url, worker_detail).await {
         Ok((article_text, article_html)) => {
+            // Skip articles with no meaningful content
+            if article_text.trim().is_empty() || article_text.trim().len() < 100 {
+                warn!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: Article '{}' has insufficient content, skipping.",
+                    worker_detail.name, worker_detail.id, worker_detail.model, article_url
+                );
+                return;
+            }
+
             let mut hasher = Sha256::new();
             hasher.update(article_text.as_bytes());
             let article_hash = format!("{:x}", hasher.finalize());
@@ -332,6 +342,16 @@ async fn article_is_relevant(
     llm_params: &mut LLMParams,
     worker_detail: &WorkerDetail,
 ) -> bool {
+    // Be sure content has sufficient content.
+    if article_text.split_whitespace().count() < 50 {
+        debug!(
+            target: TARGET_LLM_REQUEST,
+            "[{} {} {}]: Article has fewer than 50 words, skipping relevance check.",
+            worker_detail.name, worker_detail.id, worker_detail.model
+        );
+        return false;
+    }
+
     // Generate summary
     let summary_prompt = prompts::summary_prompt(article_text);
     let summary_response = generate_llm_response(&summary_prompt, &llm_params, worker_detail)
