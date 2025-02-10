@@ -31,6 +31,7 @@ pub struct ProcessItemParams<'a> {
 pub struct FeedItem {
     pub url: String,
     pub title: Option<String>,
+    pub pub_date: Option<String>,
 }
 
 fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
@@ -81,7 +82,7 @@ pub async fn decision_loop(
         };
 
         match db.fetch_and_delete_url_from_rss_queue(order).await {
-            Ok(Some((url, title))) => {
+            Ok(Some((url, title, pub_date))) => {
                 if url.trim().is_empty() {
                     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in queue.", worker_detail.name, worker_detail.id, worker_detail.model);
                     continue;
@@ -92,6 +93,7 @@ pub async fn decision_loop(
                 let item = FeedItem {
                     url: url.clone(),
                     title,
+                    pub_date,
                 };
                 let places_clone = places.clone();
 
@@ -211,6 +213,7 @@ pub async fn process_item(
                         &article_html,
                         &article_hash,
                         &title_domain_hash,
+                        item.pub_date.as_deref(),
                     )
                     .await
                     .unwrap_or_else(|e| {
@@ -227,6 +230,7 @@ pub async fn process_item(
                     &article_hash,
                     &title_domain_hash,
                     &article_html,
+                    item.pub_date.as_deref(),
                     params,
                     worker_detail,
                 )
@@ -240,6 +244,7 @@ pub async fn process_item(
                 &article_url,
                 &article_title,
                 &&title_domain_hash,
+                item.pub_date.as_deref(),
                 params,
                 worker_detail,
             )
@@ -378,6 +383,7 @@ async fn process_topics(
     article_hash: &str,
     title_domain_hash: &str,
     article_html: &str,
+    pub_date: Option<&str>,
     params: &mut ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) {
@@ -431,6 +437,7 @@ async fn process_topics(
                             article_hash,
                             title_domain_hash,
                             topic_name,
+                            pub_date,
                         )
                         .await
                     {
@@ -464,6 +471,7 @@ async fn process_topics(
                 Some(&article_hash),
                 Some(&title_domain_hash),
                 None,
+                pub_date,
             )
             .await
         {
@@ -540,6 +548,7 @@ async fn handle_access_denied(
     article_url: &str,
     article_title: &str,
     title_domain_hash: &str,
+    pub_date: Option<&str>,
     params: &mut ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) {
@@ -555,6 +564,7 @@ async fn handle_access_denied(
                 None,
                 Some(&title_domain_hash),
                 None,
+                pub_date,
             )
             .await
         {

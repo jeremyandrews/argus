@@ -293,6 +293,7 @@ async fn process_analysis_item(
             article_hash,
             title_domain_hash,
             threat_regions,
+            pub_date,
         ))) => {
             let start_time = Instant::now();
             info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from life safety queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
@@ -535,6 +536,7 @@ async fn process_analysis_item(
                     "title": article_title,
                     "url": article_url,
                     "article_body": article_text,
+                    "pub_date": pub_date,
                     "tiny_summary": tiny_summary,
                     "tiny_title": tiny_title,
                     "summary": summary,
@@ -559,6 +561,7 @@ async fn process_analysis_item(
                         Some(&article_hash),
                         Some(&title_domain_hash),
                         None, // Placeholder for R2 URL, will update later
+                        pub_date.as_deref(),
                     )
                     .await
                 {
@@ -617,6 +620,7 @@ async fn process_analysis_item(
                     article_hash,
                     title_domain_hash,
                     topic,
+                    pub_date,
                 ))) => {
                     let mut llm_params_clone = llm_params.clone();
 
@@ -671,6 +675,7 @@ async fn process_analysis_item(
                             "title": article_title,
                             "url": article_url,
                             "article_body": article_text,
+                            "pub_date": pub_date,
                             "tiny_summary": tiny_summary,
                             "tiny_title": tiny_title,
                             "summary": summary,
@@ -694,6 +699,7 @@ async fn process_analysis_item(
                                 Some(&article_hash),
                                 Some(&title_domain_hash),
                                 None, // Placeholder for R2 URL, will update later
+                                pub_date.as_deref(),
                             )
                             .await
                         {
@@ -774,7 +780,7 @@ async fn process_decision_item(
 ) {
     // Fetch from rss_queue similar to decision_worker::decision_loop
     match db.fetch_and_delete_url_from_rss_queue("random").await {
-        Ok(Some((url, title))) => {
+        Ok(Some((url, title, pub_date))) => {
             if url.trim().is_empty() {
                 error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in RSS queue.", worker_detail.name, worker_detail.id, worker_detail.model);
                 return;
@@ -785,6 +791,7 @@ async fn process_decision_item(
             let item = FeedItem {
                 url: url.clone(),
                 title,
+                pub_date,
             };
 
             let mut params = ProcessItemParams {

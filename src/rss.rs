@@ -89,10 +89,15 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                         entry.links.first().map(|link| link.href.clone())
                                     {
                                         let article_title = entry.title.clone().map(|t| t.content);
-                                        debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {}", article_url);
+                                        let pub_date = entry.published.map(|d| d.to_rfc3339());
+                                        debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {} ({:?})", article_url, pub_date);
 
                                         match db
-                                            .add_to_queue(&article_url, article_title.as_deref())
+                                            .add_to_queue(
+                                                &article_url,
+                                                article_title.as_deref(),
+                                                pub_date.as_deref(), // <--- Pass it along here
+                                            )
                                             .await
                                         {
                                             Ok(added) => {

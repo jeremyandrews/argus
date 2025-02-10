@@ -67,6 +67,7 @@ impl Database {
                 url TEXT NOT NULL,
                 normalized_url TEXT NOT NULL UNIQUE,
                 seen_at TEXT NOT NULL,
+                pub_date TEXT,
                 is_relevant BOOLEAN NOT NULL,
                 category TEXT,
                 tiny_summary TEXT,
@@ -87,9 +88,11 @@ impl Database {
                 url TEXT NOT NULL,
                 normalized_url TEXT NOT NULL UNIQUE,
                 title TEXT,
-                seen_at TEXT NOT NULL
+                seen_at TEXT NOT NULL,
+                pub_date TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pub_date_normalized_url ON rss_queue (pub_date, normalized_url);
 
             CREATE TABLE IF NOT EXISTS matched_topics_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,7 +103,8 @@ impl Database {
                 topic_matched TEXT NOT NULL,
                 article_hash TEXT NOT NULL,
                 title_domain_hash TEXT NOT NULL,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                pub_date TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_matched_topics_article_url ON matched_topics_queue (article_url);
 
@@ -115,7 +119,8 @@ impl Database {
                 article_hash TEXT NOT NULL,
                 title_domain_hash TEXT NOT NULL,
                 threat TEXT,
-                timestamp TEXT NOT NULL
+                timestamp TEXT NOT NULL,
+                pub_date TEXT
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_life_safety_article_url ON life_safety_queue (article_url);
 
@@ -305,13 +310,18 @@ impl Database {
     }
 
     #[instrument(target = "db", level = "info", skip(self, url, title))]
-    pub async fn add_to_queue(&self, url: &str, title: Option<&str>) -> Result<bool, sqlx::Error> {
+    pub async fn add_to_queue(
+        &self,
+        url: &str,
+        title: Option<&str>,
+        pub_date: Option<&str>,
+    ) -> Result<bool, sqlx::Error> {
         if url.trim().is_empty() {
             error!(target: TARGET_DB, "Attempted to add an empty URL to the queue");
             return Err(sqlx::Error::Protocol("Empty URL provided".into()));
         }
 
-        // Parse the URL
+        // 1) Parse the URL
         let parsed_url = match Url::parse(url) {
             Ok(parsed) => parsed,
             Err(e) => {
@@ -320,11 +330,11 @@ impl Database {
             }
         };
 
-        // Normalize the URL
+        // 2) Normalize the URL
         let normalizer = UrlNormalizer::default();
         let normalized_url = normalizer.compute_normalization_string(&parsed_url);
 
-        // Check if the URL already exists in the articles table
+        // 3) Check existence in articles table
         let exists_in_articles = sqlx::query("SELECT 1 FROM articles WHERE normalized_url = ?1")
             .bind(&normalized_url)
             .fetch_optional(&self.pool)
@@ -333,10 +343,10 @@ impl Database {
 
         if exists_in_articles {
             debug!(target: TARGET_DB, "URL already exists in articles: {}", normalized_url);
-            return Ok(false); // Return false since the article exists
+            return Ok(false);
         }
 
-        // Check if the URL already exists in the rss_queue table
+        // 4) Check existence in rss_queue
         let exists_in_queue = sqlx::query("SELECT 1 FROM rss_queue WHERE normalized_url = ?1")
             .bind(&normalized_url)
             .fetch_optional(&self.pool)
@@ -345,9 +355,10 @@ impl Database {
 
         if exists_in_queue {
             debug!(target: TARGET_DB, "URL already exists in the queue: {}", &normalized_url);
-            return Ok(false); // Return false since the article exists in the queue
+            return Ok(false);
         }
 
+        // 5) Insert into rss_queue with pub_date
         let seen_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time travel")
@@ -357,8 +368,8 @@ impl Database {
         debug!(target: TARGET_DB, "Adding URL to queue: {}", normalized_url);
         sqlx::query(
             r#"
-        INSERT INTO rss_queue (url, normalized_url, title, seen_at)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO rss_queue (url, normalized_url, title, seen_at, pub_date)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(normalized_url) DO NOTHING
         "#,
         )
@@ -366,11 +377,12 @@ impl Database {
         .bind(&normalized_url)
         .bind(title)
         .bind(seen_at)
+        .bind(pub_date) // <--- store the pub_date here
         .execute(&self.pool)
         .await?;
-        debug!(target: TARGET_DB, "URL added to queue: {}", normalized_url);
 
-        Ok(true) // Return true since a new article was added
+        debug!(target: TARGET_DB, "URL added to queue: {}", normalized_url);
+        Ok(true)
     }
 
     /// Add an entry to the matched topics queue
@@ -388,6 +400,7 @@ impl Database {
         article_hash: &str,
         title_domain_hash: &str,
         topic_matched: &str,
+        pub_date: Option<&str>, // <-- new parameter
     ) -> Result<(), sqlx::Error> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -396,11 +409,14 @@ impl Database {
             .to_string();
 
         let result = sqlx::query(
-        r#"
-        INSERT INTO matched_topics_queue (article_text, article_html, article_url, article_title, article_hash, title_domain_hash, topic_matched, timestamp)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        ON CONFLICT(article_url) DO NOTHING
-        "#,
+            r#"
+            INSERT INTO matched_topics_queue (
+                article_text, article_html, article_url, article_title,
+                article_hash, title_domain_hash, topic_matched, timestamp, pub_date
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            ON CONFLICT(article_url) DO NOTHING
+            "#,
         )
         .bind(article_text)
         .bind(article_html)
@@ -410,6 +426,7 @@ impl Database {
         .bind(title_domain_hash)
         .bind(topic_matched)
         .bind(timestamp)
+        .bind(pub_date) // <-- store pub_date
         .execute(&self.pool)
         .await;
 
@@ -441,6 +458,7 @@ impl Database {
         article_html: &str,
         article_hash: &str,
         title_domain_hash: &str,
+        pub_date: Option<&str>, // <-- new parameter
     ) -> Result<(), sqlx::Error> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -449,25 +467,26 @@ impl Database {
             .to_string();
 
         let result = sqlx::query(
-        r#"
-        INSERT INTO life_safety_queue (
-            article_url, article_title, article_text, article_html, article_hash, title_domain_hash, 
-            threat, timestamp
+            r#"
+            INSERT INTO life_safety_queue (
+                article_url, article_title, article_text, article_html,
+                article_hash, title_domain_hash, threat, timestamp, pub_date
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            ON CONFLICT(article_url) DO NOTHING
+            "#,
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        ON CONFLICT(article_url) DO NOTHING
-        "#,
-    )
-    .bind(article_url)
-    .bind(article_title)
-    .bind(article_text)
-    .bind(article_html)
-    .bind(article_hash)
-    .bind(title_domain_hash)
-    .bind(threat)
-    .bind(timestamp)
-    .execute(&self.pool)
-    .await;
+        .bind(article_url)
+        .bind(article_title)
+        .bind(article_text)
+        .bind(article_html)
+        .bind(article_hash)
+        .bind(title_domain_hash)
+        .bind(threat)
+        .bind(timestamp)
+        .bind(pub_date) // <-- store pub_date
+        .execute(&self.pool)
+        .await;
 
         match result {
             Ok(_) => {
@@ -492,13 +511,14 @@ impl Database {
         &self,
     ) -> Result<
         Option<(
-            String, // article_url
-            String, // article_title
-            String, // article_text
-            String, // article_html
-            String, // article_hash
-            String, // title_domain_hash
-            String, // threat
+            String,         // article_url
+            String,         // article_title
+            String,         // article_text
+            String,         // article_html
+            String,         // article_hash
+            String,         // title_domain_hash
+            String,         // threat
+            Option<String>, // pub_date
         )>,
         sqlx::Error,
     > {
@@ -507,19 +527,20 @@ impl Database {
         let mut transaction = self.pool.begin().await?;
         let row = sqlx::query(
             r#"
-        SELECT 
-            id,
-            article_url,
-            article_title,
-            article_text,
-            article_html,
-            article_hash,
-            title_domain_hash,
-            threat
-        FROM life_safety_queue
-        ORDER BY timestamp ASC
-        LIMIT 1
-        "#,
+            SELECT 
+                id,
+                article_url,
+                article_title,
+                article_text,
+                article_html,
+                article_hash,
+                title_domain_hash,
+                threat,
+                pub_date
+            FROM life_safety_queue
+            ORDER BY timestamp ASC
+            LIMIT 1
+            "#,
         )
         .fetch_optional(&mut transaction)
         .await?;
@@ -533,6 +554,7 @@ impl Database {
             let article_hash: String = row.get("article_hash");
             let title_domain_hash: String = row.get("title_domain_hash");
             let threat: String = row.get("threat");
+            let pub_date: Option<String> = row.get("pub_date"); // <-- retrieve pub_date
 
             sqlx::query("DELETE FROM life_safety_queue WHERE id = ?1")
                 .bind(id)
@@ -549,6 +571,7 @@ impl Database {
                 article_hash,
                 title_domain_hash,
                 threat,
+                pub_date,
             )))
         } else {
             debug!(target: TARGET_DB, "No new items found in life safety queue");
@@ -568,6 +591,7 @@ impl Database {
         hash: Option<&str>,
         title_domain_hash: Option<&str>,
         r2_url: Option<&str>,
+        pub_date: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         // Parse the URL
         let parsed_url = match Url::parse(url) {
@@ -593,11 +617,12 @@ impl Database {
         for attempt in 1..=max_retries {
             match sqlx::query(
             r#"
-            INSERT INTO articles (url, normalized_url, seen_at, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            INSERT INTO articles (url, normalized_url, seen_at, pub_date, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             ON CONFLICT(url) DO UPDATE SET
                 url = excluded.url,
                 seen_at = excluded.seen_at,
+                pub_date = excluded.pub_date,
                 is_relevant = excluded.is_relevant,
                 category = excluded.category,
                 analysis = excluded.analysis,
@@ -610,6 +635,7 @@ impl Database {
         .bind(url)
         .bind(&normalized_url)
         .bind(&seen_at)
+        .bind(&pub_date)
         .bind(is_relevant)
         .bind(category)
         .bind(analysis)
@@ -711,46 +737,48 @@ impl Database {
     pub async fn fetch_and_delete_url_from_rss_queue(
         &self,
         order: &str,
-    ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
-        debug!(target: TARGET_DB, "Fetching and deleting URL from queue");
-
+    ) -> Result<Option<(String, Option<String>, Option<String>)>, sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
+        // Grab `pub_date` in the SELECT
         let row = match order {
             "oldest" => {
-                info!(target: TARGET_DB, "loading oldest URL");
                 sqlx::query(
-                    "SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title
+                    r#"
+                    SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title, rss_queue.pub_date
                     FROM rss_queue
                     LEFT JOIN articles ON rss_queue.normalized_url = articles.normalized_url
                     WHERE articles.normalized_url IS NULL
                     ORDER BY rss_queue.seen_at ASC
-                    LIMIT 1",
+                    LIMIT 1
+                    "#
                 )
                 .fetch_optional(&mut transaction)
                 .await?
-            }
+            },
             "newest" => {
-                info!(target: TARGET_DB, "loading newest URL");
                 sqlx::query(
-                    "SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title
+                    r#"
+                    SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title, rss_queue.pub_date
                     FROM rss_queue
                     LEFT JOIN articles ON rss_queue.normalized_url = articles.normalized_url
                     WHERE articles.normalized_url IS NULL
                     ORDER BY rss_queue.seen_at DESC
-                    LIMIT 1",
+                    LIMIT 1
+                    "#
                 )
                 .fetch_optional(&mut transaction)
                 .await?
-            }
+            },
             _ => {
-                info!(target: TARGET_DB, "loading random URL");
                 sqlx::query(
-                    "SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title
+                    r#"
+                    SELECT rss_queue.url, rss_queue.normalized_url, rss_queue.title, rss_queue.pub_date
                     FROM rss_queue
                     LEFT JOIN articles ON rss_queue.normalized_url = articles.normalized_url
                     WHERE articles.normalized_url IS NULL
                     ORDER BY RANDOM()
-                    LIMIT 1",
+                    LIMIT 1
+                    "#
                 )
                 .fetch_optional(&mut transaction)
                 .await?
@@ -761,15 +789,14 @@ impl Database {
             let url: String = row.get("url");
             let normalized_url: String = row.get("normalized_url");
             let title: Option<String> = row.get("title");
+            let pub_date: Option<String> = row.get("pub_date"); // <-- retrieve it
             sqlx::query("DELETE FROM rss_queue WHERE normalized_url = ?1")
                 .bind(&normalized_url)
                 .execute(&mut transaction)
                 .await?;
             transaction.commit().await?;
-            debug!(target: TARGET_DB, "Fetched and deleted URL from queue: {}", url);
-            Ok(Some((url, title)))
+            Ok(Some((url, title, pub_date)))
         } else {
-            debug!(target: TARGET_DB, "No new URLs found in queue");
             transaction.rollback().await?;
             Ok(None)
         }
@@ -778,25 +805,38 @@ impl Database {
     #[instrument(target = "db", level = "info", skip(self))]
     pub async fn fetch_and_delete_from_matched_topics_queue(
         &self,
-    ) -> Result<Option<(String, String, String, String, String, String, String)>, sqlx::Error> {
+    ) -> Result<
+        Option<(
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+        )>,
+        sqlx::Error,
+    > {
         debug!(target: TARGET_DB, "Fetching and deleting item from matched topics queue");
 
         let mut transaction = self.pool.begin().await?;
         let row = sqlx::query(
             r#"
-        SELECT 
-            id, 
-            article_text, 
-            article_html, 
-            article_url, 
-            article_title, 
-            article_hash,
-            title_domain_hash,
-            topic_matched 
-        FROM matched_topics_queue 
-        ORDER BY timestamp ASC 
-        LIMIT 1
-        "#,
+            SELECT 
+                id,
+                article_text,
+                article_html,
+                article_url,
+                article_title,
+                article_hash,
+                title_domain_hash,
+                topic_matched,
+                pub_date
+            FROM matched_topics_queue
+            ORDER BY timestamp ASC
+            LIMIT 1
+            "#,
         )
         .fetch_optional(&mut transaction)
         .await?;
@@ -810,6 +850,7 @@ impl Database {
             let article_hash: String = row.get("article_hash");
             let title_domain_hash: String = row.get("title_domain_hash");
             let topic_matched: String = row.get("topic_matched");
+            let pub_date: Option<String> = row.get("pub_date"); // <-- retrieve pub_date
 
             sqlx::query("DELETE FROM matched_topics_queue WHERE id = ?1")
                 .bind(id)
@@ -826,6 +867,7 @@ impl Database {
                 article_hash,
                 title_domain_hash,
                 topic_matched,
+                pub_date,
             )))
         } else {
             debug!(target: TARGET_DB, "No new items found in matched topics queue");
