@@ -37,6 +37,11 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
         .get("tiny_summary")
         .and_then(|v| v.as_str())
         .unwrap_or("No summary available.");
+    let pub_date = json
+        .get("pub_date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown date");
+
     // Extract base URL of the article
     let domain = json
         .get("url")
@@ -47,11 +52,13 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
                 .and_then(|parsed_url| parsed_url.host_str().map(|host| host.to_string()))
         })
         .unwrap_or_else(|| "unknown".to_string());
+
     // Load required environment variables
     let team_id = env::var("APP_TEAM_ID").ok()?;
     let key_id = env::var("APP_KEY_ID").ok()?;
     let private_key_path = env::var("APP_PRIVATE_KEY_PATH").ok()?;
     let private_key = fs::read_to_string(&private_key_path).ok()?;
+
     // Generate JWT token
     let iat = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     let claims = Claims {
@@ -101,10 +108,10 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
                 "body": if importance != "high" { Some(body) } else { None },
                 "affected": json.get("affected"),
                 "domain": domain,
+                "pub_date": pub_date
             }
         });
 
-        //"https://api.sandbox.push.apple.com/3/device/{}",
         let apns_url = format!("https://api.push.apple.com/3/device/{}", device_token);
 
         match client
@@ -128,7 +135,6 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
                     "Failed to send notification: Status = {}, Response = {}",
                     status, response_text
                 );
-                // Check for 410 Unregistered status code
                 if status == StatusCode::GONE || status == StatusCode::NOT_FOUND {
                     info!(
                         "Device token {} is unregistered. Unsubscribing from all topics.",
@@ -150,29 +156,25 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
 }
 
 pub async fn upload_to_r2(json: &Value) -> Option<String> {
-    // Load environment variables
     let bucket_name = env::var("R2_BUCKET_NAME").ok()?;
     let endpoint_url = env::var("R2_ENDPOINT_URL").ok()?;
     let public_url = env::var("R2_PUBLIC_URL").ok()?;
     let access_key = env::var("R2_ACCESS_KEY_ID").ok()?;
     let secret_key = env::var("R2_SECRET_ACCESS_KEY").ok()?;
 
-    // Configure the AWS S3 client for R2
     let creds = Credentials::new(access_key, secret_key, None, None, "custom");
     let config = Config::builder()
-        .region(Region::new("us-east-1")) // Use the appropriate region
-        .endpoint_url(&endpoint_url) // Set the custom endpoint URL
+        .region(Region::new("us-east-1"))
+        .endpoint_url(&endpoint_url)
         .credentials_provider(creds)
-        .behavior_version(BehaviorVersion::latest()) // Use the correct type for behavior version
+        .behavior_version(BehaviorVersion::latest())
         .build();
 
     let client = Client::from_conf(config);
 
-    // Generate a UUID for the file name
     let file_name = format!("{}.json", Uuid::new_v4());
     let json_data = json.to_string();
 
-    // Attempt to upload the JSON to R2
     match client
         .put_object()
         .bucket(&bucket_name)
@@ -185,11 +187,11 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
         Ok(_) => {
             let file_url = format!("{}/{}", public_url, file_name);
             println!("Upload successful! File URL: {}", file_url);
-            Some(file_url) // Return the public URL if successful
+            Some(file_url)
         }
         Err(e) => {
             eprintln!("Upload failed with error: {:?}", e);
-            None // Return None if upload fails
+            None
         }
     }
 }
