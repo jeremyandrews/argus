@@ -380,6 +380,7 @@ async fn determine_threat_location(
 async fn article_is_relevant(
     article_text: &str,
     topic_prompt: &str,
+    pub_date: Option<&str>,
     llm_params: &mut LLMParams,
     worker_detail: &WorkerDetail,
 ) -> bool {
@@ -394,7 +395,7 @@ async fn article_is_relevant(
     }
 
     // Generate summary
-    let summary_prompt = prompts::summary_prompt(article_text);
+    let summary_prompt = prompts::summary_prompt(article_text, pub_date);
     let summary_response = generate_llm_response(&summary_prompt, &llm_params, worker_detail)
         .await
         .unwrap_or_default();
@@ -459,8 +460,14 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                if article_is_relevant(article_text, topic_prompt, &mut llm_params, worker_detail)
-                    .await
+                if article_is_relevant(
+                    article_text,
+                    topic_prompt,
+                    pub_date,
+                    &mut llm_params,
+                    worker_detail,
+                )
+                .await
                 {
                     // Add to matched topics queue
                     if let Err(e) = params

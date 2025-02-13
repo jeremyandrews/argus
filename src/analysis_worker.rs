@@ -517,6 +517,7 @@ async fn process_analysis_item(
                     &article_html,
                     &article_url,
                     None, // No specific topic for life safety items
+                    pub_date.as_deref(),
                     llm_params,
                     worker_detail,
                 )
@@ -652,6 +653,7 @@ async fn process_analysis_item(
                         &article_html,
                         &article_url,
                         Some(&topic),
+                        pub_date.as_deref(),
                         &mut llm_params_clone,
                         worker_detail,
                     )
@@ -859,6 +861,7 @@ async fn process_analysis(
     article_html: &str,
     article_url: &str,
     topic: Option<&str>,
+    pub_date: Option<&str>,
     llm_params: &mut LLMParams,
     worker_detail: &WorkerDetail,
 ) -> (
@@ -873,7 +876,7 @@ async fn process_analysis(
     debug!("Starting analysis for article: {}", article_url);
 
     // Re-summarize the article with the analysis worker.
-    let summary_prompt = prompts::summary_prompt(article_text);
+    let summary_prompt = prompts::summary_prompt(article_text, pub_date);
     debug!("Generated summary prompt: {:?}", summary_prompt);
     let summary = generate_llm_response(&summary_prompt, llm_params, worker_detail)
         .await
@@ -886,9 +889,10 @@ async fn process_analysis(
     // Now perform the rest of the analysis.
     let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary);
     let tiny_title_prompt = prompts::tiny_title_prompt(&summary);
-    let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text);
-    let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text);
-    let source_analysis_prompt = prompts::source_analysis_prompt(article_html, article_url);
+    let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text, pub_date);
+    let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text, pub_date);
+    let source_analysis_prompt =
+        prompts::source_analysis_prompt(article_html, article_url, pub_date);
 
     debug!("Generated tiny summary prompt: {:?}", tiny_summary_prompt);
     let tiny_summary = generate_llm_response(&tiny_summary_prompt, llm_params, worker_detail)
@@ -947,7 +951,7 @@ async fn process_analysis(
     info!("Generated source analysis: {:?}", source_analysis);
 
     let relation_response = if let Some(topic) = topic {
-        let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic);
+        let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic, pub_date);
         debug!("Generated relation to topic prompt: {:?}", relation_prompt);
         generate_llm_response(&relation_prompt, llm_params, worker_detail)
             .await

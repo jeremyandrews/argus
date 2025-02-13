@@ -114,7 +114,12 @@ fn current_date() -> String {
     )
 }
 
-fn global_context() -> String {
+fn global_context(pub_date: Option<&str>) -> String {
+    let publication_date = match pub_date {
+        Some(date) => format!("Publication date: {}", date),
+        None => String::new(),
+    };
+
     format!(
         r#"
 GLOBAL CONTEXT (FOR REFERENCE ONLY):
@@ -126,15 +131,17 @@ This section provides background information on significant global events from J
 {context}
 ~~~
 
-Today's Date: {date}
+{publication_date}
+Today's date: {date}
 =============================
 "#,
         context = CONTEXT,
+        publication_date = publication_date,
         date = current_date()
     )
 }
 
-pub fn summary_prompt(article_text: &str) -> String {
+pub fn summary_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
         r#"
 {context}
@@ -188,7 +195,7 @@ Now summarize the article text above using these rules:
 {dont_tell_me}
 
 {format_instructions}"#,
-        context = global_context(),
+        context = global_context(pub_date),
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME,
@@ -227,7 +234,7 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
     )
 }
 
-pub fn critical_analysis_prompt(article_text: &str) -> String {
+pub fn critical_analysis_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
         r#"
 {context}
@@ -280,14 +287,14 @@ Now perform the critical analysis using these rules:
 {write_in_clear_english}
 
 {dont_tell_me}"#,
-        context = global_context(),
+        context = global_context(pub_date),
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
 }
 
-pub fn logical_fallacies_prompt(article_text: &str) -> String {
+pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
         r#"
 {context}
@@ -347,14 +354,18 @@ Now perform the logical fallacy analysis using these rules:
 {write_in_clear_english}
 
 {dont_tell_me}"#,
-        context = global_context(),
+        context = global_context(pub_date),
         article = article_text,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
 }
 
-pub fn source_analysis_prompt(article_html: &str, source_url: &str) -> String {
+pub fn source_analysis_prompt(
+    article_html: &str,
+    source_url: &str,
+    pub_date: Option<&str>,
+) -> String {
     format!(
         r#"
 {context}
@@ -407,13 +418,17 @@ Now analyze the publication source using these rules:
 {dont_tell_me}"#,
         article = article_html,
         source_url = source_url,
-        context = global_context(),
+        context = global_context(pub_date),
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
 }
 
-pub fn relation_to_topic_prompt(article_text: &str, topic_prompt: &str) -> String {
+pub fn relation_to_topic_prompt(
+    article_text: &str,
+    topic_prompt: &str,
+    pub_date: Option<&str>,
+) -> String {
     format!(
         r#"
 {context}
@@ -451,7 +466,7 @@ Now explain how the article relates to **{topic}** using these rules:
 {write_in_clear_english}
 
 {dont_tell_me}"#,
-        context = global_context(),
+        context = global_context(pub_date),
         article = article_text,
         topic = topic_prompt,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
