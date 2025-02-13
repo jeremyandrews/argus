@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use tokio::time::{sleep, Duration, Instant};
@@ -778,11 +779,43 @@ async fn process_decision_item(
     topics: &[String],
     places: BTreeMap<std::string::String, BTreeMap<std::string::String, Vec<std::string::String>>>,
 ) {
-    // Fetch from rss_queue similar to decision_worker::decision_loop
     match db.fetch_and_delete_url_from_rss_queue("random").await {
         Ok(Some((url, title, pub_date))) => {
             if url.trim().is_empty() {
                 error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in RSS queue.", worker_detail.name, worker_detail.id, worker_detail.model);
+                return;
+            }
+
+            // Parse pub_date and check if the article is older than 7 days
+            let is_old_article = if let Some(date_str) = &pub_date {
+                NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                    .ok()
+                    .map(|date| {
+                        Utc::now().date_naive().signed_duration_since(date)
+                            > ChronoDuration::days(7)
+                    }) // Use ChronoDuration here
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
+            if is_old_article {
+                info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping old article (published on {:?}): {}.", worker_detail.name, worker_detail.id, worker_detail.model, pub_date, url);
+
+                // Store the old article in the database so we don’t process it again
+                let _ = db
+                    .add_article(
+                        &url,
+                        false, // Not relevant
+                        None,  // No category
+                        None,  // No analysis
+                        None,  // No tiny summary
+                        None,  // No hash
+                        None,  // No title_domain_hash
+                        None,  // No R2 URL
+                        pub_date.as_deref(),
+                    )
+                    .await;
                 return;
             }
 
@@ -805,11 +838,11 @@ async fn process_decision_item(
                 places: places,
             };
 
-            // Reuse the existing process_item logic from decision_worker
+            // Use the same process_item logic from decision_worker
             crate::decision_worker::process_item(item, &mut params, &worker_detail).await;
         }
         Ok(None) => {
-            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: no URLs in rss_queue, sleeping 1 minute URL.", worker_detail.name, worker_detail.id, worker_detail.model);
+            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: no URLs in rss_queue, sleeping 1 minute.", worker_detail.name, worker_detail.id, worker_detail.model);
             sleep(Duration::from_secs(60)).await;
         }
         Err(e) => {

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use readability::extractor;
 use sha2::{Digest, Sha256};
@@ -88,6 +89,40 @@ pub async fn decision_loop(
                     continue;
                 }
 
+                // Parse pub_date and check if it's older than 7 days
+                let is_old_article = if let Some(date_str) = &pub_date {
+                    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                        .ok()
+                        .map(|date| {
+                            let now = Utc::now().date_naive();
+                            now.signed_duration_since(date) > ChronoDuration::days(7)
+                            // Use ChronoDuration here
+                        })
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+
+                if is_old_article {
+                    info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping old article (published on {:?}): {}.", worker_detail.name, worker_detail.id, worker_detail.model, pub_date, url);
+
+                    // Store it in the database to prevent reprocessing
+                    let _ = db
+                        .add_article(
+                            &url,
+                            false, // Not relevant
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            pub_date.as_deref(),
+                        )
+                        .await;
+                    continue;
+                }
+
                 info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: loaded URL: {} ({:?}).", worker_detail.name, worker_detail.id, worker_detail.model, url, title);
 
                 let item = FeedItem {
@@ -95,6 +130,7 @@ pub async fn decision_loop(
                     title,
                     pub_date,
                 };
+
                 let places_clone = places.clone();
 
                 let mut params = ProcessItemParams {
