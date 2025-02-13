@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use feed_rs::parser;
 use std::io;
 use tokio::time::{sleep, timeout, Duration};
@@ -19,7 +20,6 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<()> {
             error!(target: TARGET_WEB_REQUEST, "Failed to clean queue: {}", err);
         }
 
-        // Count and log the number of entries in the queue
         match db.count_queue_entries().await {
             Ok(count) => {
                 info!(target: TARGET_WEB_REQUEST, "Processing queue with {} entries", count);
@@ -29,7 +29,6 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<()> {
             }
         }
 
-        // If a critical unexpected error occurs, catch it and log it here
         if let Err(e) = process_rss_urls(&rss_urls, &db).await {
             error!(target: TARGET_WEB_REQUEST, "Critical failure in rss_loop: {}", e);
             return Err(e.into());
@@ -42,31 +41,27 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<()> {
 
 async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
     for rss_url in rss_urls {
-        // Check if the URL is empty and skip it if so
         if rss_url.trim().is_empty() {
             debug!(target: TARGET_WEB_REQUEST, "Skipping empty RSS URL");
             continue;
         }
 
         let mut attempts = 0;
+        let mut new_articles_count = 0;
         debug!(target: TARGET_WEB_REQUEST, "Starting to process RSS URL: {}", rss_url);
 
         loop {
             if attempts >= MAX_RETRIES {
-                error!(target: TARGET_WEB_REQUEST, "Max retries reached for URL: {}, moving on", rss_url); // Added 'moving on' for clarity
-                break; // Move to next RSS URL
+                error!(target: TARGET_WEB_REQUEST, "Max retries reached for URL: {}, moving on", rss_url);
+                break;
             }
 
             debug!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
             match timeout(REQUEST_TIMEOUT, reqwest::get(rss_url)).await {
                 Ok(Ok(response)) => {
-                    debug!(target: TARGET_WEB_REQUEST, "Request to {} succeeded with status {}", rss_url, response.status());
                     if response.status().is_success() {
                         let body = match response.text().await {
-                            Ok(text) => {
-                                debug!(target: TARGET_WEB_REQUEST, "Received body from {}: {}", rss_url, &text);
-                                text
-                            }
+                            Ok(text) => text,
                             Err(err) => {
                                 error!(target: TARGET_WEB_REQUEST, "Failed to read response body from {}: {}", rss_url, err);
                                 attempts += 1;
@@ -75,51 +70,78 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                             }
                         };
 
-                        // Log the first few characters of the response body for debugging
-                        debug!(target: TARGET_WEB_REQUEST, "First 500 characters of response body: {}", &body.chars().take(500).collect::<String>());
                         let reader = io::Cursor::new(body);
                         match parser::parse(reader) {
                             Ok(feed) => {
-                                debug!(target: TARGET_WEB_REQUEST, "Parsed feed with {} entries", feed.entries.len());
-
-                                let mut new_articles_count = 0;
-
                                 for entry in feed.entries {
                                     if let Some(article_url) =
                                         entry.links.first().map(|link| link.href.clone())
                                     {
                                         let article_title = entry.title.clone().map(|t| t.content);
                                         let pub_date = entry.published.map(|d| d.to_rfc3339());
-                                        debug!(target: TARGET_WEB_REQUEST, "Adding article to queue: {} ({:?})", article_url, pub_date);
+
+                                        let is_old = if let Some(pub_date_str) = &pub_date {
+                                            if let Ok(pub_date_dt) =
+                                                DateTime::parse_from_rfc3339(pub_date_str)
+                                            {
+                                                let pub_date_utc = pub_date_dt.with_timezone(&Utc);
+                                                Utc::now().signed_duration_since(pub_date_utc)
+                                                    > ChronoDuration::weeks(1)
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        };
+
+                                        if is_old {
+                                            debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
+                                            match db
+                                                .add_article(
+                                                    &article_url,
+                                                    false,
+                                                    None,
+                                                    None,
+                                                    None,
+                                                    None,
+                                                    None,
+                                                    None,
+                                                    pub_date.as_deref(),
+                                                )
+                                                .await
+                                            {
+                                                Ok(_) => {
+                                                    debug!(target: TARGET_WEB_REQUEST, "Logged old article in database: {}", article_url)
+                                                }
+                                                Err(err) => {
+                                                    error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err)
+                                                }
+                                            }
+                                            continue;
+                                        }
 
                                         match db
                                             .add_to_queue(
                                                 &article_url,
                                                 article_title.as_deref(),
-                                                pub_date.as_deref(), // <--- Pass it along here
+                                                pub_date.as_deref(),
                                             )
                                             .await
                                         {
-                                            Ok(added) => {
-                                                if added {
-                                                    new_articles_count += 1;
-                                                }
+                                            Ok(_) => {
+                                                new_articles_count += 1;
+                                                debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
                                             }
                                             Err(err) => {
-                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
+                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err)
                                             }
                                         }
-                                    } else {
-                                        debug!(target: TARGET_WEB_REQUEST, "Feed entry missing link, skipping");
                                     }
                                 }
 
                                 if new_articles_count > 0 {
                                     info!(target: TARGET_WEB_REQUEST, "Added {} new articles from {}", new_articles_count, rss_url);
-                                } else {
-                                    debug!(target: TARGET_WEB_REQUEST, "No new articles added from {}", rss_url);
                                 }
-                                break; // Successfully processed, move on to next URL
                             }
                             Err(err) => {
                                 error!(target: TARGET_WEB_REQUEST, "Failed to parse feed from {}: {}", rss_url, err);
@@ -150,6 +172,5 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
             }
         }
     }
-
     Ok(())
 }
