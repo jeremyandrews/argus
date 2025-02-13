@@ -47,7 +47,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
         }
 
         let mut attempts = 0;
-        let mut new_articles_count = 0;
+        let mut new_articles_count: usize;
         debug!(target: TARGET_WEB_REQUEST, "Starting to process RSS URL: {}", rss_url);
 
         loop {
@@ -73,6 +73,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                         let reader = io::Cursor::new(body);
                         match parser::parse(reader) {
                             Ok(feed) => {
+                                new_articles_count = 0;
                                 for entry in feed.entries {
                                     if let Some(article_url) =
                                         entry.links.first().map(|link| link.href.clone())
@@ -128,9 +129,12 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                             )
                                             .await
                                         {
-                                            Ok(_) => {
+                                            Ok(true) => {
                                                 new_articles_count += 1;
                                                 debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
+                                            }
+                                            Ok(false) => {
+                                                debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
                                             }
                                             Err(err) => {
                                                 error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err)
