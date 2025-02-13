@@ -47,7 +47,8 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
         }
 
         let mut attempts = 0;
-        let mut new_articles_count: usize;
+        let mut new_articles_count = 0; // Declare once per feed
+
         debug!(target: TARGET_WEB_REQUEST, "Starting to process RSS URL: {}", rss_url);
 
         loop {
@@ -73,7 +74,6 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                         let reader = io::Cursor::new(body);
                         match parser::parse(reader) {
                             Ok(feed) => {
-                                new_articles_count = 0;
                                 for entry in feed.entries {
                                     if let Some(article_url) =
                                         entry.links.first().map(|link| link.href.clone())
@@ -137,15 +137,21 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                                 debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
                                             }
                                             Err(err) => {
-                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err)
+                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                             }
                                         }
                                     }
                                 }
 
+                                // Log the result based on the number of articles added
                                 if new_articles_count > 0 {
-                                    info!(target: TARGET_WEB_REQUEST, "Added {} new articles from {}", new_articles_count, rss_url);
+                                    info!(target: TARGET_WEB_REQUEST, "Processed RSS feed: {} - {} new articles added", rss_url, new_articles_count);
+                                } else {
+                                    debug!(target: TARGET_WEB_REQUEST, "Processed RSS feed: {} - No new articles added", rss_url);
                                 }
+
+                                // Successfully processed feed, exit retry loop
+                                break;
                             }
                             Err(err) => {
                                 error!(target: TARGET_WEB_REQUEST, "Failed to parse feed from {}: {}", rss_url, err);
