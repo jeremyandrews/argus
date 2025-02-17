@@ -512,6 +512,9 @@ async fn process_analysis_item(
                     logical_fallacies,
                     source_analysis,
                     _relation,
+                    sources_quality,
+                    argument_quality,
+                    source_type,
                 ) = process_analysis(
                     &article_text,
                     &article_html,
@@ -547,6 +550,9 @@ async fn process_analysis_item(
                     "logical_fallacies": logical_fallacies,
                     "relation_to_topic": relation_to_topic,
                     "source_analysis": source_analysis,
+                    "sources_quality": sources_quality,
+                    "argument_quality": argument_quality,
+                    "source_type": source_type,
                     "elapsed_time": start_time.elapsed().as_secs_f64(),
                     "model": llm_params.model,
                     "stats": stats
@@ -648,6 +654,9 @@ async fn process_analysis_item(
                         logical_fallacies,
                         source_analysis,
                         relation,
+                        sources_quality,
+                        argument_quality,
+                        source_type,
                     ) = process_analysis(
                         &article_text,
                         &article_html,
@@ -686,6 +695,9 @@ async fn process_analysis_item(
                             "logical_fallacies": logical_fallacies,
                             "relation_to_topic": relation,
                             "source_analysis": source_analysis,
+                            "sources_quality": sources_quality,
+                            "argument_quality": argument_quality,
+                            "source_type": source_type,
                             "elapsed_time": start_time.elapsed().as_secs_f64(),
                             "model": llm_params.model,
                             "stats": stats
@@ -872,9 +884,11 @@ async fn process_analysis(
     String,
     String,
     Option<String>,
+    u8,
+    u8,
+    String,
 ) {
     debug!("Starting analysis for article: {}", article_url);
-
     // Re-summarize the article with the analysis worker.
     let summary_prompt = prompts::summary_prompt(article_text, pub_date);
     debug!("Generated summary prompt: {:?}", summary_prompt);
@@ -950,6 +964,27 @@ async fn process_analysis(
         });
     info!("Generated source analysis: {:?}", source_analysis);
 
+    // Get source and argument quality scores
+    let sources_quality_prompt = prompts::sources_quality_prompt(&critical_analysis);
+    let argument_quality_prompt = prompts::argument_quality_prompt(&logical_fallacies);
+    let sources_quality = generate_llm_response(&sources_quality_prompt, llm_params, worker_detail)
+        .await
+        .and_then(|resp| resp.trim().parse::<u8>().ok())
+        .unwrap_or(2); // Default to moderate if parsing fails
+    let argument_quality =
+        generate_llm_response(&argument_quality_prompt, llm_params, worker_detail)
+            .await
+            .and_then(|resp| resp.trim().parse::<u8>().ok())
+            .unwrap_or(2); // Default to moderate if parsing fails
+
+    // Get source type
+    let source_type_prompt = prompts::source_type_prompt(&source_analysis, article_url);
+    let source_type = generate_llm_response(&source_type_prompt, llm_params, worker_detail)
+        .await
+        .unwrap_or_else(|| String::from("none"))
+        .trim()
+        .to_string();
+
     let relation_response = if let Some(topic) = topic {
         let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic, pub_date);
         debug!("Generated relation to topic prompt: {:?}", relation_prompt);
@@ -963,7 +998,6 @@ async fn process_analysis(
         None
     };
     info!("Generated relation response: {:?}", relation_response);
-
     info!("Completed analysis for article: {}", article_url);
 
     (
@@ -974,5 +1008,8 @@ async fn process_analysis(
         logical_fallacies,
         source_analysis,
         relation_response,
+        sources_quality,
+        argument_quality,
+        source_type,
     )
 }

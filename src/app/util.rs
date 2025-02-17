@@ -37,6 +37,18 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
         .get("tiny_summary")
         .and_then(|v| v.as_str())
         .unwrap_or("No summary available.");
+    let sources_quality = json
+        .get("sources_quality")
+        .and_then(|v| v.as_str())
+        .unwrap_or("2");
+    let argument_quality = json
+        .get("argument_quality")
+        .and_then(|v| v.as_str())
+        .unwrap_or("2");
+    let source_type = json
+        .get("source_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let pub_date = json
         .get("pub_date")
         .and_then(|v| v.as_str())
@@ -108,6 +120,9 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
                 "body": if importance != "high" { Some(body) } else { None },
                 "affected": json.get("affected"),
                 "domain": domain,
+                "sources_quality": sources_quality,
+                "argument_quality": argument_quality,
+                "source_type": source_type,
                 "pub_date": pub_date
             }
         });
