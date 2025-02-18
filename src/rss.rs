@@ -41,12 +41,13 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<()> {
     }
 }
 
-pub async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
+async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
     let cookie_store = Jar::default();
     let client = reqwest::Client::builder()
         .cookie_store(true)
         .cookie_provider(Arc::new(cookie_store))
-        .gzip(true) // Enable gzip decompression
+        .gzip(true)
+        .redirect(reqwest::redirect::Policy::default())
         .build()?;
 
     for rss_url in rss_urls {
@@ -74,6 +75,17 @@ pub async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<(
                 .send()).await
             {
                 Ok(Ok(response)) => {
+                    debug!(target: TARGET_WEB_REQUEST, "Response Content-Type: {:?}", response.headers().get(reqwest::header::CONTENT_TYPE));
+
+                    if let Some(ct) = response.headers().get(reqwest::header::CONTENT_TYPE) {
+                        if ct.to_str()?.contains("json") {
+                            error!(target: TARGET_WEB_REQUEST, "Received JSON instead of RSS from {}", rss_url);
+                            attempts += 1;
+                            sleep(RETRY_DELAY).await;
+                            continue;
+                        }
+                    }
+
                     if response.status().is_success() {
                         let body = match response.text().await {
                             Ok(text) => text,
