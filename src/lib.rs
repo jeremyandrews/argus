@@ -17,10 +17,13 @@ pub mod util;
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
 use serde::Serialize;
+use std::sync::atomic::AtomicU64;
 
 pub const TARGET_WEB_REQUEST: &str = "web_request";
 pub const TARGET_LLM_REQUEST: &str = "llm_request";
 pub const TARGET_DB: &str = "db_query";
+
+pub static START_TIME: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
 pub enum LLMClient {

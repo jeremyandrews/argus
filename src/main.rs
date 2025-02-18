@@ -3,7 +3,9 @@ use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use futures::future::join_all;
 use ollama_rs::Ollama;
 use std::env;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
@@ -21,7 +23,7 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::{FallbackConfig, LLMClient, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
+use argus::{FallbackConfig, LLMClient, START_TIME, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
 
 use environment::get_env_var_as_vec;
 
@@ -34,8 +36,17 @@ struct AnalysisWorkerConfig {
     fallback: Option<FallbackConfig>,
 }
 
+pub fn initialize_start_time() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    START_TIME.store(now, Ordering::SeqCst);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    initialize_start_time();
     logging::configure_logging();
 
     // Read the DECISION and ANALYSIS environment variables
