@@ -256,22 +256,18 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                             _ => {
                                 let body = match response.text().await {
                                     Ok(text) => {
-                                        // If the text starts with gzip magic number or seems to be binary
-                                        if text.starts_with('\u{1f}') || text.chars().any(|c| c == '\0') {
-                                            error!(
-                                                target: TARGET_WEB_REQUEST,
-                                                "Received binary/compressed data from {}. Check if response was properly decompressed.",
-                                                rss_url
-                                            );
-                                            attempts += 1;
-                                            sleep(RETRY_DELAY).await;
-                                            continue;
-                                        }
+                                        // Remove any UTF-8 BOM if present
+                                        let text = if text.starts_with('\u{FEFF}') {
+                                            text[3..].to_string()
+                                        } else {
+                                            text
+                                        };
 
-                                        if text.starts_with("<?xml") {
+                                        // If it looks like XML (with or without declaration), process it
+                                        if text.starts_with("<?xml") || text.contains("<rss") || text.contains("<feed") {
                                             text
                                         } else {
-                                            // Rest of the encoding handling...
+                                            // Try to detect encoding from content-type header
                                             if let Some(ct_str) = content_type {
                                                 if let Some(charset) = ct_str.split(';')
                                                     .find(|part| part.trim().to_lowercase().starts_with("charset="))
