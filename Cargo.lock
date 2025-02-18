@@ -141,6 +141,7 @@ dependencies = [
  "emailmessage",
  "encoding_rs",
  "feed-rs",
+ "flate2",
  "futures 0.3.31",
  "jsonwebtoken",
  "lazy_static",

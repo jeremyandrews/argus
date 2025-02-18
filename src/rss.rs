@@ -2,9 +2,10 @@ use anyhow::Result;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use encoding_rs;
 use feed_rs::parser;
+use flate2;
 use reqwest::cookie::Jar;
 use serde::Deserialize;
-use std::io;
+use std::io::{self, Read};
 use std::sync::Arc;
 use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -208,19 +209,48 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                             }
                         };
 
-                        // Check for gzip magic number (1f 8b)
-                        if bytes.starts_with(&[0x1f, 0x8b]) {
-                            error!(
-                                target: TARGET_WEB_REQUEST,
-                                "Response from {} is still gzip compressed. Attempting to decompress manually.",
-                                rss_url
-                            );
-                            attempts += 1;
-                            sleep(RETRY_DELAY).await;
-                            continue;
-                        }
+                        // Try to decompress if it's compressed
+                        let decompressed_bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
+                            // gzip
+                            let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
+                            let mut decoded = Vec::new();
+                            match decoder.read_to_end(&mut decoded) {
+                                Ok(_) => decoded,
+                                Err(err) => {
+                                    error!(
+                                        target: TARGET_WEB_REQUEST,
+                                        "Failed to decompress gzipped data from {}: {}",
+                                        rss_url,
+                                        err
+                                    );
+                                    attempts += 1;
+                                    sleep(RETRY_DELAY).await;
+                                    continue;
+                                }
+                            }
+                        } else if bytes.starts_with(&[0x78, 0x9c]) || bytes.starts_with(&[0x78, 0xda]) {
+                            // zlib
+                            let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
+                            let mut decoded = Vec::new();
+                            match decoder.read_to_end(&mut decoded) {
+                                Ok(_) => decoded,
+                                Err(err) => {
+                                    error!(
+                                        target: TARGET_WEB_REQUEST,
+                                        "Failed to decompress zlib data from {}: {}",
+                                        rss_url,
+                                        err
+                                    );
+                                    attempts += 1;
+                                    sleep(RETRY_DELAY).await;
+                                    continue;
+                                }
+                            }
+                        } else {
+                            bytes.to_vec()
+                        };
 
-                        let body = match String::from_utf8(bytes.to_vec()) {
+                        let body = match String::from_utf8(decompressed_bytes.clone()) {
                             Ok(text) => {
                                 if text.starts_with("<?xml") || text.contains("<rss") || text.contains("<feed") {
                                     text
@@ -232,7 +262,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                             .and_then(|charset| charset.split('=').nth(1))
                                         {
                                             if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
-                                                let (decoded, _, _) = encoding.decode(&bytes);
+                                                let (decoded, _, _) = encoding.decode(&decompressed_bytes);
                                                 decoded.into_owned()
                                             } else {
                                                 text
@@ -246,10 +276,17 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                 }
                             }
                             Err(_) => {
+                                // Convert to hex representation for logging if it contains non-printable characters
+                                let hex_preview = decompressed_bytes.iter()
+                                    .take(20)
+                                    .map(|b| format!("{:02x}", b))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
                                 error!(
                                     target: TARGET_WEB_REQUEST,
-                                    "Response from {} contains invalid UTF-8. Attempting to decode with content-type charset.",
-                                    rss_url
+                                    "Response from {} contains invalid UTF-8. First 20 bytes: {}",
+                                    rss_url,
+                                    hex_preview
                                 );
                                 if let Some(ref ct_str) = content_type {
                                     if let Some(charset) = ct_str.split(';')
@@ -257,7 +294,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                         .and_then(|charset| charset.split('=').nth(1))
                                     {
                                         if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
-                                            let (decoded, _, _) = encoding.decode(&bytes);
+                                            let (decoded, _, _) = encoding.decode(&decompressed_bytes);
                                             decoded.into_owned()
                                         } else {
                                             attempts += 1;
@@ -386,7 +423,6 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                     Err(first_err) => {
                                         // Try cleaning the XML first
                                         let cleaned_xml = cleanup_xml(&body);
-
                                         // Check if it looks like RSS/Atom
                                         if cleaned_xml.contains("<rss") || cleaned_xml.contains("<feed") {
                                             let reader = io::Cursor::new(cleaned_xml);
@@ -445,40 +481,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                                 }
                                             }
                                         } else {
-                                            let preview = if bytes.starts_with(&[0x1f, 0x8b]) || // gzip magic number
-                                            bytes.starts_with(&[0x78, 0x9c]) || // zlib header
-                                            bytes.starts_with(&[0x50, 0x4b, 0x03, 0x04]) // ZIP header
-                                            {
-                                                error!(
-                                                    target: TARGET_WEB_REQUEST,
-                                                    "Feed from {} appears to be compressed or binary data",
-                                                    rss_url
-                                                );
-                                                attempts += 1;
-                                                sleep(RETRY_DELAY).await;
-                                                continue;
-                                            } else {
-                                                // Convert to hex representation for logging if it contains non-printable characters
-                                                let is_binary = bytes.iter().any(|&b| b < 32 && !b.is_ascii_whitespace());
-                                                if is_binary {
-                                                let hex_preview = bytes.iter()
-                                                    .take(20)
-                                                    .map(|b| format!("{:02x}", b))
-                                                    .collect::<Vec<_>>()
-                                                    .join(" ");
-                                                error!(
-                                                    target: TARGET_WEB_REQUEST,
-                                                    "Feed from {} contains binary data. First 20 bytes: {}",
-                                                    rss_url,
-                                                    hex_preview
-                                                );
-                                                attempts += 1;
-                                                sleep(RETRY_DELAY).await;
-                                                continue;
-                                            } else {
-                                                body.chars().take(100).collect::<String>()
-                                            }
-                                            };
+                                            let preview = body.chars().take(100).collect::<String>();
                                             error!(
                                                 target: TARGET_WEB_REQUEST,
                                                 "Feed from {} doesn't appear to be RSS or Atom. Content preview: {}",
