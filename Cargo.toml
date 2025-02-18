@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.10.4"
+version = "0.10.5"
 edition = "2021"
 
 [dependencies]
@@ -29,6 +29,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 sqlx = { version = "0.6", features = ["sqlite", "runtime-tokio-rustls", "macros"] }
+sysinfo = "0.29"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -37,6 +38,9 @@ unicode-segmentation = "1.12"
 url = "2.5"
 urlnorm = "0.1.6"
 uuid = "1.11"
+
+[build-dependencies]
+chrono = "0.4"
 
 [[bin]]
 name = "rss_fetcher"

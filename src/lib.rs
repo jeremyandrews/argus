@@ -8,6 +8,7 @@ pub mod decision_worker;
 pub mod environment;
 pub mod llm;
 pub mod logging;
+pub mod metrics;
 pub mod prompts;
 pub mod rss;
 pub mod slack;

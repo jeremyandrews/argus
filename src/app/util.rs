@@ -5,7 +5,7 @@ use aws_sdk_s3::{Client, Config};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::StatusCode;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::env;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,6 +15,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::db::Database;
+use crate::metrics::SystemInfo;
 
 #[derive(Serialize)]
 struct Claims {
@@ -177,6 +178,31 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
     let access_key = env::var("R2_ACCESS_KEY_ID").ok()?;
     let secret_key = env::var("R2_SECRET_ACCESS_KEY").ok()?;
 
+    let sys_info = SystemInfo::collect();
+
+    let mut enhanced_json = json.as_object()?.clone();
+    enhanced_json.insert(
+        "system_info".to_string(),
+        json!({
+            "build_info": {
+                "version": env!("CARGO_PKG_VERSION"),
+                "build_timestamp": option_env!("BUILD_TIMESTAMP").unwrap_or("unknown"),
+                "target_arch": std::env::consts::ARCH,
+                "target_os": std::env::consts::OS,
+                "rust_version": option_env!("RUST_VERSION").unwrap_or("unknown"),
+                "git_commit": option_env!("GIT_HASH").unwrap_or("unknown"),
+            },
+            "runtime_metrics": {
+                "memory_usage_kb": sys_info.memory_usage,
+                "memory_total_kb": sys_info.memory_total,
+                "cpu_usage_percent": sys_info.cpu_usage,
+                "uptime_seconds": sys_info.uptime,
+                "thread_count": sys_info.thread_count,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }
+        }),
+    );
+
     let creds = Credentials::new(access_key, secret_key, None, None, "custom");
     let config = Config::builder()
         .region(Region::new("us-east-1"))
@@ -188,7 +214,7 @@ pub async fn upload_to_r2(json: &Value) -> Option<String> {
     let client = Client::from_conf(config);
 
     let file_name = format!("{}.json", Uuid::new_v4());
-    let json_data = json.to_string();
+    let json_data = serde_json::to_string(&enhanced_json).ok()?;
 
     match client
         .put_object()
