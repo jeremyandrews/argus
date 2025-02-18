@@ -298,22 +298,22 @@ pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> S
     format!(
         r#"
 {context}
-
 ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
 -----------------------------
 {article}
 -----------------------------
-
 IMPORTANT INSTRUCTIONS:
 - **Analyze ONLY the article above.**
 - **IGNORE the global context unless the article explicitly mentions related events.**
 - **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
 - **ENSURE consistency: If fallacies are found, do NOT include "No apparent logical fallacies detected."**
+- **Recognize authoritative opinions (e.g., judges, experts) as factually significant when relevant to the article.**
 
 ### **Step 1: Determine Article Type**
 - **Argumentative Article:** The article presents claims, reasoning, or conclusions in support of a viewpoint.
 - **Informational Article:** The article is primarily factual and does not argue for a specific point of view.
 - **If the article is informational, avoid penalizing it for lack of argument strength. Instead, assess its clarity and factual reliability.**
+- **If an opinion is cited from an authoritative figure (e.g., judge, scientist, government official) in a professional capacity, it should not be dismissed as "just an opinion." Evaluate its relevance instead.**
 
 ### **Step 2: Logical Fallacies Analysis (ONLY for Argumentative Articles)**
 #### **Logical Fallacies Found:**  
@@ -330,6 +330,7 @@ IMPORTANT INSTRUCTIONS:
     Justification (max 20 words).
   - **Evidence Quality:** [1–10]  
     Justification (max 20 words).
+    - **If key points rely on an authoritative figure's statement (e.g., judge’s ruling), acknowledge its factual significance.**
 - If the article is **Informational**:
   - **Clarity & Coherence:** [1–10]  
     Justification (max 20 words).
@@ -339,18 +340,14 @@ IMPORTANT INSTRUCTIONS:
 ### **Step 4: Overall Assessment**
 - Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.  
 - If the article is **Informational**, summarize whether it is clear and well-sourced rather than rating argument strength.  
+- **If authoritative opinions are presented as justification (e.g., a judge’s ruling), do NOT automatically flag them as subjective. Evaluate their contextual reliability.**
 
 **EXAMPLES:**  
-📌 **IF LOGICAL FALLACIES WERE FOUND:**  
-**Logical Fallacies Found:**  
-1. **Ad Hominem**  
-   Attacking Minister Carlo Nordio’s character instead of addressing his actions.  
-2. **False Dilemma**  
-   Suggesting he must apologize or release documents, ignoring other possibilities.  
+📌 **Incorrect (old behavior):**  
+*"This argument is based on opinion rather than fact."* (Flagging a judge’s statement)  
 
-📌 **IF NO LOGICAL FALLACIES WERE FOUND:**  
-**Logical Fallacies Found:**  
-_No apparent logical fallacies detected._  
+📌 **Correct (new behavior):**  
+*"The judge’s ruling is an authoritative legal opinion and should be considered factual within this context."*
 
 Now, perform the analysis with these strict guidelines:
 {write_in_clear_english}
