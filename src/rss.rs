@@ -209,76 +209,43 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                             }
                         };
 
-                        // Try to decompress if it's compressed
-                        let decompressed_bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
-                            debug!(target: TARGET_WEB_REQUEST, "Detected gzip compression for {}", rss_url);
-                            // gzip
+                        // Try different decompression methods until one works
+                        let decompressed_bytes = {
+                            // First try gzip
                             let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
                             let mut decoded = Vec::new();
-                            match decoder.read_to_end(&mut decoded) {
-                                Ok(_) => {
-                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed gzip data from {}", rss_url);
+                            if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with gzip from {}", rss_url);
+                                decoded
+                            } else {
+                                // Try zlib
+                                let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
+                                let mut decoded = Vec::new();
+                                if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with zlib from {}", rss_url);
                                     decoded
-                                },
-                                Err(err) => {
-                                    error!(
-                                        target: TARGET_WEB_REQUEST,
-                                        "Failed to decompress gzipped data from {}: {}",
-                                        rss_url,
-                                        err
-                                    );
-                                    attempts += 1;
-                                    sleep(RETRY_DELAY).await;
-                                    continue;
+                                } else {
+                                    // Try deflate
+                                    let mut decoder = flate2::read::DeflateDecoder::new(&bytes[..]);
+                                    let mut decoded = Vec::new();
+                                    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with deflate from {}", rss_url);
+                                        decoded
+                                    } else {
+                                        // If no decompression worked, use original bytes
+                                        debug!(target: TARGET_WEB_REQUEST, "No decompression method worked for {}, using original bytes", rss_url);
+                                        bytes.to_vec()
+                                    }
                                 }
                             }
-                        } else if bytes.starts_with(&[0x78, 0x9c]) || bytes.starts_with(&[0x78, 0xda]) {
-                            debug!(target: TARGET_WEB_REQUEST, "Detected zlib compression for {}", rss_url);
-                            // zlib
-                            let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
-                            let mut decoded = Vec::new();
-                            match decoder.read_to_end(&mut decoded) {
-                                Ok(_) => {
-                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed zlib data from {}", rss_url);
-                                    decoded
-                                },
-                                Err(err) => {
-                                    error!(
-                                        target: TARGET_WEB_REQUEST,
-                                        "Failed to decompress zlib data from {}: {}",
-                                        rss_url,
-                                        err
-                                    );
-                                    attempts += 1;
-                                    sleep(RETRY_DELAY).await;
-                                    continue;
-                                }
-                            }
-                        } else if bytes.starts_with(&[0x03, 0xd0]) {
-                            debug!(target: TARGET_WEB_REQUEST, "Detected deflate compression for {}", rss_url);
-                            // deflate
-                            let mut decoder = flate2::read::DeflateDecoder::new(&bytes[..]);
-                            let mut decoded = Vec::new();
-                            match decoder.read_to_end(&mut decoded) {
-                                Ok(_) => {
-                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed deflate data from {}", rss_url);
-                                    decoded
-                                },
-                                Err(err) => {
-                                    error!(
-                                        target: TARGET_WEB_REQUEST,
-                                        "Failed to decompress deflate data from {}: {}",
-                                        rss_url,
-                                        err
-                                    );
-                                    attempts += 1;
-                                    sleep(RETRY_DELAY).await;
-                                    continue;
-                                }
-                            }
-                        } else {
-                            bytes.to_vec()
                         };
+
+                        // Check if the decompressed data looks like XML
+                        if let Ok(text) = String::from_utf8(decompressed_bytes.clone()) {
+                            if text.contains("<?xml") || text.contains("<rss") || text.contains("<feed") {
+                                debug!(target: TARGET_WEB_REQUEST, "Found XML markers in decompressed data from {}", rss_url);
+                            }
+                        }
 
                         // Add debug logging to see what we got after decompression
                         if let Ok(preview) = String::from_utf8(decompressed_bytes[..20.min(decompressed_bytes.len())].to_vec()) {
