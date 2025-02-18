@@ -445,7 +445,40 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                                 }
                                             }
                                         } else {
-                                            let preview = body.chars().take(100).collect::<String>();
+                                            let preview = if bytes.starts_with(&[0x1f, 0x8b]) || // gzip magic number
+                                            bytes.starts_with(&[0x78, 0x9c]) || // zlib header
+                                            bytes.starts_with(&[0x50, 0x4b, 0x03, 0x04]) // ZIP header
+                                            {
+                                                error!(
+                                                    target: TARGET_WEB_REQUEST,
+                                                    "Feed from {} appears to be compressed or binary data",
+                                                    rss_url
+                                                );
+                                                attempts += 1;
+                                                sleep(RETRY_DELAY).await;
+                                                continue;
+                                            } else {
+                                                // Convert to hex representation for logging if it contains non-printable characters
+                                                let is_binary = bytes.iter().any(|&b| b < 32 && !b.is_ascii_whitespace());
+                                                if is_binary {
+                                                let hex_preview = bytes.iter()
+                                                    .take(20)
+                                                    .map(|b| format!("{:02x}", b))
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                error!(
+                                                    target: TARGET_WEB_REQUEST,
+                                                    "Feed from {} contains binary data. First 20 bytes: {}",
+                                                    rss_url,
+                                                    hex_preview
+                                                );
+                                                attempts += 1;
+                                                sleep(RETRY_DELAY).await;
+                                                continue;
+                                            } else {
+                                                body.chars().take(100).collect::<String>()
+                                            }
+                                            };
                                             error!(
                                                 target: TARGET_WEB_REQUEST,
                                                 "Feed from {} doesn't appear to be RSS or Atom. Content preview: {}",
