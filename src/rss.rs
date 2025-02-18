@@ -483,7 +483,11 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                                 }
                                             }
                                         } else {
-                                            let preview = body.chars().take(100).collect::<String>();
+                                            let preview = if body.chars().all(|c| c.is_ascii_graphic() || c.is_whitespace()) {
+                                                body.chars().take(100).collect::<String>()
+                                            } else {
+                                                "[binary data]".to_string()
+                                            };
                                             error!(
                                                 target: TARGET_WEB_REQUEST,
                                                 "Feed from {} doesn't appear to be RSS or Atom. Content preview: {}",
