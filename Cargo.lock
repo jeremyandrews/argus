@@ -139,6 +139,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "emailmessage",
+ "encoding_rs",
  "feed-rs",
  "futures 0.3.31",
  "jsonwebtoken",

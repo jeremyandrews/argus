@@ -13,6 +13,7 @@ axum-extra = { version = "0.10", features = ["typed-header"] }
 base64 = "0.22"
 chrono = "0.4"
 emailmessage = "0.2"
+encoding_rs = "0.8"
 feed-rs = "2.1"
 futures = "0.3"
 jsonwebtoken = "9.0"
