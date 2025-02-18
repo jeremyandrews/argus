@@ -211,11 +211,15 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
 
                         // Try to decompress if it's compressed
                         let decompressed_bytes = if bytes.starts_with(&[0x1f, 0x8b]) {
+                            debug!(target: TARGET_WEB_REQUEST, "Detected gzip compression for {}", rss_url);
                             // gzip
                             let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
                             let mut decoded = Vec::new();
                             match decoder.read_to_end(&mut decoded) {
-                                Ok(_) => decoded,
+                                Ok(_) => {
+                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed gzip data from {}", rss_url);
+                                    decoded
+                                },
                                 Err(err) => {
                                     error!(
                                         target: TARGET_WEB_REQUEST,
@@ -229,11 +233,15 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                 }
                             }
                         } else if bytes.starts_with(&[0x78, 0x9c]) || bytes.starts_with(&[0x78, 0xda]) {
+                            debug!(target: TARGET_WEB_REQUEST, "Detected zlib compression for {}", rss_url);
                             // zlib
                             let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
                             let mut decoded = Vec::new();
                             match decoder.read_to_end(&mut decoded) {
-                                Ok(_) => decoded,
+                                Ok(_) => {
+                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed zlib data from {}", rss_url);
+                                    decoded
+                                },
                                 Err(err) => {
                                     error!(
                                         target: TARGET_WEB_REQUEST,
@@ -246,9 +254,36 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                     continue;
                                 }
                             }
+                        } else if bytes.starts_with(&[0x03, 0xd0]) {
+                            debug!(target: TARGET_WEB_REQUEST, "Detected deflate compression for {}", rss_url);
+                            // deflate
+                            let mut decoder = flate2::read::DeflateDecoder::new(&bytes[..]);
+                            let mut decoded = Vec::new();
+                            match decoder.read_to_end(&mut decoded) {
+                                Ok(_) => {
+                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed deflate data from {}", rss_url);
+                                    decoded
+                                },
+                                Err(err) => {
+                                    error!(
+                                        target: TARGET_WEB_REQUEST,
+                                        "Failed to decompress deflate data from {}: {}",
+                                        rss_url,
+                                        err
+                                    );
+                                    attempts += 1;
+                                    sleep(RETRY_DELAY).await;
+                                    continue;
+                                }
+                            }
                         } else {
                             bytes.to_vec()
                         };
+
+                        // Add debug logging to see what we got after decompression
+                        if let Ok(preview) = String::from_utf8(decompressed_bytes[..20.min(decompressed_bytes.len())].to_vec()) {
+                            debug!(target: TARGET_WEB_REQUEST, "Decompressed data preview for {}: {}", rss_url, preview);
+                        }
 
                         let body = match String::from_utf8(decompressed_bytes.clone()) {
                             Ok(text) => {
