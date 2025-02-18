@@ -305,54 +305,55 @@ ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
 -----------------------------
 
 IMPORTANT INSTRUCTIONS:
-- **Analyze ONLY the article above.** 
+- **Analyze ONLY the article above.**
 - **IGNORE the global context unless the article explicitly mentions related events.**
 - **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
+- **ENSURE consistency: If fallacies are found, do NOT include "No apparent logical fallacies detected."**
 
-TASK:
-Carefully read and understand the entire article.
+### **Step 1: Determine Article Type**
+- **Argumentative Article:** The article presents claims, reasoning, or conclusions in support of a viewpoint.
+- **Informational Article:** The article is primarily factual and does not argue for a specific point of view.
+- **If the article is informational, avoid penalizing it for lack of argument strength. Instead, assess its clarity and factual reliability.**
 
-Then, analyze for logical fallacies and argument strength following these STRICT guidelines:
+### **Step 2: Logical Fallacies Analysis (ONLY for Argumentative Articles)**
+#### **Logical Fallacies Found:**  
+- If any logical fallacies are found, list them in this format:  
+  #. **[Logical Fallacy Name]**  
+     Brief explanation (max 15 words).  
+- If NO logical fallacies are found, write:  
+  _"No apparent logical fallacies detected."_  
+- **ENSURE that both conditions NEVER appear together.**
 
-### **Logical Fallacies Found:**
-- **Format:** 
-  #. [fallacy type]  
-    Briefly explain in no more than 15 words.  
-- **Instructions:** List up to 4 of the most significant fallacies found, or state:
-  - *"No apparent logical fallacies detected."*
+### **Step 3: Article Quality Assessment**
+- If the article is **Argumentative**:
+  - **Argument Strength:** [1–10]  
+    Justification (max 20 words).
+  - **Evidence Quality:** [1–10]  
+    Justification (max 20 words).
+- If the article is **Informational**:
+  - **Clarity & Coherence:** [1–10]  
+    Justification (max 20 words).
+  - **Factual Reliability:** [1–10]  
+    Justification (max 20 words).
 
-### **Argument Strength:** [1–10]
-- **Justification:** Briefly explain in no more than 20 words.
+### **Step 4: Overall Assessment**
+- Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.  
+- If the article is **Informational**, summarize whether it is clear and well-sourced rather than rating argument strength.  
 
-### **Evidence Quality:** [1–10]
-- **Justification:** Briefly explain in no more than 20 words.
+**EXAMPLES:**  
+📌 **IF LOGICAL FALLACIES WERE FOUND:**  
+**Logical Fallacies Found:**  
+1. **Ad Hominem**  
+   Attacking Minister Carlo Nordio’s character instead of addressing his actions.  
+2. **False Dilemma**  
+   Suggesting he must apologize or release documents, ignoring other possibilities.  
 
-### **Overall Assessment:** 
-- Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.
+📌 **IF NO LOGICAL FALLACIES WERE FOUND:**  
+**Logical Fallacies Found:**  
+_No apparent logical fallacies detected._  
 
-**EXAMPLE (Correct):**
-1. Strawman Fallacy  
-  Misrepresents opposing argument to make it easier to refute.  
-
-2. Appeal to Feat  
-  Uses fear of actions to push for result.  
-
-- **Argument Strength:** 6  
-  Uses some evidence but relies heavily on assumptions without support.  
-
-- **Evidence Quality:** 4  
-  Relies on anecdotal evidence with no verifiable data.  
-
-- **Overall Assessment:**  
-  - Relies on emotional appeals over factual evidence, undermining the argument's logical foundation.
-
-**EXAMPLE (Incorrect):**
-- Focuses on summarizing unrelated global events or providing subjective opinions without evaluating logical structure.
-
-Now perform the logical fallacy analysis using these rules:
-
+Now, perform the analysis with these strict guidelines:
 {write_in_clear_english}
-
 {dont_tell_me}"#,
         context = global_context(pub_date),
         article = article_text,
@@ -591,21 +592,25 @@ Return ONLY the number 1, 2, or 3.
 
 pub fn argument_quality_prompt(logical_fallacies: &str) -> String {
     format!(
-        r#"Based on this logical fallacy analysis:
+        r#"Based on this logical fallacy and article quality analysis:
 ~~~
 {analysis}
 ~~~
+Return a single number (1, 2, or 3) representing the overall quality of the article:
+1 = Poor (red) - Multiple serious fallacies, weak arguments, or unreliable information
+2 = Moderate (yellow) - Some fallacies, weaknesses in reasoning, or minor factual issues
+3 = Excellent (green) - Strong arguments OR well-sourced, factually reliable information
 
-Return a single number (1, 2, or 3) representing the overall quality of the arguments:
-1 = Poor (red) - Multiple serious fallacies or very weak arguments
-2 = Moderate (yellow) - Some fallacies but generally sound reasoning
-3 = Excellent (green) - Strong arguments with minimal or no fallacies
-
-Base your assessment primarily on:
-- Number and severity of logical fallacies
-- Argument strength score
-- Evidence quality score
-- Overall logical consistency
+Base your assessment on:
+- If the article is **Argumentative**:
+  - Number and severity of logical fallacies
+  - Argument strength score
+  - Evidence quality score
+  - Overall logical consistency
+- If the article is **Informational**:
+  - Clarity & coherence score
+  - Factual reliability score
+  - Overall professionalism and objectivity
 
 Return ONLY the number 1, 2, or 3.
 {dont_tell_me}"#,
