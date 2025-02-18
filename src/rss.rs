@@ -202,12 +202,12 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                 match response.json::<JsonFeed>().await {
                                     Ok(feed) => {
                                         for item in feed.items {
-                                            if let Some(article_url) = item.url.or(item.id) {
+                                            if let Some(article_url) = item.url.or(item.id).map(|s| s.to_string()) {
                                                 let pub_date = item.date_published.map(|d| {
                                                     if let Some(dt) = parse_date(&d) {
                                                         dt.to_rfc3339()
                                                     } else {
-                                                        d
+                                                        d.to_string()
                                                     }
                                                 });
 
@@ -256,9 +256,22 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                             _ => {
                                 let body = match response.text().await {
                                     Ok(text) => {
+                                        // If the text starts with gzip magic number or seems to be binary
+                                        if text.starts_with('\u{1f}') || text.chars().any(|c| c == '\0') {
+                                            error!(
+                                                target: TARGET_WEB_REQUEST,
+                                                "Received binary/compressed data from {}. Check if response was properly decompressed.",
+                                                rss_url
+                                            );
+                                            attempts += 1;
+                                            sleep(RETRY_DELAY).await;
+                                            continue;
+                                        }
+
                                         if text.starts_with("<?xml") {
                                             text
                                         } else {
+                                            // Rest of the encoding handling...
                                             if let Some(ct_str) = content_type {
                                                 if let Some(charset) = ct_str.split(';')
                                                     .find(|part| part.trim().to_lowercase().starts_with("charset="))
