@@ -197,9 +197,89 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                         .map(|s| s.to_lowercase());
 
                     if response.status().is_success() {
+                        // Get the raw bytes first
+                        let bytes = match response.bytes().await {
+                            Ok(b) => b,
+                            Err(err) => {
+                                error!(target: TARGET_WEB_REQUEST, "Failed to read response bytes from {}: {}", rss_url, err);
+                                attempts += 1;
+                                sleep(RETRY_DELAY).await;
+                                continue;
+                            }
+                        };
+
+                        // Check for gzip magic number (1f 8b)
+                        if bytes.starts_with(&[0x1f, 0x8b]) {
+                            error!(
+                                target: TARGET_WEB_REQUEST,
+                                "Response from {} is still gzip compressed. Attempting to decompress manually.",
+                                rss_url
+                            );
+                            attempts += 1;
+                            sleep(RETRY_DELAY).await;
+                            continue;
+                        }
+
+                        let body = match String::from_utf8(bytes.to_vec()) {
+                            Ok(text) => {
+                                if text.starts_with("<?xml") || text.contains("<rss") || text.contains("<feed") {
+                                    text
+                                } else {
+                                    // Try to detect encoding from content-type header
+                                    if let Some(ref ct_str) = content_type {
+                                        if let Some(charset) = ct_str.split(';')
+                                            .find(|part| part.trim().to_lowercase().starts_with("charset="))
+                                            .and_then(|charset| charset.split('=').nth(1))
+                                        {
+                                            if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
+                                                let (decoded, _, _) = encoding.decode(&bytes);
+                                                decoded.into_owned()
+                                            } else {
+                                                text
+                                            }
+                                        } else {
+                                            text
+                                        }
+                                    } else {
+                                        text
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                error!(
+                                    target: TARGET_WEB_REQUEST,
+                                    "Response from {} contains invalid UTF-8. Attempting to decode with content-type charset.",
+                                    rss_url
+                                );
+                                if let Some(ref ct_str) = content_type {
+                                    if let Some(charset) = ct_str.split(';')
+                                        .find(|part| part.trim().to_lowercase().starts_with("charset="))
+                                        .and_then(|charset| charset.split('=').nth(1))
+                                    {
+                                        if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
+                                            let (decoded, _, _) = encoding.decode(&bytes);
+                                            decoded.into_owned()
+                                        } else {
+                                            attempts += 1;
+                                            sleep(RETRY_DELAY).await;
+                                            continue;
+                                        }
+                                    } else {
+                                        attempts += 1;
+                                        sleep(RETRY_DELAY).await;
+                                        continue;
+                                    }
+                                } else {
+                                    attempts += 1;
+                                    sleep(RETRY_DELAY).await;
+                                    continue;
+                                }
+                            }
+                        };
+
                         match content_type.as_deref() {
                             Some(ct) if ct.contains("json") => {
-                                match response.json::<JsonFeed>().await {
+                                match serde_json::from_str::<JsonFeed>(&body) {
                                     Ok(feed) => {
                                         for item in feed.items {
                                             if let Some(article_url) = item.url.or(item.id).map(|s| s.to_string()) {
@@ -254,49 +334,6 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                 }
                             }
                             _ => {
-                                let body = match response.text().await {
-                                    Ok(text) => {
-                                        // Remove any UTF-8 BOM if present
-                                        let text = if text.starts_with('\u{FEFF}') {
-                                            text[3..].to_string()
-                                        } else {
-                                            text
-                                        };
-
-                                        // If it looks like XML (with or without declaration), process it
-                                        if text.starts_with("<?xml") || text.contains("<rss") || text.contains("<feed") {
-                                            text
-                                        } else {
-                                            // Try to detect encoding from content-type header
-                                            if let Some(ct_str) = content_type {
-                                                if let Some(charset) = ct_str.split(';')
-                                                    .find(|part| part.trim().to_lowercase().starts_with("charset="))
-                                                    .and_then(|charset| charset.split('=').nth(1))
-                                                {
-                                                    if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
-                                                        let (decoded, _, _) = encoding.decode(text.as_bytes());
-                                                        decoded.into_owned()
-                                                    } else {
-                                                        text
-                                                    }
-                                                } else {
-                                                    text
-                                                }
-                                            } else {
-                                                text
-                                            }
-                                        }
-                                    }
-                                    Err(err) => {
-                                        error!(target: TARGET_WEB_REQUEST, "Failed to read response body from {}: {}", rss_url, err);
-                                        attempts += 1;
-                                        sleep(RETRY_DELAY).await;
-                                        continue;
-                                    }
-                                };
-
-                                debug!(target: TARGET_WEB_REQUEST, "Fetched body: {}", body);
-
                                 let reader = io::Cursor::new(&body);
                                 match parser::parse(reader) {
                                     Ok(feed) => {
@@ -347,10 +384,6 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                         break;
                                     }
                                     Err(first_err) => {
-                                        // Log the first few characters of the body for debugging
-                                        let preview = body.chars().take(100).collect::<String>();
-                                        debug!(target: TARGET_WEB_REQUEST, "Feed content preview: {}", preview);
-
                                         // Try cleaning the XML first
                                         let cleaned_xml = cleanup_xml(&body);
 
@@ -412,6 +445,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                                                 }
                                             }
                                         } else {
+                                            let preview = body.chars().take(100).collect::<String>();
                                             error!(
                                                 target: TARGET_WEB_REQUEST,
                                                 "Feed from {} doesn't appear to be RSS or Atom. Content preview: {}",
