@@ -306,6 +306,7 @@ IMPORTANT INSTRUCTIONS:
 * **Do NOT reference or include information from the global context unless it is directly relevant.**
 * **ENSURE consistency: If fallacies are found, do NOT include "No apparent logical fallacies detected."**
 * **Recognize authoritative opinions (e.g., judges, experts) as factually significant when relevant.**
+* **For non-English text, provide both the original and translation in American English.**
 
 ### **Article Type Analysis**
 * Classify as either:
@@ -317,7 +318,7 @@ IMPORTANT INSTRUCTIONS:
 ### **Logical Fallacies Analysis**
 * For each fallacy found:
   1. **Name of Fallacy**
-  2. Quote or paraphrase the relevant text
+  2. Quote the relevant text (if non-English, include both original and translation)
   3. Explain why it's fallacious (max 20 words)
   4. Provide specific example from the text
 
@@ -345,29 +346,25 @@ For Informational Articles:
 
 **EXAMPLE OUTPUT:**
 ### Article Type Analysis
-Argumentative: Article advocates for a specific policy change
+Informational: Reports on parliamentary proceedings without advocating for a position
 
 ### Logical Fallacies Analysis
-**Appeal to Authority**
-Text: "Dr. Smith, a renowned economist, says this policy will fail"
-Problem: Relies on expertise without providing supporting evidence
-Example: The article cites Dr. Smith's credentials but omits economic data
-
-**False Dichotomy**
-Text: "Either we implement this policy or the economy collapses"
-Problem: Presents only two extreme options while ignoring alternatives
-Example: Ignores moderate policy approaches discussed by other experts
+**Appeal to Ignorance**
+Text: "Resta tutto in piedi il mistero dello spionaggio illecito"
+Translation: "The mystery of illegal espionage remains standing"
+Problem: Assumes unexplained events must remain mysterious rather than considering alternative explanations
+Example: Article implies surveillance allegations must be true because they haven't been disproven
 
 ### Quality Assessment
-**Argument Strength:** 6/10
-- Multiple perspectives presented but overreliance on authority figures
+**Clarity & Coherence:** 7/10
+- Clear reporting of events but lacks contextual background
 
-**Evidence Quality:** 7/10
-- Good use of statistics but some claims lack proper citation
+**Factual Reliability:** 6/10
+- Presents verifiable statements but needs more supporting detail
 
 ### Overall Assessment
-- Arguments show logical progression but rely too heavily on expert opinions without sufficient supporting data
-- Would benefit from more diverse viewpoints and concrete evidence
+- Reporting is straightforward but could benefit from deeper investigation of claims
+- Would be strengthened by including more diverse sources and historical context
 
 Now, perform the analysis with these guidelines:
 {write_in_clear_english}
