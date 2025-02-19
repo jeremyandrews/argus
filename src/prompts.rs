@@ -242,9 +242,21 @@ pub fn critical_analysis_prompt(article_text: &str, pub_date: Option<&str>) -> S
 
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
-* **IGNORE the global context unless the article explicitly mentions related events.**
-* **Do NOT reference information from the global context unless directly relevant.**
-* **For non-English text, provide translations in American English for all quotes.**
+* **Distinguish between:**
+  - **Article voice:** The author's/publication's direct statements
+  - **Source quotes:** Statements from interviews, documents, or other sources
+* **When evaluating credibility:**
+  - Consider how effectively the article contextualizes its quotes
+  - Assess the balance between direct reporting and quoted material
+  - Note whether controversial quotes are properly attributed and explained
+
+### **Content Analysis**
+**Quote Integration:** [1-10]
+* How effectively does the article:
+  - Introduce and contextualize quotes
+  - Balance direct reporting with quoted material
+  - Handle controversial or incorrect quoted statements
+  - Maintain clarity between article voice and quoted content
 
 ### **Credibility Analysis**
 **Credibility Score:** [1-10]
@@ -309,7 +321,18 @@ IMPORTANT INSTRUCTIONS:
 **EXAMPLE OUTPUT:**
 ### Credibility Analysis
 **Credibility Score:** 8/10
-- Multiple expert sources cited, clear methodology, verified data from reputable institutions
+- Article clearly distinguishes between factual reporting and quoted opinions
+- Provides context for controversial quotes
+- Maintains accuracy while including diverse perspectives
+
+### Quote Integration: 9/10
+Article voice: "9 is the number after 8"
+- States mathematical fact directly
+
+Quoted content: "Because 7 8 9, we skip from 8 to 10"
+- Clearly attributed as humorous reference
+- Doesn't compromise article's factual accuracy
+- Adds engaging cultural context
 
 ### Writing Style Analysis
 **Style Score:** 7/10
@@ -355,10 +378,13 @@ pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> S
 
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
-* **IGNORE the global context unless the article explicitly mentions related events.**
-* **Do NOT reference or include information from the global context unless it is directly relevant.**
-* **ENSURE consistency: If fallacies are found, do NOT include "No apparent logical fallacies detected."**
-* **Recognize authoritative opinions (e.g., judges, experts) as factually significant when relevant.**
+* **Distinguish between:**
+  - **Article assertions:** Claims made directly by the article/author
+  - **Quoted content:** Statements attributed to sources or subjects
+* **When analyzing fallacies:**
+  - Identify whether the fallacy is in the article's reasoning or in quoted content
+  - Consider how the article presents and contextualizes quotes
+  - Don't penalize articles for including fallacious quotes if they're properly contextualized
 * **For non-English text, provide both the original and translation in American English.**
 
 ### **Article Type Analysis**
@@ -371,9 +397,12 @@ IMPORTANT INSTRUCTIONS:
 ### **Logical Fallacies Analysis**
 * For each fallacy found:
   1. **Name of Fallacy**
-  2. Quote the relevant text (if non-English, include both original and translation)
-  3. Explain why it's fallacious (max 20 words)
-  4. Provide specific example from the text
+  2. **Source of Fallacy:**
+     - "Article:" for author's own reasoning
+     - "Quoted:" for statements from sources
+  3. Quote the relevant text (if non-English, include translation)
+  4. Explain why it's fallacious (max 20 words)
+  5. Note how the article handles the fallacy (if in quoted content)
 
 * If NO fallacies found:
   - Write: _"No apparent logical fallacies detected."_
@@ -399,14 +428,19 @@ For Informational Articles:
 
 **EXAMPLE OUTPUT:**
 ### Article Type Analysis
-Informational: Reports on parliamentary proceedings without advocating for a position
+ - Informational: Reports on parliamentary proceedings without advocating for a position
 
 ### Logical Fallacies Analysis
-**Appeal to Ignorance**
-Text: "Resta tutto in piedi il mistero dello spionaggio illecito"
-Translation: "The mystery of illegal espionage remains standing"
-Problem: Assumes unexplained events must remain mysterious rather than considering alternative explanations
-Example: Article implies surveillance allegations must be true because they haven't been disproven
+**Appeal to Emotion**
+ - Source: Quoted
+ - Text: "Because 7 8 9, we skip from 8 to 10"
+ - Context: Article includes this humorous quote while correctly stating "9 is the number after 8"
+ - Handling: Article appropriately presents this as a playful reference while maintaining factual accuracy
+
+**False Dichotomy**
+ - Source: Article
+ - Text: "We must either count to 9 or skip it entirely"
+ - Problem: Article itself presents a false choice, ignoring other numerical approaches
 
 ### Quality Assessment
 **Clarity & Coherence:** 7/10
