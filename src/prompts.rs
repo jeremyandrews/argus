@@ -205,16 +205,30 @@ Now summarize the article text above using these rules:
 
 pub fn tiny_summary_prompt(summary_response: &str) -> String {
     format!(
-        "Below is the summary of an article between ~~~ markers:
+        r#"Below is the summary of an article between ~~~ markers:
 ~~~
 {summary}
 ~~~
 
-Create a single sentence summary of maximum 400 characters that captures the most essential information. Focus on the main event or finding only.
+Create a single sentence summary of maximum 400 characters that:
+* Captures the most essential information
+* For multi-topic articles:
+  - Indicate the variety of topics (e.g., "In a week of diverse developments...")
+  - Use connecting words or ";" for related topics
+  - Maintain topic relationships
+* Preserve chronological order if present
+* Include key numbers and dates
+* Use active voice
+
+**EXAMPLE (Single Topic):**
+"SpaceX's March 15 satellite launch achieved 98% deployment accuracy while cutting costs by 15%, marking a significant advance in commercial space operations."
+
+**EXAMPLE (Multi-Topic):**
+"In a week of major developments, the Fed raised rates 0.25%, Australian wildfires prompted $200M in emergency aid, and Apple's AR headset launch garnered 100,000 pre-orders."
 
 {write_in_clear_english}
 
-{dont_tell_me}",
+{dont_tell_me}"#,
         summary = summary_response,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
@@ -223,11 +237,27 @@ Create a single sentence summary of maximum 400 characters that captures the mos
 
 pub fn tiny_title_prompt(summary_response: &str) -> String {
     format!(
-        "{summary} | Please write an informational and accurate 3 to 5 word title for this text.
+        r#"{summary}
+Create ONE informational and accurate 3-5 word title that:
+* Captures the main theme or themes
+* For multi-topic articles:
+  - Use broader encompassing terms (e.g., "Global Weekly Developments")
+  - Focus on the common thread if exists
+  - Indicate time period if relevant
+* Maintains clarity and accuracy
+* Avoids clickbait or sensationalism
+* RETURN EXACTLY ONE TITLE, regardless of topic count
+
+**EXAMPLE (Single Topic):**
+"February 20th SpaceX Launch Success"
+
+**EXAMPLE (Multi-Topic):**
+"March Global Events Review"
+
+IMPORTANT: Return ONLY one title, even if the article covers multiple topics or events.
 
 {write_in_clear_english}
-
-{dont_tell_me}",
+{dont_tell_me}"#,
         summary = summary_response,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
