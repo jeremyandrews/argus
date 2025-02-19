@@ -296,60 +296,80 @@ Now perform the critical analysis using these rules:
 
 pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
-        r#"
-{context}
-ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
------------------------------
-{article}
------------------------------
+        r#" {context}
+## ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
+## {article}
+
 IMPORTANT INSTRUCTIONS:
-- **Analyze ONLY the article above.**
-- **IGNORE the global context unless the article explicitly mentions related events.**
-- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
-- **ENSURE consistency: If fallacies are found, do NOT include "No apparent logical fallacies detected."**
-- **Recognize authoritative opinions (e.g., judges, experts) as factually significant when relevant to the article.**
+* **Analyze ONLY the article above.**
+* **IGNORE the global context unless the article explicitly mentions related events.**
+* **Do NOT reference or include information from the global context unless it is directly relevant.**
+* **ENSURE consistency: If fallacies are found, do NOT include "No apparent logical fallacies detected."**
+* **Recognize authoritative opinions (e.g., judges, experts) as factually significant when relevant.**
 
-### **Step 1: Determine Article Type**
-- **Argumentative Article:** The article presents claims, reasoning, or conclusions in support of a viewpoint.
-- **Informational Article:** The article is primarily factual and does not argue for a specific point of view.
-- **If the article is informational, avoid penalizing it for lack of argument strength. Instead, assess its clarity and factual reliability.**
-- **If an opinion is cited from an authoritative figure (e.g., judge, scientist, government official) in a professional capacity, it should not be dismissed as "just an opinion." Evaluate its relevance instead.**
+### **Article Type Analysis**
+* Classify as either:
+  - **Argumentative:** Presents claims, reasoning, or conclusions supporting a viewpoint
+  - **Informational:** Primarily factual without arguing for a specific view
+* For informational articles, focus on clarity and factual reliability rather than argument strength
+* Authoritative opinions in professional contexts should be evaluated for relevance, not dismissed
 
-### **Step 2: Logical Fallacies Analysis (ONLY for Argumentative Articles)**
-#### **Logical Fallacies Found:**  
-- If any logical fallacies are found, list them in this format:  
-  #. **[Logical Fallacy Name]**  
-     Brief explanation (max 15 words).  
-- If NO logical fallacies are found, write:  
-  _"No apparent logical fallacies detected."_  
-- **ENSURE that both conditions NEVER appear together.**
+### **Logical Fallacies Analysis**
+* For each fallacy found:
+  1. **Name of Fallacy**
+  2. Quote or paraphrase the relevant text
+  3. Explain why it's fallacious (max 20 words)
+  4. Provide specific example from the text
 
-### **Step 3: Article Quality Assessment**
-- If the article is **Argumentative**:
-  - **Argument Strength:** [1–10]  
-    Justification (max 20 words).
-  - **Evidence Quality:** [1–10]  
-    Justification (max 20 words).
-    - **If key points rely on an authoritative figure's statement (e.g., judge’s ruling), acknowledge its factual significance.**
-- If the article is **Informational**:
-  - **Clarity & Coherence:** [1–10]  
-    Justification (max 20 words).
-  - **Factual Reliability:** [1–10]  
-    Justification (max 20 words).
+* If NO fallacies found:
+  - Write: _"No apparent logical fallacies detected."_
 
-### **Step 4: Overall Assessment**
-- Provide 1–2 bullet points summarizing key observations about the article’s reasoning and logical consistency.  
-- If the article is **Informational**, summarize whether it is clear and well-sourced rather than rating argument strength.  
-- **If authoritative opinions are presented as justification (e.g., a judge’s ruling), do NOT automatically flag them as subjective. Evaluate their contextual reliability.**
+### **Quality Assessment**
+For Argumentative Articles:
+* **Argument Strength:** [1-10]
+  - Justification (max 20 words)
+* **Evidence Quality:** [1-10]
+  - Justification (max 20 words)
 
-**EXAMPLES:**  
-📌 **Incorrect (old behavior):**  
-*"This argument is based on opinion rather than fact."* (Flagging a judge’s statement)  
+For Informational Articles:
+* **Clarity & Coherence:** [1-10]
+  - Justification (max 20 words)
+* **Factual Reliability:** [1-10]
+  - Justification (max 20 words)
 
-📌 **Correct (new behavior):**  
-*"The judge’s ruling is an authoritative legal opinion and should be considered factual within this context."*
+### **Overall Assessment**
+* 1-2 bullet points summarizing:
+  - Key observations about reasoning and logical consistency
+  - For informational articles: clarity and sourcing quality
+  - Reliability of authoritative opinions when present
 
-Now, perform the analysis with these strict guidelines:
+**EXAMPLE OUTPUT:**
+### Article Type Analysis
+Argumentative: Article advocates for a specific policy change
+
+### Logical Fallacies Analysis
+**Appeal to Authority**
+Text: "Dr. Smith, a renowned economist, says this policy will fail"
+Problem: Relies on expertise without providing supporting evidence
+Example: The article cites Dr. Smith's credentials but omits economic data
+
+**False Dichotomy**
+Text: "Either we implement this policy or the economy collapses"
+Problem: Presents only two extreme options while ignoring alternatives
+Example: Ignores moderate policy approaches discussed by other experts
+
+### Quality Assessment
+**Argument Strength:** 6/10
+- Multiple perspectives presented but overreliance on authority figures
+
+**Evidence Quality:** 7/10
+- Good use of statistics but some claims lack proper citation
+
+### Overall Assessment
+- Arguments show logical progression but rely too heavily on expert opinions without sufficient supporting data
+- Would benefit from more diverse viewpoints and concrete evidence
+
+Now, perform the analysis with these guidelines:
 {write_in_clear_english}
 {dont_tell_me}"#,
         context = global_context(pub_date),
