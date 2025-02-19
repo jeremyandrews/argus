@@ -434,8 +434,11 @@ IMPORTANT INSTRUCTIONS:
   4. Explain why it's fallacious (max 20 words)
   5. Note how the article handles the fallacy (if in quoted content)
 
-* If NO fallacies found:
+* If and ONLY if NO fallacies are found:
   - Write: _"No apparent logical fallacies detected."_
+* Otherwise:
+  - List all fallacies found
+  - Do NOT include "No apparent logical fallacies detected" after listing fallacies
 
 ### **Quality Assessment**
 For Argumentative Articles:
