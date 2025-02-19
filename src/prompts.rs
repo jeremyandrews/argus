@@ -236,56 +236,109 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
 
 pub fn critical_analysis_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
-        r#"
-{context}
-
-ARTICLE (FOR CRITICAL ANALYSIS):
------------------------------
-{article}
------------------------------
+        r#" {context}
+## ARTICLE (FOR CRITICAL ANALYSIS):
+## {article}
 
 IMPORTANT INSTRUCTIONS:
-- **Analyze ONLY the article above.** 
-- **IGNORE the global context unless the article explicitly mentions related events.**
-- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
+* **Analyze ONLY the article above.**
+* **IGNORE the global context unless the article explicitly mentions related events.**
+* **Do NOT reference information from the global context unless directly relevant.**
+* **For non-English text, provide translations in American English for all quotes.**
 
-TASK:
-Carefully read and understand the entire article.
+### **Credibility Analysis**
+**Credibility Score:** [1-10]
+* Provide specific reasons (max 20 words)
+* Consider:
+  - Source reliability
+  - Citation quality
+  - Expert consultation
+  - Fact verification
+  - Methodology transparency
 
-Then, provide a concise critical analysis following these STRICT guidelines:
+### **Writing Style Analysis**
+**Style Score:** [1-10]
+* Provide specific reasons (max 20 words)
+* Consider:
+  - Clarity of expression
+  - Organization
+  - Technical accuracy
+  - Language appropriateness
+  - Engagement level
 
-### **Credibility Score:** [1–10]
-   - Briefly explain in no more than 15 words.
+### **Political Analysis**
+**Political Leaning:** [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
+* Provide specific evidence (max 20 words)
+* Include:
+  - Word choice analysis
+  - Source selection
+  - Topic framing
+  - Quote selection
+  - Context presentation
 
-### **Style Score:** [1–10]
-   - Briefly explain in no more than 15 words.
+### **Tone Assessment**
+**Primary Tone:** [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
+* Support with specific examples (max 20 words)
+* Secondary tones if present
+* Quote relevant passages (with translations if needed)
 
-### **Political Leaning:** [Far Left | Left | Center Left | Center | Center Right | Right | Far Right | N/A]
-   - Briefly explain in no more than 15 words.
+### **Audience Analysis**
+**Target Audience:**
+* Demographics (max 10 words)
+* Expertise level required
+* Geographic focus
+* Professional/General
+* Cultural context
 
-### **Tone:** [Neutral | Positive | Negative | Alarmist | Optimistic | Skeptical | Other]
-   - Briefly explain in no more than 15 words.
+### **Critical Analysis**
+2-3 bullet points examining:
+* Argument structure
+* Evidence quality
+* Logical consistency
+* Potential biases
+* Information gaps
+* Cultural/contextual factors
 
-### **Target Audience:** 
-   - Identify the intended audience in no more than 10 words.
+### **Key Takeaways**
+1-2 bullet points covering:
+* Main conclusions
+* Significance
+* Broader implications
+* Notable limitations
 
-### **Critical Analysis:** 
-   - Provide 2–3 bullet points focusing on content, logic, and evidence quality.
-   - Each bullet should highlight key observations about the article’s arguments, strengths, or weaknesses.
+**EXAMPLE OUTPUT:**
+### Credibility Analysis
+**Credibility Score:** 8/10
+- Multiple expert sources cited, clear methodology, verified data from reputable institutions
 
-### **Key Takeaway:** 
-   - Provide 1–2 bullet points summarizing the article’s most significant points or conclusions.
+### Writing Style Analysis
+**Style Score:** 7/10
+- Clear technical explanations with appropriate jargon, well-structured arguments, engaging narrative
 
-**EXAMPLE (Correct):**
-- Highlights biased language favoring one political perspective despite factual accuracy, with inconsistent source citations affecting credibility.
+### Political Analysis
+**Political Leaning:** Center-Right
+- Emphasizes market-based solutions, quotes business leaders predominantly, focuses on economic impact
 
-**EXAMPLE (Incorrect):**
-- Focuses on unrelated global events instead of analyzing the article content.
+### Tone Assessment
+**Primary Tone:** Skeptical
+Text: "Les preuves ne sont pas concluantes"
+Translation: "The evidence is not conclusive"
+- Consistently questions assumptions and demands stronger evidence
 
-Now perform the critical analysis using these rules:
+### Audience Analysis
+**Target Audience:** Financial professionals and policy makers in European markets
+- Assumes familiarity with economic terms and regulatory framework
 
+### Critical Analysis
+- Strong empirical evidence supports main arguments, but overlooks potential alternative interpretations
+- Comprehensive data presentation, though some regional comparisons lack context
+
+### Key Takeaways
+- Policy implications are well-supported by data but could benefit from more diverse expert perspectives
+- Analysis provides valuable insights while acknowledging limitations of current research
+
+Now, perform the analysis with these guidelines:
 {write_in_clear_english}
-
 {dont_tell_me}"#,
         context = global_context(pub_date),
         article = article_text,
