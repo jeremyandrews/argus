@@ -565,41 +565,53 @@ pub fn relation_to_topic_prompt(
     pub_date: Option<&str>,
 ) -> String {
     format!(
-        r#"
-{context}
-
-ARTICLE (FOR RELATION TO TOPIC ANALYSIS):
------------------------------
+        r#" {context}
+## ARTICLE (FOR RELATION TO TOPIC ANALYSIS):
+-----
 {article}
------------------------------
+-----
 
 IMPORTANT INSTRUCTIONS:
-- **Analyze ONLY the article above to determine its relation to the topic.** 
-- **IGNORE the global context unless the article explicitly mentions related events.**
-- **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
+* **Analyze ONLY the article above.**
+* **IGNORE the global context unless explicitly mentioned in article.**
+* **For non-English text, include translations of relevant quotes.**
 
-TASK:
-Carefully read and understand the entire article.
+### **Topic Relationship Analysis**
+Determine how the article relates to: **{topic}**
 
-Then, explain in exactly **two sentences** how this article relates to **{topic}** following these STRICT guidelines:
+* **Direct Relation:** Article explicitly discusses the topic
+* **Indirect Relation:** Article touches on topic through related themes
+* **No Relation:** Article has no meaningful connection to topic
 
-1. **Sentence 1 MUST begin with:**  
-   - "This article relates to {topic} because..."  
-   - Clearly explain the direct connection between the article and the topic.
+### **Response Format**
+Provide exactly two sentences that:
 
-2. **Sentence 2 SHOULD:**  
-   - Add any relevant details that further clarify the relationship, such as specific examples, events, or data from the article.
+**First Sentence MUST:**
+* Begin with one of these EXACT phrases:
+  - For direct relation: "This article relates to {topic} because..."
+  - For indirect relation: "This article indirectly relates to {topic} because..."
+  - For no relation: "This article does not relate to {topic} because..."
+* Clearly explain the connection (or lack thereof)
+* Include specific evidence from the article
+* Reference relevant quotes (with translations if non-English)
 
-**EXAMPLE (Correct):**
-- "This article relates to climate change because it discusses rising sea levels caused by global warming in coastal cities. It highlights how recent floods in Miami are linked to increasing ocean temperatures and polar ice melt."
+**Second Sentence MUST:**
+* Provide additional supporting details
+* Include specific data, examples, or events from the article
+* Maintain focus on the article's content
+* Avoid speculation or external information
 
-**EXAMPLE (Incorrect):**
-- "This article is about politics, which is often related to climate change." (Too vague, lacks specific connection)
+**EXAMPLE (Direct Relation):**
+"This article relates to climate change because it reports new data showing global temperatures rose 1.5°C in 2024, with detailed analysis from three independent research institutions. The findings specifically link this increase to a 12% rise in extreme weather events across 40 countries, resulting in $50 billion in economic damage."
+
+**EXAMPLE (Indirect Relation):**
+"This article indirectly relates to artificial intelligence because while focusing on semiconductor manufacturing, it discusses how 35% of chip production now serves AI-specific computing needs. The report details how TSMC's $20 billion factory expansion specifically targets AI processor production, indicating the technology's growing influence on hardware development."
+
+**EXAMPLE (No Relation):**
+"This article does not relate to healthcare because it exclusively covers changes in professional sports regulations and athlete compensation policies. The content focuses entirely on new salary cap rules affecting 32 teams, with no mention of health, medical care, or player wellness issues."
 
 Now explain how the article relates to **{topic}** using these rules:
-
 {write_in_clear_english}
-
 {dont_tell_me}"#,
         context = global_context(pub_date),
         article = article_text,
