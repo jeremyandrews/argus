@@ -268,7 +268,9 @@ pub fn critical_analysis_prompt(article_text: &str, pub_date: Option<&str>) -> S
     format!(
         r#" {context}
 ## ARTICLE (FOR CRITICAL ANALYSIS):
-## {article}
+----------
+ {article}
+----------
 
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
@@ -404,7 +406,9 @@ pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> S
     format!(
         r#" {context}
 ## ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
-## {article}
+-----
+{article}
+-----
 
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
@@ -567,9 +571,9 @@ pub fn relation_to_topic_prompt(
     format!(
         r#" {context}
 ## ARTICLE (FOR RELATION TO TOPIC ANALYSIS):
------
+----------
 {article}
------
+----------
 
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
@@ -623,19 +627,61 @@ Now explain how the article relates to **{topic}** using these rules:
 
 pub fn how_does_it_affect_prompt(article_text: &str, affected_places: &str) -> String {
     format!(
-        "
-Article text:        
-```
+        r#" 
+## ARTICLE (FOR IMPACT ANALYSIS):
+----------
 {article}
-```
-How does this article affect the life and safety of people in the following places: {places}?
-Answer in no more than two sentences.
+----------
 
+IMPORTANT INSTRUCTIONS:
+* **Analyze ONLY the article above.**
+* **Assess impact on: {places}**
+* **For non-English content, include translations of relevant quotes.**
+
+### **Impact Assessment Guidelines**
+Determine the article's effect on life and safety in the specified locations:
+
+**Impact Levels:**
+* **Direct Impact:** Immediate or near-term effects on life/safety
+* **Indirect Impact:** Secondary or longer-term effects
+* **Potential Impact:** Possible future effects if conditions continue
+* **No Impact:** No significant effect on life/safety
+
+**Response Format:**
+Provide exactly two sentences that:
+
+**First Sentence MUST:**
+* Begin with one of these EXACT phrases:
+  - For direct impact: "This article directly affects..."
+  - For indirect impact: "This article indirectly affects..."
+  - For potential impact: "This article could affect..."
+  - For no impact: "This article does not affect..."
+* Specify which locations are affected
+* Explain the nature of the impact
+* Include specific evidence from the article
+
+**Second Sentence MUST:**
+* Provide supporting details about:
+  - Severity of impact
+  - Timeline of effects
+  - Scope of affected population
+  - Specific measures or responses
+* Include relevant data or quotes
+* Focus only on life and safety implications
+
+**EXAMPLE (Direct Impact):**
+"This article directly affects residents of coastal Florida through immediate evacuation orders affecting 50,000 people due to the approaching Category 4 hurricane. Emergency services have established 15 shelters across three counties, with mandatory evacuation orders in effect for all areas below 10 feet elevation."
+
+**EXAMPLE (Indirect Impact):**
+"This article indirectly affects communities in northern Mexico through potential water shortages resulting from the new dam project in Arizona, which will reduce Colorado River flow by 15%. The reduced water access could impact agricultural operations supporting 200,000 residents within the next two years."
+
+**EXAMPLE (No Impact):**
+"This article does not affect the specified regions as the described policy changes only apply to European Union member states. The regulatory updates discussed have no jurisdiction or practical effect on operations or safety measures in these locations."
+
+Now analyze the impact on {places} using these rules:
 {write_in_clear_english}
-
 {dont_tell_me}
-
-{format_instructions}",
+{format_instructions}"#,
         article = article_text,
         places = affected_places,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
@@ -646,20 +692,62 @@ Answer in no more than two sentences.
 
 pub fn why_not_affect_prompt(article_text: &str, non_affected_places: &str) -> String {
     format!(
-        "
-Article text:        
-```
+        r#" 
+## ARTICLE (FOR NON-IMPACT ANALYSIS):
+----------
 {article}
-```
+----------
 
-Why does this article not affect the life and safety of people in the following places:
-{places}? Answer in no more than two sentences.
+IMPORTANT INSTRUCTIONS:
+* **Analyze ONLY the article above.**
+* **Explain lack of impact on: {places}**
+* **For non-English content, include translations of relevant quotes.**
 
+### **Non-Impact Assessment Guidelines**
+Explain why the article does not affect life and safety in the specified locations:
+
+**Non-Impact Categories:**
+* **Geographic Exclusion:** Events/effects limited to other regions
+* **Jurisdictional Limitation:** Laws/policies don't apply to these areas
+* **Scope Restriction:** Effects don't extend to these locations
+* **Time Limitation:** Past events with no current impact
+* **Domain Difference:** Subject matter doesn't affect these areas
+
+**Response Format:**
+Provide exactly two sentences that:
+
+**First Sentence MUST:**
+* Begin with one of these EXACT phrases:
+  - For geographic exclusion: "This article's effects are limited to..."
+  - For jurisdictional limitation: "The policies/laws discussed only apply to..."
+  - For scope restriction: "The impact is contained within..."
+  - For time limitation: "The described events occurred in..."
+  - For domain difference: "The subject matter exclusively concerns..."
+* Explain why the specified locations are unaffected
+* Reference specific evidence from the article
+
+**Second Sentence MUST:**
+* Provide supporting details about:
+  - Specific boundaries of impact
+  - Relevant jurisdictions
+  - Temporal limitations
+  - Domain restrictions
+* Include relevant data or quotes
+* Confirm absence of indirect effects
+
+**EXAMPLE (Geographic Exclusion):**
+"This article's effects are limited to Southeast Asian markets, specifically the ASEAN member states implementing the new trade regulations. The described policy changes have no jurisdiction or practical impact on {places}, as they fall outside the specified trading bloc's boundaries."
+
+**EXAMPLE (Jurisdictional Limitation):**
+"The policies discussed only apply to European Union member states implementing the new digital privacy framework affecting 450 million EU residents. These regulations have no legal authority or practical effect in {places}, which operate under different jurisdictional frameworks."
+
+**EXAMPLE (Domain Difference):**
+"The subject matter exclusively concerns changes to Antarctic research station protocols affecting 200 scientists across 12 research bases. The operational changes at these remote facilities have no connection to or impact on daily life and safety in {places}."
+
+Now explain why there is no impact on {places} using these rules:
 {write_in_clear_english}
-
 {dont_tell_me}
-
-{format_instructions}",
+{format_instructions}"#,
         article = article_text,
         places = non_affected_places,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
@@ -794,7 +882,10 @@ Return ONLY one of these exact words: official, academic, questionable, corporat
 
 pub fn threat_prompt(article_text: &str) -> String {
     format!(
-        "{article} |
+        "
+----------
+{article}
+----------
 Is this article describing an **ongoing** or **imminent** event or situation that might pose
 a threat to human life or health? Answer ONLY 'yes' or 'no'.",
         article = article_text
@@ -807,8 +898,10 @@ pub fn region_threat_prompt(
     country: &str,
     continent: &str,
 ) -> String {
-    format!(
-        "{article} |
+    format!("
+----------
+{article}
+----------
 This article mentions that people in {region}, {country}, {continent} may be affected by an ongoing or imminent life-threatening event. 
 Please confirm if the article is indeed about such an event in this region. Answer yes or no, and explain briefly why.",
         article = article_text,
@@ -825,8 +918,11 @@ pub fn city_threat_prompt(
     country: &str,
     continent: &str,
 ) -> String {
-    format!(
-        "{article} |
+    format!("
+----------
+{article}
+----------
+
 This article mentions that people in or near {city}, {region}, {country}, {continent} may be affected by an ongoing or imminent life-threatening event. 
 Please confirm if the article is indeed about such an event in this city. Answer yes or no, and explain briefly why.",
         article = article_text,
@@ -839,7 +935,11 @@ Please confirm if the article is indeed about such an event in this city. Answer
 
 pub fn is_this_about(article_text: &str, topic_name: &str) -> String {
     format!(
-        r#"{article}
+        r#"
+==========
+{article}
+----------
+
 Question: Does this article primarily focus on and provide substantial information about {topic}?
 Instructions:
 1. First, identify the article's language. If not in English:
@@ -898,7 +998,11 @@ Answer:"#,
 
 pub fn confirm_threat_prompt(article_text: &str) -> String {
     format!(
-        r#"{article}
+        r#"
+----------
+{article}
+----------
+
 Question: Confirm if this article describes a current or imminent threat to human life or safety.
 Instructions:
 1. Carefully check if this describes an ACTUAL threat by verifying:
