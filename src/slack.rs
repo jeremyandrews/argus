@@ -57,7 +57,7 @@ fn deduplicate_markdown(text: &str) -> String {
 
 /// Sends the formatted article to the Slack channel.
 pub async fn send_to_slack(
-    _article: &str,
+    article: &str,
     response: &str,
     slack_token: &str,
     default_channel: &str,
@@ -107,8 +107,12 @@ pub async fn send_to_slack(
         deduplicate_markdown(response_json["relation_to_topic"].as_str().unwrap_or(""));
     let source_analysis =
         deduplicate_markdown(response_json["source_analysis"].as_str().unwrap_or(""));
-    let argus_speaks =
-        deduplicate_markdown(response_json["additional_insights"].as_str().unwrap_or(""));
+    let additional_insights = deduplicate_markdown(
+        response_json["additional_insights"]
+            .as_str()
+            .unwrap_or("")
+            .trim(),
+    );
     let model = response_json["model"]
         .as_str()
         .unwrap_or("Unknown model")
@@ -142,12 +146,13 @@ pub async fn send_to_slack(
 
         // **Step 2: Send remaining content block by block in the thread**
         let sections = vec![
+            ("*Article*", article.to_string()),
             ("*Relevance*", relation_to_topic),
             ("*Summary*", summary),
             ("*Critical Analysis*", critical_analysis),
             ("*Logical Fallacies*", logical_fallacies),
             ("*Source Analysis*", source_analysis),
-            ("*Argus Speaks*", argus_speaks),
+            ("*Argus Speaks*", additional_insights),
         ];
 
         for (title, content) in sections {
