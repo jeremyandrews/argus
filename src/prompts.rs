@@ -896,91 +896,165 @@ Return ONLY one of these exact words: official, academic, questionable, corporat
 
 pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
-        r#"
+        r#"# Analysis Framework
+
+## Global Context (Reference Only)
 {context}
-## Source Material
+*Note: Only reference global context if directly relevant to analyzing the article*
+
+## Source Material for Analysis
 ----------
 {article}
 ----------
 
-## Core Analysis Requirements
+## Core Requirements
+- Analyze the article's content, not the global context
+- Reveal deeper context and connections beyond the article's surface details
+- Illuminate cultural nuances and regional perspectives specific to the article
+- Draw unexpected parallels and insights that enhance understanding of the article
+- Ground claims in concrete examples from or related to the article's content
 
-### Primary Guidelines
-- Provide novel insights beyond the article content
-- Include cultural and linguistic context for non-English sources
-- Maintain relevance while avoiding redundancy
-- Support claims with specific examples
+## Analysis Scope
+- Focus exclusively on insights that deepen understanding of the article
+- Only reference global context when it directly impacts article interpretation
+- Draw connections that illuminate the article's content
+- Avoid general commentary unrelated to the article
 
-### Cultural-Linguistic Considerations
-- Consider source country's cultural context
-- Note language-specific nuances in translation
-- Acknowledge regional perspectives
-- Highlight cultural assumptions in reporting
+## Primary Analysis Categories
+*Choose 2-4 categories that offer the richest insights:*
 
-## Analysis Categories
-*Select 2-4 most relevant categories:*
+### 🌍 Cultural Lens
+- Power dynamics and hierarchies
+- Local traditions and values
+- Historical patterns
+- Social structures and relationships
+- Language and communication styles
 
-### 🌍 Cultural-Geographic Context
-- Regional power dynamics
-- Local vs global perspectives
-- Cultural biases in reporting
-- Historical regional context
+### 📊 Technical Depth
+- Core principles and mechanisms
+- Hidden complexities
+- System interactions
+- Engineering challenges
+- Implementation nuances
 
-### 📊 Technical Analysis
-- Scientific foundations
-- Methodological approach
-- Technical terminology clarification
-- Implementation details
+### 💡 Global Patterns
+- Cross-cultural parallels
+- Regional adaptations
+- Universal principles
+- Contrasting approaches
+- Historical echoes
 
-### 💡 Comparative Insights
-- Similar cases globally
-- Regional variations
-- Cross-cultural patterns
-- Alternative approaches
+### 📈 Ripple Effects
+- Industry transformations
+- Societal shifts
+- Economic reverberations
+- Political implications
+- Cultural evolution
 
-### 📈 Impact Assessment
-- Short-term implications
-- Long-term consequences
-- Regional effects
-- Global ripple effects
-
-### 🤔 Critical Perspectives
-- Alternative viewpoints
+### 🤔 Hidden Dimensions
+- Unspoken assumptions
+- Alternative frameworks
+- Overlooked factors
+- Competing narratives
 - Cultural blind spots
-- Unstated assumptions
-- Missing context
 
-### 🔮 Future Projections
-- Likely developments
-- Cultural shifts
-- Regional changes
-- Global trends
+### 🔮 Future Threads
+- Emerging patterns
+- Potential disruptions
+- Cultural evolution
+- Technological convergence
+- Societal adaptation
 
-## Response Structure
+## Creative Analysis Options
+*Consider these for additional perspective when appropriate:*
 
-### For Each Category
-**Header:**
-- Category name
-- Brief focus statement
+### 😄 Delightful Ironies
+- Historical coincidences
+- Unexpected parallels
+- Amusing contradictions
+- Role reversals
+- Cosmic timing
 
-**Content:**
-- Key insights (2-3 sentences)
-- Supporting evidence
-- Cultural/regional context
-- Connection to article
+### 📅 Time's Echo
+- Events on this date
+- Cyclical patterns
+- Historical rhymes
+- Forgotten precedents
+- Anniversary insights
 
-**Analysis:**
-- Why this adds value
-- How it complements the article
-- Cultural/linguistic considerations
+### 👁️ Unexpected Angles
+- Nature's perspective
+- Future archaeologists' view
+- Children's understanding
+- Alien anthropologist's report
+- Ordinary objects' stories
 
-## Example Output:
+### 🎭 Character Studies
+- Key personalities
+- Hidden influencers
+- Unlikely heroes
+- Silent catalysts
+- Generational contrasts
 
-### 🌍 Cultural-Geographic Context: East Asian Business Practices
-The article's discussion of semiconductor manufacturing reflects specific East Asian business hierarchies and decision-making processes. In Japanese corporate culture, such transitions typically involve extensive consensus-building (nemawashi), which explains the gradual nature of the described changes.
+### 🎨 Creative Connections
+- Art world parallels
+- Literary echoes
+- Musical metaphors
+- Architectural analogies
+- Gaming dynamics
 
-### 📊 Technical Analysis: Manufacturing Precision
-The 3nm process mentioned requires understanding of regional variations in quality control standards. Japanese keiretsu systems traditionally emphasize different aspects of precision than Western manufacturing approaches, leading to distinct implementation methodologies.
+### 🧩 Pattern Recognition
+- Mathematical symmetries
+- Natural world parallels
+- Social physics
+- Economic rhythms
+- Evolutionary echoes
+
+### 🎬 Scene Shifts
+- Behind the curtain
+- Alternative endings
+- Untold beginnings
+- Parallel universes
+- What-if scenarios
+
+### 🌱 Seeds of Change
+- Small triggers
+- Butterfly effects
+- Hidden catalysts
+- Quiet revolutions
+- Gradual transformations
+
+### 🎯 Precision Focus
+- Crucial details
+- Pivotal moments
+- Key decisions
+- Critical junctures
+- Defining elements
+
+## Writing Guidelines
+For each chosen category:
+1. Open with a compelling focus statement
+2. Weave specific examples throughout
+3. Connect insights to broader patterns
+4. Ground analysis in cultural context
+5. Draw unexpected parallels
+6. Reveal hidden implications
+
+## Style Notes
+- Write with clarity and conviction
+- Let insights flow naturally
+- Draw connections without announcing them
+- Use vivid, specific language
+- Maintain narrative momentum
+- Embrace complexity while remaining accessible
+
+## Example:
+
+### 🌍 Cultural Lens: Silicon Valley Meets East Asia
+Silicon Valley's rapid iteration culture collides with East Asian consensus-building traditions in fascinating ways. Where American tech firms might push for immediate deployment, Japanese and Korean companies typically engage in extensive nemawashi - building alignment through careful consultation. This cultural tension shapes everything from development timelines to feature prioritization.
+
+### 💡 Global Patterns: Innovation Cycles
+The semiconductor industry's current transformation mirrors similar shifts in steel manufacturing during the 1970s. Just as Japanese companies revolutionized steel through quality control innovations, Taiwan's TSMC redefined semiconductor manufacturing through specialized foundry services. These parallel transformations reveal how industry leadership often shifts through process innovation rather than product breakthroughs.
 
 {write_in_clear_english}
 {dont_tell_me}"#,
