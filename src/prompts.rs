@@ -896,129 +896,92 @@ Return ONLY one of these exact words: official, academic, questionable, corporat
 
 pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
-        r#" {context}
-## ARTICLE (FOR ADDITIONAL INSIGHTS):
-## {article}
+        r#"
+{context}
+## Source Material
+----------
+{article}
+----------
 
-IMPORTANT INSTRUCTIONS:
-* **Having analyzed the article above, share your broader insights.**
-* **For non-English content, include translations where relevant.**
-* **Share ONLY insights that are NOT mentioned in the article above.**
-* **Do NOT repeat or rephrase information from the article.**
-* **All insights must add NEW information or perspectives.**
-* **For non-English content, include translations where relevant.**
+## Core Analysis Requirements
 
-### **Content Requirements**
-* **MUST BE:**
-  - New information not found in the article
-  - Related to but distinct from article content
-  - Based on your knowledge or analysis
-  - Complementary to the article's topic
+### Primary Guidelines
+- Provide novel insights beyond the article content
+- Include cultural and linguistic context for non-English sources
+- Maintain relevance while avoiding redundancy
+- Support claims with specific examples
 
-* **MUST NOT BE:**
-  - Restatements of article content
-  - Summaries of points already made
-  - Direct implications already discussed
-  - Obviously connected conclusions
+### Cultural-Linguistic Considerations
+- Consider source country's cultural context
+- Note language-specific nuances in translation
+- Acknowledge regional perspectives
+- Highlight cultural assumptions in reporting
 
-### **Response Categories**
-Choose 2-4 categories that are most relevant:
+## Analysis Categories
+*Select 2-4 most relevant categories:*
 
-**Historical Context**
-* Related historical events
-* Previous similar situations
-* Historical patterns
-* Evolution of the issue
+### 🌍 Cultural-Geographic Context
+- Regional power dynamics
+- Local vs global perspectives
+- Cultural biases in reporting
+- Historical regional context
 
-**Technical Details**
-* Scientific principles
-* Technological aspects
-* Methodological insights
-* Technical clarifications
+### 📊 Technical Analysis
+- Scientific foundations
+- Methodological approach
+- Technical terminology clarification
+- Implementation details
 
-**Cultural Perspectives**
-* Cultural implications
-* Social context
-* Regional variations
-* Traditional practices
+### 💡 Comparative Insights
+- Similar cases globally
+- Regional variations
+- Cross-cultural patterns
+- Alternative approaches
 
-**Economic Implications**
-* Market effects
-* Economic patterns
-* Financial contexts
-* Resource considerations
+### 📈 Impact Assessment
+- Short-term implications
+- Long-term consequences
+- Regional effects
+- Global ripple effects
 
-**Scientific Background**
-* Related research
-* Scientific principles
-* Environmental factors
-* Technical foundations
+### 🤔 Critical Perspectives
+- Alternative viewpoints
+- Cultural blind spots
+- Unstated assumptions
+- Missing context
 
-**Practical Applications**
-* Real-world uses
-* Implementation insights
-* Practical challenges
-* Solution approaches
+### 🔮 Future Projections
+- Likely developments
+- Cultural shifts
+- Regional changes
+- Global trends
 
-**Future Implications**
-* Potential developments
-* Emerging trends
-* Possible outcomes
-* Related innovations
+## Response Structure
 
-**Humorous Observations**
-* Ironic coincidences
-* Amusing parallels
-* Unexpected connections
-* Light-hearted implications
-
-**Theoretical Conclusions**
-* Hypothetical outcomes
-* Theoretical frameworks
-* Conceptual models
-* Alternative interpretations
-
-**Thought Provoking Questions**
-* Philosophical implications
-* Ethical considerations
-* Societal reflections
-* Future scenarios
-
-### **Response Format**
-For each chosen category:
-
+### For Each Category
 **Header:**
-* Use category name
-* Include 1-2 word subtitle
+- Category name
+- Brief focus statement
 
 **Content:**
-* 2-3 sentences of relevant insights
-* Include specific examples
-* Reference related knowledge
-* Share unique perspectives
-* Explicitly state how this adds new information
-* Explain why this wasn't covered in the article
-* Connect to but don't repeat article content
+- Key insights (2-3 sentences)
+- Supporting evidence
+- Cultural/regional context
+- Connection to article
 
-**Connections:**
-* Link insights to article content
-* Explain relevance
-* Maintain focus
+**Analysis:**
+- Why this adds value
+- How it complements the article
+- Cultural/linguistic considerations
 
-**EXAMPLE OUTPUT:**
-### Historical Context: Trade Patterns
-The described shift in semiconductor manufacturing mirrors similar industrial relocations during the 1980s textile industry transformation. Japanese manufacturers faced comparable challenges with rising labor costs and regulatory changes, leading to a strategic pivot toward automated production and regional diversification.
+## Example Output:
 
-### Technical Details: Chip Architecture
-The 3nm process mentioned in the article represents a significant advance in transistor density, enabling approximately 250 million transistors per square millimeter. This architecture requires extreme ultraviolet lithography, a technology that took over 20 years to develop and costs approximately $120 million per machine.
+### 🌍 Cultural-Geographic Context: East Asian Business Practices
+The article's discussion of semiconductor manufacturing reflects specific East Asian business hierarchies and decision-making processes. In Japanese corporate culture, such transitions typically involve extensive consensus-building (nemawashi), which explains the gradual nature of the described changes.
 
-### Future Implications: Supply Chain
-Similar geographic diversification efforts in other industries suggest this shift could trigger a broader manufacturing ecosystem development in the target regions. The semiconductor industry's high precision requirements typically lead to clustering of supporting industries within a 200-mile radius of major facilities.
+### 📊 Technical Analysis: Manufacturing Precision
+The 3nm process mentioned requires understanding of regional variations in quality control standards. Japanese keiretsu systems traditionally emphasize different aspects of precision than Western manufacturing approaches, leading to distinct implementation methodologies.
 
-### Humorous Observations: Unintended Parallels
-The article's description of AI language models struggling with basic arithmetic mirrors the common human experience of confidently giving wrong directions. Just as GPT-4 might insist that 2+2=5 with perfect grammar and compelling reasoning, humans often provide detailed directions to the wrong location with absolute certainty.
-
-Now provide your insights on the article above:
 {write_in_clear_english}
 {dont_tell_me}"#,
         context = global_context(pub_date),
