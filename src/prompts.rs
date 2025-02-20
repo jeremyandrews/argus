@@ -210,24 +210,41 @@ pub fn tiny_summary_prompt(summary_response: &str) -> String {
 {summary}
 ~~~
 
-Create a single sentence summary of maximum 400 characters that:
-* Captures the most essential information
-* For multi-topic articles:
-  - Indicate the variety of topics (e.g., "In a week of diverse developments...")
-  - Use connecting words or ";" for related topics
-  - Maintain topic relationships
-* Preserve chronological order if present
-* Include key numbers and dates
-* Use active voice
+Create a single sentence summary that:
+* PREFERRED LENGTH: 200 characters or less
+* MAXIMUM LENGTH: 400 characters (only if needed for accuracy)
+* Must capture all essential information
+* Must be complete and accurate
+* Must use active voice
 
-**EXAMPLE (Single Topic):**
+### **Length Guidelines:**
+* Try to stay within 200 characters
+* Only exceed 200 characters if essential details would be lost
+* Never exceed 400 characters
+* Prioritize conciseness without sacrificing key information
+
+### **Content Requirements:**
+For single-topic articles:
+* Focus on primary event/finding
+* Include key numbers and dates
+* Maintain chronological order if relevant
+
+For multi-topic articles:
+* Begin with "In a week/day of developments..."
+* Use semicolons (;) to separate topics
+* Maintain topic relationships
+* Preserve chronological order
+
+**EXAMPLE (Single Topic - 147 chars):**
 "SpaceX's March 15 satellite launch achieved 98% deployment accuracy while cutting costs by 15%, marking a significant advance in commercial space operations."
 
-**EXAMPLE (Multi-Topic):**
-"In a week of major developments, the Fed raised rates 0.25%, Australian wildfires prompted $200M in emergency aid, and Apple's AR headset launch garnered 100,000 pre-orders."
+**EXAMPLE (Multi-Topic - 185 chars):**
+"In a week of developments, the Fed raised rates 0.25%; Australian wildfires prompted $200M in aid; Apple's AR headset launch garnered 100,000 pre-orders."
+
+**EXAMPLE (Extended when necessary - 315 chars):**
+"In response to severe drought conditions affecting 12 million residents across three states, the government approved a $5B emergency water infrastructure package, implementing immediate usage restrictions and funding desalination projects to secure long-term water supplies."
 
 {write_in_clear_english}
-
 {dont_tell_me}"#,
         summary = summary_response,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
@@ -874,6 +891,140 @@ Return ONLY one of these exact words: official, academic, questionable, corporat
 {dont_tell_me}"#,
         analysis = source_analysis,
         url = article_url,
+        dont_tell_me = DONT_TELL_ME
+    )
+}
+
+pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) -> String {
+    format!(
+        r#" {context}
+## ARTICLE (FOR ADDITIONAL INSIGHTS):
+## {article}
+
+IMPORTANT INSTRUCTIONS:
+* **Having analyzed the article above, share your broader insights.**
+* **For non-English content, include translations where relevant.**
+* **Share ONLY insights that are NOT mentioned in the article above.**
+* **Do NOT repeat or rephrase information from the article.**
+* **All insights must add NEW information or perspectives.**
+* **For non-English content, include translations where relevant.**
+
+### **Content Requirements**
+* **MUST BE:**
+  - New information not found in the article
+  - Related to but distinct from article content
+  - Based on your knowledge or analysis
+  - Complementary to the article's topic
+
+* **MUST NOT BE:**
+  - Restatements of article content
+  - Summaries of points already made
+  - Direct implications already discussed
+  - Obviously connected conclusions
+
+### **Response Categories**
+Choose 2-4 categories that are most relevant:
+
+**Historical Context**
+* Related historical events
+* Previous similar situations
+* Historical patterns
+* Evolution of the issue
+
+**Technical Details**
+* Scientific principles
+* Technological aspects
+* Methodological insights
+* Technical clarifications
+
+**Cultural Perspectives**
+* Cultural implications
+* Social context
+* Regional variations
+* Traditional practices
+
+**Economic Implications**
+* Market effects
+* Economic patterns
+* Financial contexts
+* Resource considerations
+
+**Scientific Background**
+* Related research
+* Scientific principles
+* Environmental factors
+* Technical foundations
+
+**Practical Applications**
+* Real-world uses
+* Implementation insights
+* Practical challenges
+* Solution approaches
+
+**Future Implications**
+* Potential developments
+* Emerging trends
+* Possible outcomes
+* Related innovations
+
+**Humorous Observations**
+* Ironic coincidences
+* Amusing parallels
+* Unexpected connections
+* Light-hearted implications
+
+**Theoretical Conclusions**
+* Hypothetical outcomes
+* Theoretical frameworks
+* Conceptual models
+* Alternative interpretations
+
+**Thought Provoking Questions**
+* Philosophical implications
+* Ethical considerations
+* Societal reflections
+* Future scenarios
+
+### **Response Format**
+For each chosen category:
+
+**Header:**
+* Use category name
+* Include 1-2 word subtitle
+
+**Content:**
+* 2-3 sentences of relevant insights
+* Include specific examples
+* Reference related knowledge
+* Share unique perspectives
+* Explicitly state how this adds new information
+* Explain why this wasn't covered in the article
+* Connect to but don't repeat article content
+
+**Connections:**
+* Link insights to article content
+* Explain relevance
+* Maintain focus
+
+**EXAMPLE OUTPUT:**
+### Historical Context: Trade Patterns
+The described shift in semiconductor manufacturing mirrors similar industrial relocations during the 1980s textile industry transformation. Japanese manufacturers faced comparable challenges with rising labor costs and regulatory changes, leading to a strategic pivot toward automated production and regional diversification.
+
+### Technical Details: Chip Architecture
+The 3nm process mentioned in the article represents a significant advance in transistor density, enabling approximately 250 million transistors per square millimeter. This architecture requires extreme ultraviolet lithography, a technology that took over 20 years to develop and costs approximately $120 million per machine.
+
+### Future Implications: Supply Chain
+Similar geographic diversification efforts in other industries suggest this shift could trigger a broader manufacturing ecosystem development in the target regions. The semiconductor industry's high precision requirements typically lead to clustering of supporting industries within a 200-mile radius of major facilities.
+
+### Humorous Observations: Unintended Parallels
+The article's description of AI language models struggling with basic arithmetic mirrors the common human experience of confidently giving wrong directions. Just as GPT-4 might insist that 2+2=5 with perfect grammar and compelling reasoning, humans often provide detailed directions to the wrong location with absolute certainty.
+
+Now provide your insights on the article above:
+{write_in_clear_english}
+{dont_tell_me}"#,
+        context = global_context(pub_date),
+        article = article_text,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
 }
