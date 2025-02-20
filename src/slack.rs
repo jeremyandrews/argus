@@ -155,24 +155,40 @@ pub async fn send_to_slack(
             ("*Argus Speaks*", additional_insights),
         ];
 
+        // In the sections loop, add chunking for long content:
         for (title, content) in sections {
             if !content.is_empty() {
-                let thread_payload = json!({
-                    "channel": channel,
-                    "thread_ts": ts,
-                    "blocks": [
-                        { "type": "divider" },
-                        {
-                            "type": "section",
-                            "text": { "type": "mrkdwn", "text": format!("{}\n{}", title, content) }
-                        }
-                    ],
-                    "unfurl_links": true,
-                    "unfurl_media": false,
-                });
+                // Split long content into chunks of approximately 3000 characters
+                // (Slack's limit is around 4000, but we'll be conservative)
+                let chunks: Vec<&str> = content
+                    .as_bytes()
+                    .chunks(3000)
+                    .map(|chunk| std::str::from_utf8(chunk).unwrap_or(""))
+                    .collect();
 
-                send_slack_message(&client, slack_token, &thread_payload, &worker_id).await;
-                tokio::time::sleep(Duration::from_secs(1)).await; // Small delay to prevent rate limiting
+                for (i, chunk) in chunks.iter().enumerate() {
+                    let section_title = if chunks.len() > 1 {
+                        format!("{} (Part {})", title, i + 1)
+                    } else {
+                        title.to_string()
+                    };
+
+                    let thread_payload = json!({
+                        "channel": channel,
+                        "thread_ts": ts,
+                        "blocks": [
+                            { "type": "divider" },
+                            {
+                                "type": "section",
+                                "text": { "type": "mrkdwn", "text": format!("{}\n{}", section_title, chunk) }
+                            }
+                        ],
+                        "unfurl_links": false,
+                        "unfurl_media": false,
+                    });
+                    send_slack_message(&client, slack_token, &thread_payload, &worker_id).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
             }
         }
 
