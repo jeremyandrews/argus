@@ -1,6 +1,6 @@
 use regex::Regex;
 use reqwest::{header::HeaderValue, Client};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, warn};
@@ -57,29 +57,28 @@ fn deduplicate_markdown(text: &str) -> String {
 
 /// Sends the formatted article to the Slack channel.
 pub async fn send_to_slack(
-    article: &str,
+    _article: &str,
     response: &str,
     slack_token: &str,
     default_channel: &str,
 ) {
-    // Parse the TOPICS environment variable to get the topic-to-channel mappings
-    let topics = std::env::var("TOPICS").unwrap().replace('\n', "");
+    let topics = std::env::var("TOPICS")
+        .unwrap_or_default()
+        .replace('\n', "");
     let topic_mappings: HashMap<&str, (&str, Option<&str>)> = topics
         .split(';')
         .filter_map(|entry| {
             let mut parts = entry.trim().splitn(3, ':');
             let topic_name = parts.next()?.trim();
             let topic_prompt = parts.next()?.trim();
-            let channel = parts.next().map(|ch| ch.trim()); // Optional channel
+            let channel = parts.next().map(|ch| ch.trim());
             Some((topic_name, (topic_prompt, channel)))
         })
         .collect();
 
     let client = Client::new();
-    let worker_id = format!("{:?}", std::thread::current().id()); // Retrieve the worker number
+    let worker_id = format!("{:?}", std::thread::current().id());
 
-    // Parse response JSON
-    debug!(target: TARGET_WEB_REQUEST, "Worker {}: Parsing response JSON", worker_id);
     let response_json: serde_json::Value = match serde_json::from_str(response) {
         Ok(json) => json,
         Err(err) => {
@@ -92,47 +91,31 @@ pub async fn send_to_slack(
         .as_str()
         .unwrap_or("No topic available")
         .trim();
-
-    // Determine the Slack channel based on the matched topic
     let channel = topic_mappings
         .get(topic)
         .and_then(|(_, channel)| *channel)
         .unwrap_or(default_channel);
 
-    let summary = deduplicate_markdown(
-        response_json["summary"]
-            .as_str()
-            .unwrap_or("No summary available"),
-    );
-    let tiny_summary = deduplicate_markdown(
-        response_json["tiny_summary"]
-            .as_str()
-            .unwrap_or("No tiny summary available"),
-    );
-    let critical_analysis = deduplicate_markdown(
-        response_json["critical_analysis"]
-            .as_str()
-            .unwrap_or("No critical analysis available"),
-    );
-    let logical_fallacies = deduplicate_markdown(
-        response_json["logical_fallacies"]
-            .as_str()
-            .unwrap_or("No logical fallacies available"),
-    );
-    let relation_to_topic = deduplicate_markdown(
-        response_json["relation_to_topic"]
-            .as_str()
-            .unwrap_or("No relation to topic available"),
-    );
-    let source_analysis = deduplicate_markdown(
-        response_json["source_analysis"]
-            .as_str()
-            .unwrap_or("No source analysis available"),
-    );
-    let model = deduplicate_markdown(response_json["model"].as_str().unwrap_or("Unknown model"));
+    let tiny_title = deduplicate_markdown(response_json["tiny_title"].as_str().unwrap_or(""));
+    let tiny_summary = deduplicate_markdown(response_json["tiny_summary"].as_str().unwrap_or(""));
+    let summary = deduplicate_markdown(response_json["summary"].as_str().unwrap_or(""));
+    let critical_analysis =
+        deduplicate_markdown(response_json["critical_analysis"].as_str().unwrap_or(""));
+    let logical_fallacies =
+        deduplicate_markdown(response_json["logical_fallacies"].as_str().unwrap_or(""));
+    let relation_to_topic =
+        deduplicate_markdown(response_json["relation_to_topic"].as_str().unwrap_or(""));
+    let source_analysis =
+        deduplicate_markdown(response_json["source_analysis"].as_str().unwrap_or(""));
+    let argus_speaks =
+        deduplicate_markdown(response_json["additional_insights"].as_str().unwrap_or(""));
+    let model = response_json["model"]
+        .as_str()
+        .unwrap_or("Unknown model")
+        .to_string();
     let elapsed_time = response_json["elapsed_time"].as_f64().unwrap_or(0.0);
 
-    // First message payload (title, topic, and tiny summary in a block)
+    // **Step 1: Send the initial message**
     let first_payload = json!({
         "channel": channel,
         "blocks": [
@@ -140,105 +123,74 @@ pub async fn send_to_slack(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": format!("{}\n{}", article, tiny_summary),
+                    "text": format!("{}\n{}", tiny_title, tiny_summary),
                 }
             },
         ],
         "unfurl_links": false,
         "unfurl_media": false,
     });
-    info!(target: TARGET_WEB_REQUEST, "Worker {}: Payload size: {} characters", worker_id, first_payload.to_string().len());
 
-    // Send the first message and get its 'ts' for threading
     if let Some(slack_response_json) =
         send_slack_message(&client, slack_token, &first_payload, &worker_id).await
     {
         let ts = slack_response_json["ts"].as_str().unwrap_or("").to_string();
         if ts.is_empty() {
             error!(target: TARGET_WEB_REQUEST, "Worker {}: Invalid ts returned from Slack", worker_id);
-        } else {
-            debug!(target: TARGET_WEB_REQUEST, "Worker {}: Using thread ts: {}", worker_id, ts);
+            return;
         }
 
-        // Build individual blocks for each section with dividers
-        let mut blocks: Vec<Value> = vec![];
+        // **Step 2: Send remaining content block by block in the thread**
+        let sections = vec![
+            ("*Relevance*", relation_to_topic),
+            ("*Summary*", summary),
+            ("*Critical Analysis*", critical_analysis),
+            ("*Logical Fallacies*", logical_fallacies),
+            ("*Source Analysis*", source_analysis),
+            ("*Argus Speaks*", argus_speaks),
+        ];
 
-        if !relation_to_topic.is_empty() {
-            add_section_with_divider(
-                &mut blocks,
-                format!(
-                    "*Relevance*\n{}\n\n_Generated with *{}* in {:.2} seconds._\n",
-                    relation_to_topic, model, elapsed_time
-                ),
-            );
+        for (title, content) in sections {
+            if !content.is_empty() {
+                let thread_payload = json!({
+                    "channel": channel,
+                    "thread_ts": ts,
+                    "blocks": [
+                        { "type": "divider" },
+                        {
+                            "type": "section",
+                            "text": { "type": "mrkdwn", "text": format!("{}\n{}", title, content) }
+                        }
+                    ],
+                    "unfurl_links": false,
+                    "unfurl_media": false,
+                });
+
+                send_slack_message(&client, slack_token, &thread_payload, &worker_id).await;
+                tokio::time::sleep(Duration::from_secs(1)).await; // Small delay to prevent rate limiting
+            }
         }
 
-        if !summary.is_empty() {
-            add_section_with_divider(&mut blocks, format!("*Summary*\n{}", summary));
-        }
-
-        if !critical_analysis.is_empty() {
-            add_section_with_divider(
-                &mut blocks,
-                format!("*Critical Analysis*\n{}", critical_analysis),
-            );
-        }
-
-        if !logical_fallacies.is_empty() {
-            add_section_with_divider(
-                &mut blocks,
-                format!("*Logical Fallacies*\n{}", logical_fallacies),
-            );
-        }
-
-        if !source_analysis.is_empty() {
-            add_section_with_divider(
-                &mut blocks,
-                format!("*Source Analysis*\n{}", source_analysis),
-            );
-        }
-
-        if !article.is_empty() {
-            add_section_with_divider(&mut blocks, article.to_string());
-        }
-
-        let thread_payload = json!({
+        // **Step 3: Send final block with model details**
+        let final_payload = json!({
             "channel": channel,
             "thread_ts": ts,
-            "blocks": blocks,
-            "unfurl_links": true,
-            "unfurl_media": true,
+            "blocks": [
+                { "type": "divider" },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": format!("_Generated using model _{} in {:.2} seconds._", model, elapsed_time)
+                    }
+                }
+            ],
+            "unfurl_links": false,
+            "unfurl_media": false,
         });
-        info!(target: TARGET_WEB_REQUEST, "Worker {}: Thread payload size: {} characters", worker_id, thread_payload.to_string().len());
 
-        // Send the second message in the thread
-        if let Some(slack_response_json) =
-            send_slack_message(&client, slack_token, &thread_payload, &worker_id).await
-        {
-            info!(
-                "Worker {}: Slack accepted message: {}",
-                worker_id, slack_response_json
-            );
-        } else {
-            error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to send Slack message", worker_id);
-        }
-    } else {
-        error!(target: TARGET_WEB_REQUEST, "Worker {}: Failed to send first Slack message", worker_id);
+        send_slack_message(&client, slack_token, &final_payload, &worker_id).await;
     }
-}
-
-// Function to add a section followed by a divider
-fn add_section_with_divider(blocks: &mut Vec<serde_json::Value>, section_text: String) {
-    blocks.push(json!({
-        "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": section_text
-        }
-    }));
-    blocks.push(json!({
-        "type": "divider"
-    }));
 }
 
 // Helper function to send a Slack message with retries
