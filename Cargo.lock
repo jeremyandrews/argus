@@ -105,7 +105,7 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "argus"
-version = "0.10.13"
+version = "0.10.14"
 dependencies = [
  "anyhow",
  "async-openai",
