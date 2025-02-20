@@ -906,12 +906,24 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 {article}
 ----------
 
+## Core Requirements 
+- Analyze the article's content, not the global context
+- Reveal deeper context and connections beyond the article's surface details
+- Illuminate cultural nuances and regional perspectives specific to the article
+- Draw unexpected parallels and insights that enhance understanding of the article
+- Ground claims in concrete examples from or related to the article's content
+
 ## Analysis Requirements
-- Choose 2-3 most relevant categories
+- Choose 2-3 primary analysis categories that best match your article's core themes and content
+- Choose 1-3 creative analysis categories that best enhance or contrast your article's core themes and content
+- Avoid defaulting to the categories in the example unless they trul are most relevant
+- Focus exclusively on insights that deepen understanding of the article
+- Draw connections that illuminate the article's content
 - Provide 2-4 key insights per chosen category
-- Keep each insight to 1-2 clear sentences
+- Each insight should be 15-30 words, balancing brevity with substance
 - Ground insights in specific examples
-- Reference global context only when directly relevant
+- Only reference global context when it directly impacts article interpretation
+- Avoid general commentary unrelated to the article
 
 ## Primary Analysis Categories
 ### 🌍 Cultural Lens
@@ -1023,15 +1035,20 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Defining elements
 
 ## Example Output:
-### 🌍 Cultural Lens
-- Bond franchise's move to Amazon reflects shifting power dynamics between traditional studios and tech giants
-- Broccoli family's continued control shows the enduring value of legacy stewardship in British media
-- The franchise balances tradition with innovation, maintaining core appeal while adapting to new platforms
+### 📊 Technical Depth
+- The quantum chip's new architecture integrates superconducting circuits with traditional silicon, enabling unprecedented coherence times while maintaining scalability for commercial applications
+- Error correction protocols now handle environmental noise through a distributed network of sensors, reducing decoherence by 60% compared to previous generations
+- Novel gate designs incorporate machine learning optimization, allowing quantum operations to execute 40% faster while maintaining high fidelity
 
-### 📈 Ripple Effects
-- Amazon's $8.45B MGM acquisition signals tech companies' growing influence in entertainment
-- Streaming platforms are reshaping how iconic franchises reach global audiences
-- Traditional cinema experiences face new challenges as premium content moves to streaming
+### 🔮 Future Threads
+- As quantum systems approach practical advantage in specific domains, pharmaceutical companies are already developing hybrid classical-quantum workflows for drug discovery
+- The convergence of quantum computing with AI could revolutionize financial modeling by 2026, though regulatory frameworks remain uncertain
+- Early industry partnerships suggest quantum technology will follow a cloud-service model rather than personal computing paradigm
+
+### 🧩 Pattern Recognition
+- Like the transition from vacuum tubes to transistors, this quantum breakthrough combines materials innovation with clever engineering workarounds to solve scaling limitations
+- The industry's collaborative approach to error correction mirrors early classical computing, where shared standards accelerated development across competing platforms
+- Current quantum scaling challenges echo semiconductor manufacturing hurdles of the 1970s, suggesting similar solutions might apply
 
 {write_in_clear_english}
 {dont_tell_me}"#,
