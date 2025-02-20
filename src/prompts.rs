@@ -897,32 +897,23 @@ Return ONLY one of these exact words: official, academic, questionable, corporat
 pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
         r#"# Analysis Framework
-
 ## Global Context (Reference Only)
 {context}
-*Note: Only reference global context if directly relevant to analyzing the article*
+_Note: Only reference global context if directly relevant to analyzing the article_
 
-## Source Material for Analysis
+## Source Material
 ----------
 {article}
 ----------
 
-## Core Requirements
-- Analyze the article's content, not the global context
-- Reveal deeper context and connections beyond the article's surface details
-- Illuminate cultural nuances and regional perspectives specific to the article
-- Draw unexpected parallels and insights that enhance understanding of the article
-- Ground claims in concrete examples from or related to the article's content
-
-## Analysis Scope
-- Focus exclusively on insights that deepen understanding of the article
-- Only reference global context when it directly impacts article interpretation
-- Draw connections that illuminate the article's content
-- Avoid general commentary unrelated to the article
+## Analysis Requirements
+- Choose 2-3 most relevant categories
+- Provide 2-4 key insights per chosen category
+- Keep each insight to 1-2 clear sentences
+- Ground insights in specific examples
+- Reference global context only when directly relevant
 
 ## Primary Analysis Categories
-*Choose 2-4 categories that offer the richest insights:*
-
 ### 🌍 Cultural Lens
 - Power dynamics and hierarchies
 - Local traditions and values
@@ -935,7 +926,7 @@ pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) ->
 - Hidden complexities
 - System interactions
 - Engineering challenges
-- Implementation nuances
+- Implementation details
 
 ### 💡 Global Patterns
 - Cross-cultural parallels
@@ -947,7 +938,7 @@ pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) ->
 ### 📈 Ripple Effects
 - Industry transformations
 - Societal shifts
-- Economic reverberations
+- Economic impacts
 - Political implications
 - Cultural evolution
 
@@ -1031,30 +1022,16 @@ pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) ->
 - Critical junctures
 - Defining elements
 
-## Writing Guidelines
-For each chosen category:
-1. Open with a compelling focus statement
-2. Weave specific examples throughout
-3. Connect insights to broader patterns
-4. Ground analysis in cultural context
-5. Draw unexpected parallels
-6. Reveal hidden implications
+## Example Output:
+### 🌍 Cultural Lens
+- Bond franchise's move to Amazon reflects shifting power dynamics between traditional studios and tech giants
+- Broccoli family's continued control shows the enduring value of legacy stewardship in British media
+- The franchise balances tradition with innovation, maintaining core appeal while adapting to new platforms
 
-## Style Notes
-- Write with clarity and conviction
-- Let insights flow naturally
-- Draw connections without announcing them
-- Use vivid, specific language
-- Maintain narrative momentum
-- Embrace complexity while remaining accessible
-
-## Example:
-
-### 🌍 Cultural Lens: Silicon Valley Meets East Asia
-Silicon Valley's rapid iteration culture collides with East Asian consensus-building traditions in fascinating ways. Where American tech firms might push for immediate deployment, Japanese and Korean companies typically engage in extensive nemawashi - building alignment through careful consultation. This cultural tension shapes everything from development timelines to feature prioritization.
-
-### 💡 Global Patterns: Innovation Cycles
-The semiconductor industry's current transformation mirrors similar shifts in steel manufacturing during the 1970s. Just as Japanese companies revolutionized steel through quality control innovations, Taiwan's TSMC redefined semiconductor manufacturing through specialized foundry services. These parallel transformations reveal how industry leadership often shifts through process innovation rather than product breakthroughs.
+### 📈 Ripple Effects
+- Amazon's $8.45B MGM acquisition signals tech companies' growing influence in entertainment
+- Streaming platforms are reshaping how iconic franchises reach global audiences
+- Traditional cinema experiences face new challenges as premium content moves to streaming
 
 {write_in_clear_english}
 {dont_tell_me}"#,
