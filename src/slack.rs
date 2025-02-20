@@ -113,6 +113,17 @@ pub async fn send_to_slack(
             .unwrap_or("")
             .trim(),
     );
+    info!(target: TARGET_WEB_REQUEST,
+        "Worker {}: Additional insights before processing: {:?}",
+        worker_id,
+        response_json["additional_insights"]
+    );
+    info!(target: TARGET_WEB_REQUEST,
+        "Worker {}: Additional insights after processing: {:?}",
+        worker_id,
+        additional_insights
+    );
+
     let model = response_json["model"]
         .as_str()
         .unwrap_or("Unknown model")
