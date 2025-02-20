@@ -156,7 +156,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_ip_logs_ip_address ON ip_logs (ip_address);
             "#,
         )
-        .execute(&mut conn)
+        .execute(&mut *conn)
         .await?;
         info!(target: TARGET_DB, "Tables ensured to exist");
 
@@ -267,7 +267,7 @@ impl Database {
                 "#,
         )
         .bind(device_token)
-        .execute(&mut transaction)
+        .execute(&mut *transaction)
         .await?;
 
         // Delete the device itself
@@ -278,7 +278,7 @@ impl Database {
                 "#,
         )
         .bind(device_token)
-        .execute(&mut transaction)
+        .execute(&mut *transaction)
         .await?;
 
         // Commit the transaction
@@ -542,7 +542,7 @@ impl Database {
             LIMIT 1
             "#,
         )
-        .fetch_optional(&mut transaction)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = row {
@@ -558,7 +558,7 @@ impl Database {
 
             sqlx::query("DELETE FROM life_safety_queue WHERE id = ?1")
                 .bind(id)
-                .execute(&mut transaction)
+                .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
             debug!(target: TARGET_DB, "Fetched and deleted item from life safety queue: {}", article_url);
@@ -752,7 +752,7 @@ impl Database {
                     LIMIT 1
                     "#
                 )
-                .fetch_optional(&mut transaction)
+                .fetch_optional(&mut *transaction)
                 .await?
             },
             "newest" => {
@@ -766,7 +766,7 @@ impl Database {
                     LIMIT 1
                     "#
                 )
-                .fetch_optional(&mut transaction)
+                .fetch_optional(&mut *transaction)
                 .await?
             },
             _ => {
@@ -780,7 +780,7 @@ impl Database {
                     LIMIT 1
                     "#
                 )
-                .fetch_optional(&mut transaction)
+                .fetch_optional(&mut *transaction)
                 .await?
             }
         };
@@ -792,7 +792,7 @@ impl Database {
             let pub_date: Option<String> = row.get("pub_date"); // <-- retrieve it
             sqlx::query("DELETE FROM rss_queue WHERE normalized_url = ?1")
                 .bind(&normalized_url)
-                .execute(&mut transaction)
+                .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
             Ok(Some((url, title, pub_date)))
@@ -838,7 +838,7 @@ impl Database {
             LIMIT 1
             "#,
         )
-        .fetch_optional(&mut transaction)
+        .fetch_optional(&mut *transaction)
         .await?;
 
         if let Some(row) = row {
@@ -854,7 +854,7 @@ impl Database {
 
             sqlx::query("DELETE FROM matched_topics_queue WHERE id = ?1")
                 .bind(id)
-                .execute(&mut transaction)
+                .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
             debug!(target: TARGET_DB, "Fetched and deleted item from matched topics queue: {}", article_url);
