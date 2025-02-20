@@ -210,39 +210,38 @@ pub fn tiny_summary_prompt(summary_response: &str) -> String {
 {summary}
 ~~~
 
-Create a single sentence summary that:
-* PREFERRED LENGTH: 200 characters or less
-* MAXIMUM LENGTH: 400 characters (only if needed for accuracy)
-* Must capture all essential information
-* Must be complete and accurate
+CREATE ONE SENTENCE:
+* TARGET LENGTH: 200 characters
+* ABSOLUTE MAXIMUM: 400 characters
+* If your sentence reaches 400 characters, start over and prioritize better
+* Never leave an incomplete thought or hanging sentence
+
+REQUIREMENTS:
+* Must fit in a tweet
+* Must prioritize most important information
+* Must drop less critical details
 * Must use active voice
-
-### **Length Guidelines:**
-* Try to stay within 200 characters
-* Only exceed 200 characters if essential details would be lost
-* Never exceed 400 characters
-* Prioritize conciseness without sacrificing key information
-
-### **Content Requirements:**
-For single-topic articles:
-* Focus on primary event/finding
-* Include key numbers and dates
-* Maintain chronological order if relevant
+* Must be ONE complete, coherent sentence
 
 For multi-topic articles:
-* Begin with "In a week/day of developments..."
-* Use semicolons (;) to separate topics
-* Maintain topic relationships
-* Preserve chronological order
+* Use "In [timeframe], [main event]; [second event]; [third event]"
+* Drop minor events to stay within length
+* Keep only the most significant numbers/dates
+* Plan your sentence before writing to ensure completion within limit
 
-**EXAMPLE (Single Topic - 147 chars):**
-"SpaceX's March 15 satellite launch achieved 98% deployment accuracy while cutting costs by 15%, marking a significant advance in commercial space operations."
+EXAMPLES OF CORRECT LENGTH:
 
-**EXAMPLE (Multi-Topic - 185 chars):**
-"In a week of developments, the Fed raised rates 0.25%; Australian wildfires prompted $200M in aid; Apple's AR headset launch garnered 100,000 pre-orders."
+**Perfect Length (178 chars):**
+"In February 2025, Trump imposed 25% tariffs on cars and semiconductors, ordered mass deportations, and reversed climate policies in his first month as president."
 
-**EXAMPLE (Extended when necessary - 315 chars):**
-"In response to severe drought conditions affecting 12 million residents across three states, the government approved a $5B emergency water infrastructure package, implementing immediate usage restrictions and funding desalination projects to secure long-term water supplies."
+**Acceptable Length (256 chars):**
+"In his first month as president, Trump imposed 25% tariffs on foreign goods, initiated deportations of undocumented migrants, and reversed environmental policies while denying climate change evidence."
+
+**INCORRECT APPROACH - DO NOT DO THIS:**
+"In his first month, Trump issued numerous executive orders including tariffs, deportations, and environmental reversals, while also renaming geographic features, changing straw policies..." [Incomplete at 400 characters]
+
+**CORRECT APPROACH - DO THIS INSTEAD:**
+"In February 2025, Trump's first month as president saw three major actions: 25% tariffs on foreign goods, mass deportation orders, and environmental policy reversals."
 
 {write_in_clear_english}
 {dont_tell_me}"#,
