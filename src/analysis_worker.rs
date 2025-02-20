@@ -515,6 +515,7 @@ async fn process_analysis_item(
                     sources_quality,
                     argument_quality,
                     source_type,
+                    additional_insights,
                 ) = process_analysis(
                     &article_text,
                     &article_html,
@@ -550,6 +551,7 @@ async fn process_analysis_item(
                     "logical_fallacies": logical_fallacies,
                     "relation_to_topic": relation_to_topic,
                     "source_analysis": source_analysis,
+                    "additional_insights": additional_insights,
                     "sources_quality": sources_quality,
                     "argument_quality": argument_quality,
                     "source_type": source_type,
@@ -657,6 +659,7 @@ async fn process_analysis_item(
                         sources_quality,
                         argument_quality,
                         source_type,
+                        additional_insights,
                     ) = process_analysis(
                         &article_text,
                         &article_html,
@@ -695,6 +698,7 @@ async fn process_analysis_item(
                             "logical_fallacies": logical_fallacies,
                             "relation_to_topic": relation,
                             "source_analysis": source_analysis,
+                            "additional_insights": additional_insights,
                             "sources_quality": sources_quality,
                             "argument_quality": argument_quality,
                             "source_type": source_type,
@@ -887,6 +891,7 @@ async fn process_analysis(
     u8,
     u8,
     String,
+    String,
 ) {
     debug!("Starting analysis for article: {}", article_url);
 
@@ -904,6 +909,7 @@ async fn process_analysis(
             2,
             2,
             String::from("none"),
+            String::new(),
         );
     }
 
@@ -924,6 +930,7 @@ async fn process_analysis(
                 2,
                 2,
                 String::from("none"),
+                String::new(),
             );
         }
     };
@@ -1025,6 +1032,18 @@ async fn process_analysis(
         None
     };
 
+    // Generate additional insights after other analyses are complete
+    let additional_insights = if !summary.is_empty() && !critical_analysis.is_empty() {
+        generate_llm_response(
+            &prompts::additional_insights_prompt(article_text, pub_date),
+            llm_params,
+            worker_detail,
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
     (
         summary,
         tiny_summary,
@@ -1036,5 +1055,6 @@ async fn process_analysis(
         sources_quality,
         argument_quality,
         source_type,
+        additional_insights,
     )
 }
