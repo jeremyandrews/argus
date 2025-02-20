@@ -89,13 +89,13 @@ pub async fn decision_loop(
                     continue;
                 }
 
-                // Parse pub_date and check if it's older than 7 days
+                // Parse pub_date and check if it's older than 3 days
                 let is_old_article = if let Some(date_str) = &pub_date {
                     NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                         .ok()
                         .map(|date| {
                             let now = Utc::now().date_naive();
-                            now.signed_duration_since(date) > ChronoDuration::days(7)
+                            now.signed_duration_since(date) > ChronoDuration::days(3)
                             // Use ChronoDuration here
                         })
                         .unwrap_or(false)
