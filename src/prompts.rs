@@ -914,18 +914,20 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Ground claims in concrete examples from or related to the article's content
 
 ## Analysis Requirements
-- Choose 2-3 primary analysis categories that best match your article's core themes and content
-- Choose 1-3 creative analysis categories that best enhance or contrast your article's core themes and content
-- Avoid defaulting to the categories in the example unless they trul are most relevant
-- Focus exclusively on insights that deepen understanding of the article
-- Draw connections that illuminate the article's content
-- Provide 2-4 key insights per chosen category
-- Each insight should be 15-30 words, balancing brevity with substance
-- Ground insights in specific examples
-- Only reference global context when it directly impacts article interpretation
-- Avoid general commentary unrelated to the article
+- Choose at least **one category from each of the following groups**:
+  - **Systemic Analysis:** (Technical Depth, Global Patterns, Hidden Dimensions)
+  - **Human & Cultural Impact:** (Cultural Lens, Ripple Effects, Character Studies)
+  - **Creative & Alternative Perspectives:** (Delightful Ironies, Pattern Recognition, Unexpected Angles, etc.)
+- Do **not** overuse Cultural Lens, Ripple Effects, or Character Studies unless uniquely fitting.
+- If the article discusses **technology, business, economics, or science**, prioritize at least one **Systemic Analysis** category.
+- If the article covers **a person or event**, consider Character Studies but balance it with a **Systemic or Historical** category.
+- Avoid overly broad or generic insights—focus on **specific, well-supported claims**.
+- When discussing cultural, economic, or societal impact, **avoid sweeping generalizations** and instead provide **concrete, precise examples**.
+- If an insight applies to nearly any article, reconsider its relevance to this one.
+- Provide **2-4 key insights** per chosen category.
+- Each insight should be **15-30 words**, balancing brevity with substance.
+- **Ground insights in specific examples**.
 
-## Primary Analysis Categories
 ### 🌍 Cultural Lens
 - Power dynamics and hierarchies
 - Local traditions and values
@@ -967,9 +969,6 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Cultural evolution
 - Technological convergence
 - Societal adaptation
-
-## Creative Analysis Options
-*Consider these for additional perspective when appropriate:*
 
 ### 😄 Delightful Ironies
 - Historical coincidences
@@ -1035,6 +1034,7 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Defining elements
 
 ## Example Output:
+
 ### 📊 Technical Depth
 - The quantum chip's new architecture integrates superconducting circuits with traditional silicon, enabling unprecedented coherence times while maintaining scalability for commercial applications
 - Error correction protocols now handle environmental noise through a distributed network of sensors, reducing decoherence by 60% compared to previous generations
