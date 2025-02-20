@@ -24,8 +24,9 @@ impl SystemInfo {
         sys.refresh_memory();
         sys.refresh_cpu_all(); // Changed from refresh_cpu()
 
-        let memory_total = sys.total_memory();
-        let memory_usage = sys.used_memory();
+        let memory_total = sys.total_memory() / 1024; // Convert bytes to KB
+        let memory_usage = sys.used_memory() / 1024; // Convert bytes to KB
+
         let cpu_usage = sys.global_cpu_usage(); // Changed from global_cpu_info().cpu_usage()
 
         let start_time = START_TIME.load(Ordering::SeqCst);
