@@ -889,116 +889,141 @@ async fn process_analysis(
     String,
 ) {
     debug!("Starting analysis for article: {}", article_url);
-    // Re-summarize the article with the analysis worker.
+
+    // First, verify we have content to analyze
+    if article_text.trim().is_empty() {
+        warn!("Empty article text, cannot perform analysis");
+        return (
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            None,
+            2,
+            2,
+            String::from("none"),
+        );
+    }
+
+    // Start with summary to establish base understanding
     let summary_prompt = prompts::summary_prompt(article_text, pub_date);
-    debug!("Generated summary prompt: {:?}", summary_prompt);
-    let summary = generate_llm_response(&summary_prompt, llm_params, worker_detail)
-        .await
-        .unwrap_or_else(|| {
-            warn!("Failed to generate summary");
-            String::new()
-        });
-    info!("Generated summary: {:?}", summary);
+    let summary = match generate_llm_response(&summary_prompt, llm_params, worker_detail).await {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => {
+            warn!("Failed to generate valid summary");
+            return (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                None,
+                2,
+                2,
+                String::from("none"),
+            );
+        }
+    };
 
-    // Now perform the rest of the analysis.
-    let tiny_summary_prompt = prompts::tiny_summary_prompt(&summary);
-    let tiny_title_prompt = prompts::tiny_title_prompt(&summary);
-    let critical_analysis_prompt = prompts::critical_analysis_prompt(article_text, pub_date);
-    let logical_fallacies_prompt = prompts::logical_fallacies_prompt(article_text, pub_date);
-    let source_analysis_prompt =
-        prompts::source_analysis_prompt(article_html, article_url, pub_date);
+    // Only proceed with other analyses if we have a valid summary
+    let tiny_summary = generate_llm_response(
+        &prompts::tiny_summary_prompt(&summary),
+        llm_params,
+        worker_detail,
+    )
+    .await
+    .unwrap_or_default();
 
-    debug!("Generated tiny summary prompt: {:?}", tiny_summary_prompt);
-    let tiny_summary = generate_llm_response(&tiny_summary_prompt, llm_params, worker_detail)
-        .await
-        .unwrap_or_else(|| {
-            warn!("Failed to generate tiny summary");
-            String::new()
-        });
-    info!("Generated tiny summary: {:?}", tiny_summary);
+    let tiny_title = generate_llm_response(
+        &prompts::tiny_title_prompt(&summary),
+        llm_params,
+        worker_detail,
+    )
+    .await
+    .unwrap_or_default();
 
-    debug!("Generated tiny title prompt: {:?}", tiny_title_prompt);
-    let tiny_title = generate_llm_response(&tiny_title_prompt, llm_params, worker_detail)
-        .await
-        .unwrap_or_else(|| {
-            warn!("Failed to generate tiny title");
-            String::new()
-        });
-    info!("Generated tiny title: {:?}", tiny_title);
+    // Critical analysis and logical fallacies need the full article text
+    let critical_analysis = generate_llm_response(
+        &prompts::critical_analysis_prompt(article_text, pub_date),
+        llm_params,
+        worker_detail,
+    )
+    .await
+    .unwrap_or_default();
 
-    debug!(
-        "Generated critical analysis prompt: {:?}",
-        critical_analysis_prompt
-    );
-    let critical_analysis =
-        generate_llm_response(&critical_analysis_prompt, llm_params, worker_detail)
-            .await
-            .unwrap_or_else(|| {
-                warn!("Failed to generate critical analysis");
-                String::new()
-            });
-    info!("Generated critical analysis: {:?}", critical_analysis);
+    let logical_fallacies = generate_llm_response(
+        &prompts::logical_fallacies_prompt(article_text, pub_date),
+        llm_params,
+        worker_detail,
+    )
+    .await
+    .unwrap_or_default();
 
-    debug!(
-        "Generated logical fallacies prompt: {:?}",
-        logical_fallacies_prompt
-    );
-    let logical_fallacies =
-        generate_llm_response(&logical_fallacies_prompt, llm_params, worker_detail)
-            .await
-            .unwrap_or_else(|| {
-                warn!("Failed to generate logical fallacies");
-                String::new()
-            });
-    info!("Generated logical fallacies: {:?}", logical_fallacies);
+    // Source analysis needs HTML and URL
+    let source_analysis = generate_llm_response(
+        &prompts::source_analysis_prompt(article_html, article_url, pub_date),
+        llm_params,
+        worker_detail,
+    )
+    .await
+    .unwrap_or_default();
 
-    debug!(
-        "Generated source analysis prompt: {:?}",
-        source_analysis_prompt
-    );
-    let source_analysis = generate_llm_response(&source_analysis_prompt, llm_params, worker_detail)
-        .await
-        .unwrap_or_else(|| {
-            warn!("Failed to generate source analysis");
-            String::new()
-        });
-    info!("Generated source analysis: {:?}", source_analysis);
-
-    // Get source and argument quality scores
-    let sources_quality_prompt = prompts::sources_quality_prompt(&critical_analysis);
-    let argument_quality_prompt = prompts::argument_quality_prompt(&logical_fallacies);
-    let sources_quality = generate_llm_response(&sources_quality_prompt, llm_params, worker_detail)
+    // Quality scores should only be generated if we have valid analyses
+    let sources_quality = if !critical_analysis.is_empty() {
+        generate_llm_response(
+            &prompts::sources_quality_prompt(&critical_analysis),
+            llm_params,
+            worker_detail,
+        )
         .await
         .and_then(|resp| resp.trim().parse::<u8>().ok())
-        .unwrap_or(2); // Default to moderate if parsing fails
-    let argument_quality =
-        generate_llm_response(&argument_quality_prompt, llm_params, worker_detail)
-            .await
-            .and_then(|resp| resp.trim().parse::<u8>().ok())
-            .unwrap_or(2); // Default to moderate if parsing fails
+        .unwrap_or(2)
+    } else {
+        2
+    };
 
-    // Get source type
-    let source_type_prompt = prompts::source_type_prompt(&source_analysis, article_url);
-    let source_type = generate_llm_response(&source_type_prompt, llm_params, worker_detail)
+    let argument_quality = if !logical_fallacies.is_empty() {
+        generate_llm_response(
+            &prompts::argument_quality_prompt(&logical_fallacies),
+            llm_params,
+            worker_detail,
+        )
+        .await
+        .and_then(|resp| resp.trim().parse::<u8>().ok())
+        .unwrap_or(2)
+    } else {
+        2
+    };
+
+    // Source type should only be generated if we have valid source analysis
+    let source_type = if !source_analysis.is_empty() {
+        generate_llm_response(
+            &prompts::source_type_prompt(&source_analysis, article_url),
+            llm_params,
+            worker_detail,
+        )
         .await
         .unwrap_or_else(|| String::from("none"))
         .trim()
-        .to_string();
+        .to_string()
+    } else {
+        String::from("none")
+    };
 
+    // Topic relation is optional and should only be generated if we have a topic
     let relation_response = if let Some(topic) = topic {
-        let relation_prompt = prompts::relation_to_topic_prompt(article_text, topic, pub_date);
-        debug!("Generated relation to topic prompt: {:?}", relation_prompt);
-        generate_llm_response(&relation_prompt, llm_params, worker_detail)
-            .await
-            .or_else(|| {
-                warn!("Failed to generate relation to topic");
-                None
-            })
+        generate_llm_response(
+            &prompts::relation_to_topic_prompt(article_text, topic, pub_date),
+            llm_params,
+            worker_detail,
+        )
+        .await
     } else {
         None
     };
-    info!("Generated relation response: {:?}", relation_response);
-    info!("Completed analysis for article: {}", article_url);
 
     (
         summary,
