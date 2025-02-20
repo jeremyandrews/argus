@@ -127,7 +127,7 @@ pub async fn send_to_slack(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": format!("{}\n{}", tiny_title, tiny_summary),
+                    "text": format!("*{}*\n{}", tiny_title, tiny_summary),
                 }
             },
         ],
@@ -167,7 +167,7 @@ pub async fn send_to_slack(
                             "text": { "type": "mrkdwn", "text": format!("{}\n{}", title, content) }
                         }
                     ],
-                    "unfurl_links": false,
+                    "unfurl_links": true,
                     "unfurl_media": false,
                 });
 
