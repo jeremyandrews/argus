@@ -262,6 +262,7 @@ Create ONE informational and accurate 3-5 word title that:
   - Indicate time period if relevant
 * Maintains clarity and accuracy
 * Avoids clickbait or sensationalism
+* The sentence MUST include a verb (an action)
 * RETURN EXACTLY ONE TITLE, regardless of topic count
 
 **EXAMPLE (Single Topic):**
