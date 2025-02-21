@@ -256,13 +256,15 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
         r#"{summary}
 Create ONE informational and accurate 3-5 word title that:
 * Captures the main theme or themes
+* For single-topic articles:
+  - The sentence MUST include a verb (an action)
+  - The subject MUST not be the article, but what the article is about
 * For multi-topic articles:
   - Use broader encompassing terms (e.g., "Global Weekly Developments")
   - Focus on the common thread if exists
   - Indicate time period if relevant
 * Maintains clarity and accuracy
 * Avoids clickbait or sensationalism
-* The sentence MUST include a verb (an action)
 * RETURN EXACTLY ONE TITLE, regardless of topic count
 
 **EXAMPLE (Single Topic):**
