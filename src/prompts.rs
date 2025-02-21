@@ -428,86 +428,76 @@ pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> S
 -----
 {article}
 -----
-
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
 * **Distinguish between:**
-  - **Article assertions:** Claims made directly by the article/author
-  - **Quoted content:** Statements attributed to sources or subjects
+- Claims made directly by the article/author
+- Statements attributed to sources or subjects
 * **When analyzing fallacies:**
-  - Identify whether the fallacy is in the article's reasoning or in quoted content
-  - Consider how the article presents and contextualizes quotes
-  - Don't penalize articles for including fallacious quotes if they're properly contextualized
+- Only identify clear, unambiguous examples
+- Consider the full context of statements
+- Examine how the article presents and contextualizes potential fallacies
+- Don't flag statements that could have reasonable alternative interpretations
 * **For non-English text, provide both the original and translation in American English.**
 
 ### **Article Type Analysis**
 * Classify as either:
-  - **Argumentative:** Presents claims, reasoning, or conclusions supporting a viewpoint
-  - **Informational:** Primarily factual without arguing for a specific view
+- **Argumentative:** Presents claims, reasoning, or conclusions supporting a viewpoint
+- **Informational:** Primarily factual without arguing for a specific view
 * For informational articles, focus on clarity and factual reliability rather than argument strength
 * Authoritative opinions in professional contexts should be evaluated for relevance, not dismissed
 
 ### **Logical Fallacies Analysis**
-* For each fallacy found:
-  1. **Name of Fallacy**
-  2. **Source of Fallacy:**
-     - "Article:" for author's own reasoning
-     - "Quoted:" for statements from sources
-  3. Quote the relevant text (if non-English, include translation)
-  4. Explain why it's fallacious (max 20 words)
-  5. Note how the article handles the fallacy (if in quoted content)
-
-* If and ONLY if NO fallacies are found:
-  - Write: _"No apparent logical fallacies detected."_
-* Otherwise:
-  - List all fallacies found
-  - Do NOT include "No apparent logical fallacies detected" after listing fallacies
+* For each clear fallacy found:
+1. Quote the relevant text (if non-English, include translation)
+2. Name the specific fallacy
+3. Explain precisely why it's fallacious (max 20 words)
+4. Analyze how the article handles this content - does it:
+   - Present it neutrally?
+   - Challenge or contextualize it?
+   - Amplify or endorse it?
+* If and ONLY if NO clear fallacies are found:
+- Write: _"No apparent logical fallacies detected."_
 
 ### **Quality Assessment**
 For Argumentative Articles:
 * **Argument Strength:** [1-10]
-  - Justification (max 20 words)
+- Justification (max 20 words)
 * **Evidence Quality:** [1-10]
-  - Justification (max 20 words)
+- Justification (max 20 words)
 
 For Informational Articles:
 * **Clarity & Coherence:** [1-10]
-  - Justification (max 20 words)
+- Justification (max 20 words)
 * **Factual Reliability:** [1-10]
-  - Justification (max 20 words)
+- Justification (max 20 words)
 
 ### **Overall Assessment**
 * 1-2 bullet points summarizing:
-  - Key observations about reasoning and logical consistency
-  - For informational articles: clarity and sourcing quality
-  - Reliability of authoritative opinions when present
+- Key observations about reasoning and logical consistency
+- For informational articles: clarity and sourcing quality
+- Reliability of authoritative opinions when present
 
 **EXAMPLE OUTPUT:**
 ### Article Type Analysis
- - Informational: Reports on parliamentary proceedings without advocating for a position
+- Informational: Reports on scientific findings without advocating for specific policies
 
 ### Logical Fallacies Analysis
-**Appeal to Emotion**
- - Source: Quoted
- - Text: "Because 7 8 9, we skip from 8 to 10"
- - Context: Article includes this humorous quote while correctly stating "9 is the number after 8"
- - Handling: Article appropriately presents this as a playful reference while maintaining factual accuracy
-
-**False Dichotomy**
- - Source: Article
- - Text: "We must either count to 9 or skip it entirely"
- - Problem: Article itself presents a false choice, ignoring other numerical approaches
+Text: "Since we can't be 100% certain about climate predictions, we shouldn't take any action."
+Fallacy: False Dichotomy
+Explanation: Presents only two options - complete certainty or complete inaction - ignoring reasonable precautionary measures
+Handling: Article challenges this view by presenting evidence of successful partial mitigation strategies
 
 ### Quality Assessment
-**Clarity & Coherence:** 7/10
-- Clear reporting of events but lacks contextual background
+**Clarity & Coherence:** 8/10
+- Clearly structured presentation of complex scientific concepts with helpful context
 
-**Factual Reliability:** 6/10
-- Presents verifiable statements but needs more supporting detail
+**Factual Reliability:** 9/10
+- Multiple peer-reviewed sources, clear distinction between established facts and projections
 
 ### Overall Assessment
-- Reporting is straightforward but could benefit from deeper investigation of claims
-- Would be strengthened by including more diverse sources and historical context
+- Strong presentation of scientific evidence with appropriate acknowledgment of uncertainties
+- Effective use of expert sources with clear attribution and context
 
 Now, perform the analysis with these guidelines:
 {write_in_clear_english}
