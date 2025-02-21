@@ -912,6 +912,8 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Illuminate cultural nuances and regional perspectives specific to the article
 - Draw unexpected parallels and insights that enhance understanding of the article
 - Ground claims in concrete examples from or related to the article's content
+- After completing the primary analysis, always include a Devil's Advocate perspective to challenge key assumptions
+- Ensure the Devil's Advocate analysis is specific to the content and insights provided, not generic counterpoints
 
 ## Analysis Requirements
 - Choose at least **one category from each of the following groups**:
@@ -926,7 +928,14 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - If an insight applies to nearly any article, reconsider its relevance to this one.
 - Provide **2-4 key insights** per chosen category.
 - Each insight should be **15-30 words**, balancing brevity with substance.
-- **Ground insights in specific examples**.
+- **- After completing all other analyses, ALWAYS include the Devil's Advocate category
+- The Devil's Advocate section should:
+  - Challenge at least one key insight from each previous category used
+  - Provide specific, concrete alternatives to the assumptions made
+  - Maintain the same level of analytical rigor as the primary analysis
+  - Focus on substantive critiques rather than superficial contradictions
+  - Ground counter-arguments in evidence where possible
+- Devil's Advocate insights should follow the same 15-30 word format and quantity requirements as other categoriesround insights in specific examples**.
 
 ### 🌍 Cultural Lens
 - Power dynamics and hierarchies
@@ -1054,6 +1063,18 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - While quantum computers excel at modeling uncertainty, their own development has been remarkably predictable, following Moore's Law-like scaling
 - The same Copenhagen interpretation that puzzled Einstein now enables practical quantum computing advances
 - The quest for absolute precision in quantum gates ironically depends on carefully managed randomness
+
+### 😈 Devil's Advocate
+- Critically examine assumptions and claims made in previous sections
+- Challenge conventional interpretations
+- Explore counter-narratives and alternative explanations
+- Question methodology and evidence
+- Consider unintended consequences
+
+Example Devil's Advocate points:
+- The quantum breakthrough may actually slow industry progress by focusing resources on a suboptimal approach
+- Collaborative standards could stifle innovation by prematurely narrowing the solution space
+- The classical computing parallels might mislead us - quantum computing may follow fundamentally different development patterns
 
 {write_in_clear_english}
 {dont_tell_me}"#,
