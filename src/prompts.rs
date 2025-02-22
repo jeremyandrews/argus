@@ -269,8 +269,8 @@ Create ONE 3-5 word title that:
     - Good: **Musk Spoke at Conference with Chainsaw**
     - Bad: *Musk Spoke at Conference*
   - You can use punctuation marks in headlines if necessary to emphasize something.
-    - Good: **Musk Did Nazi Salute Again**
-    - Bad: *Musk Did Nazi Salute. Again*
+    - Good: **Musk Did Nazi Salute. Again**
+    - Bad: *Musk Did Nazi Salute Again*
 * For multi-topic articles:
   - Use broader encompassing terms (e.g., "Global Weekly Developments")
   - Focus on the common thread if it exists
