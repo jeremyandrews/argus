@@ -463,7 +463,7 @@ For each fallacy detected, format as follows:
 ### [Fallacy Name]
 * **Definition**: Brief 5-20 word explanation of this type of fallacy
 * **Handling**: How the article handles this (ie quotes/reports/challenges/endorses/contextualizes)
-* **Quote**: The relevant text showing the fallacy
+* **Quote**: The relevant text showing the fallacy (in parentheses, translate the quote into American English if the source is another langauge)
 * **Explanation**: Specific analysis of how/why this quote demonstrates this fallacy
 
 If and ONLY if NO fallacies found, state: "No apparent logical fallacies detected."
