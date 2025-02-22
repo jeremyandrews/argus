@@ -91,6 +91,7 @@ Regardless of the source language of the article or content being discussed:
 5. Aim for a writing style that is easily understood by a general American audience.
 6. Avoid idioms or cultural references that may not be familiar to all English speakers.
 7. When discussing measurements, provide both metric and imperial units where applicable.
+8. If a title (of a movie or book, for example), is in a foreign language, put the translation into English in parentheses afterward.
 
 Your goal is to ensure that the output is consistently in American English and easily comprehensible to American English speakers, regardless of the original language of the source material.
 "#;
