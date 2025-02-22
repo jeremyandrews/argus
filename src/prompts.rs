@@ -423,81 +423,86 @@ Now, perform the analysis with these guidelines:
 
 pub fn logical_fallacies_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
-        r#" {context}
+        r#"{context}
 ## ARTICLE (FOR LOGICAL FALLACY ANALYSIS):
 -----
 {article}
 -----
-IMPORTANT INSTRUCTIONS:
-* **Analyze ONLY the article above.**
-* **Distinguish between:**
-- Claims made directly by the article/author
-- Statements attributed to sources or subjects
-* **When analyzing fallacies:**
-- Only identify clear, unambiguous examples
-- Consider the full context of statements
-- Examine how the article presents and contextualizes potential fallacies
-- Don't flag statements that could have reasonable alternative interpretations
-* **For non-English text, provide both the original and translation in American English.**
 
-### **Article Type Analysis**
-* Classify as either:
-- **Argumentative:** Presents claims, reasoning, or conclusions supporting a viewpoint
-- **Informational:** Primarily factual without arguing for a specific view
-* For informational articles, focus on clarity and factual reliability rather than argument strength
-* Authoritative opinions in professional contexts should be evaluated for relevance, not dismissed
+Analyze this article and provide a structured assessment in the following format:
 
-### **Logical Fallacies Analysis**
-* For each clear fallacy found:
-1. Quote the relevant text (if non-English, include translation)
-2. Name the specific fallacy
-3. Explain precisely why it's fallacious (max 20 words)
-4. Analyze how the article handles this content - does it:
-   - Present it neutrally?
-   - Challenge or contextualize it?
-   - Amplify or endorse it?
-* If and ONLY if NO clear fallacies are found:
-- Write: _"No apparent logical fallacies detected."_
-
-### **Quality Assessment**
-For Argumentative Articles:
-* **Argument Strength:** [1-10]
-- Justification (max 20 words)
-* **Evidence Quality:** [1-10]
-- Justification (max 20 words)
-
-For Informational Articles:
-* **Clarity & Coherence:** [1-10]
-- Justification (max 20 words)
-* **Factual Reliability:** [1-10]
-- Justification (max 20 words)
-
-### **Overall Assessment**
-* 1-2 bullet points summarizing:
-- Key observations about reasoning and logical consistency
-- For informational articles: clarity and sourcing quality
-- Reliability of authoritative opinions when present
-
-**EXAMPLE OUTPUT:**
 ### Article Type Analysis
-- Informational: Reports on scientific findings without advocating for specific policies
+Classify the primary type as:
+* **Argumentative:** Presents claims and reasoning to support a specific viewpoint or conclusion
+* **Informational:** Reports facts and events without advocating for particular interpretations
+* **Educational:** Explains concepts, processes, or topics with the intent to teach
+* **Promotional:** Markets products, services, or ideas with persuasive intent
+* **Opinion/Editorial:** Presents personal views or analysis on topics
+* **Investigative:** In-depth research and analysis of complex topics or issues
+
+Note: Articles may have secondary elements of other types. If significant, note these as well.
+
+Provide 1-2 sentences explaining the classification and any notable hybrid elements.
 
 ### Logical Fallacies Analysis
-Text: "Since we can't be 100% certain about climate predictions, we shouldn't take any action."
-Fallacy: False Dichotomy
-Explanation: Presents only two options - complete certainty or complete inaction - ignoring reasonable precautionary measures
-Handling: Article challenges this view by presenting evidence of successful partial mitigation strategies
+
+For each fallacy detected, format as follows:
+
+### [Fallacy Name]
+* **Definition**: Brief 5-20 word explanation of this type of fallacy
+* **Handling**: How the article handles this (ie quotes/reports/challenges/endorses/contextualizes)
+* **Quote**: The relevant text showing the fallacy
+* **Explanation**: Specific analysis of how/why this quote demonstrates this fallacy
+
+If and ONLY if NO fallacies found, state: "No apparent logical fallacies detected."
 
 ### Quality Assessment
-**Clarity & Coherence:** 8/10
-- Clearly structured presentation of complex scientific concepts with helpful context
+Score each relevant metric from 1-10 with brief justification (max 20 words):
 
-**Factual Reliability:** 9/10
-- Multiple peer-reviewed sources, clear distinction between established facts and projections
+For Argumentative content:
+* **Argument Strength**: Logic and reasoning quality
+* **Evidence Quality**: Supporting data and sources
+* **Counter-argument Treatment**: Handling of opposing views
+
+For Informational/News content:
+* **Accuracy**: Factual correctness and precision
+* **Objectivity**: Balance and neutrality
+* **Source Quality**: Reliability of information sources
+
+For Educational content:
+* **Clarity**: Clear explanation of concepts
+* **Comprehensiveness**: Coverage of key points
+* **Pedagogical Structure**: Effective learning progression
+
+For Promotional content:
+* **Claim Transparency**: Clarity about promotional nature
+* **Evidence Support**: Backing for product/service claims
+* **Disclosure**: Clarity about relationships/sponsorships
+
+For Opinion/Editorial content:
+* **Reasoning Quality**: Logical consistency
+* **Perspective Clarity**: Transparency about viewpoint
+* **Supporting Evidence**: Backing for opinions
+
+For Analysis content:
+* **Methodology**: Soundness of analytical approach
+* **Data Quality**: Reliability of data sources
+* **Interpretation**: Validity of conclusions
+
+Score only metrics relevant to the article's primary type(s). For hybrid articles, use metrics from each applicable category.
 
 ### Overall Assessment
-- Strong presentation of scientific evidence with appropriate acknowledgment of uncertainties
-- Effective use of expert sources with clear attribution and context
+* 1-2 key observations about:
+- Reasoning and logical consistency (for argumentative)
+- Clarity and sourcing (for informational)
+- Treatment of expert opinions when present
+
+Important Guidelines:
+- Analyze only the provided article
+- Distinguish between article claims and quoted statements
+- Identify only clear, unambiguous fallacies
+- Consider full context
+- For non-English text, provide translations
 
 Now, perform the analysis with these guidelines:
 {write_in_clear_english}
