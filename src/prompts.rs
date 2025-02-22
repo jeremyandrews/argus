@@ -83,17 +83,24 @@ By following these guidelines, you'll create clear, concise, and engaging text t
 "#;
 
 const WRITE_IN_CLEAR_ENGLISH: &str = r#"
-Regardless of the source language of the article or content being discussed:
-1. Write all responses in clear, accessible American English.
-2. Use standard American spelling and grammar conventions.
-3. Translate any non-English terms, phrases, or quotes into American English.
-4. If a non-English term is crucial and doesn't have a direct English equivalent, provide the original term followed by an explanation in parentheses.
-5. Aim for a writing style that is easily understood by a general American audience.
-6. Avoid idioms or cultural references that may not be familiar to all English speakers.
-7. When discussing measurements, provide both metric and imperial units where applicable.
-8. If a title (of a movie or book, for example), is in a foreign language, put the translation into English in parentheses afterward.
-
-Your goal is to ensure that the output is consistently in American English and easily comprehensible to American English speakers, regardless of the original language of the source material.
+Language Standards for Output:
+1. Write all content in clear American English, using American spelling and grammar.
+2. For non-English content:
+   - ALWAYS include both original text and translation
+   - Format as: "original text (translation)"
+   - For titles: Keep original, add translation in parentheses
+   Example: "La vita è bella (Life is Beautiful)"
+3. Units and Measurements:
+   - Include both metric and imperial: "100 kilometers (62 miles)"
+4. Writing Style:
+   - Use clear, accessible American English
+   - Avoid region-specific idioms
+   - Define specialized terms
+   - Use active voice when possible
+5. Formatting:
+   - Original quotes: Use quotation marks
+   - Translations: Always in parentheses
+   - Citations: American format
 "#;
 
 const CONTEXT: &str = "
@@ -463,8 +470,13 @@ For each fallacy detected, format as follows:
 
 ### [Fallacy Name]
 * **Definition**: Brief 5-20 word explanation of this type of fallacy
-* **Handling**: How the article handles this (ie quotes/reports/challenges/endorses/contextualizes)
-* **Quote**: The relevant text showing the fallacy (in parentheses, translate the quote into American English if the source is another langauge)
+* **Handling**: How the article handles this
+* **Quote**: Format as follows:
+  - For English: "quoted text"
+  - For non-English: "original text (translation)"
+  Example fallacy quotes:
+  - English: "All politicians are corrupt because Senator Smith took a bribe"
+  - Non-English: "Tous les politiciens sont corrompus parce que le sénateur Smith a accepté un pot-de-vin (All politicians are corrupt because Senator Smith took a bribe)"
 * **Explanation**: Specific analysis of how/why this quote demonstrates this fallacy
 
 If and ONLY if NO fallacies found, state: "No apparent logical fallacies detected."
