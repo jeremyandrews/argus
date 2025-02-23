@@ -269,23 +269,27 @@ Create ONE 3-5 word title that:
 
 * Captures the main theme or themes
 * For single-topic articles:
-  - The main thing in a headline is the fact. A headline should report an event and answer the questions “who?”, “what?”, and “where?”. Make the headline as informative as possible. 
-    - Good: **Trump Called Zelensky a Dictator**
-    - Bad: *Revealed How Trump Called Zelensky*
-  - The sentence MUST include a verb (an action). Always use a verb in the headline. The verb should add as much dynamism as possible.
-    - Good: **First Human Flew into Space**
-    - Bad: *A Great Event in Human History*
-  - The subject MUST not be the article, but what the article is about
-  - The headline always contains an event and a clarification. Add the most interesting details to the headline.
-    - Good: **Musk Spoke at Conference with Chainsaw**
-    - Bad: *Musk Spoke at Conference*
-  - You can use punctuation marks in headlines if necessary to emphasize something.
-    - Good: **Musk Did Nazi Salute. Again**
-    - Bad: *Musk Did Nazi Salute Again*
+- The main thing in a headline is the fact. A headline should report an event and answer the questions “who?”, “what?”, and “where?”. Make the headline as informative as possible.
+  - Good: *Trump Called Zelensky a Dictator*
+  - Bad: _Revealed How Trump Called Zelensky_
+- The sentence MUST include a verb (an action). Always use a verb in the headline. The verb should add as much dynamism as possible.
+  - Good: *First Human Flew into Space*
+  - Bad: _A Great Event in Human History_
+- The subject MUST not be the article, but what the article is about
+- The headline always contains an event and a clarification. Add the most interesting details to the headline.
+  - Good: *Musk Spoke at Conference with Chainsaw*
+  - Bad: _Musk Spoke at Conference_
+- You can use punctuation marks in headlines if necessary to emphasize something.
+  - Good: *Musk Did Nazi Salute. Again*
+  - Bad: _Musk Did Nazi Salute Again_
+- Keep the title concise and to the point. Avoid unnecessary details.
+  - Good: *Germany Votes Today to Renew Bundestag*
+  - Bad: _Germany Votes to Renew the Bundestag: Decisive Elections. The Scenarios_
+- Do not include details about projections, percentages, or secondary events.
 * For multi-topic articles:
-  - Use broader encompassing terms (e.g., "Global Weekly Developments")
-  - Focus on the common thread if it exists
-  - Indicate time period if relevant
+- Use broader encompassing terms (e.g., "Global Weekly Developments")
+- Focus on the common thread if it exists
+- Indicate time period if relevant
 * Maintains clarity and accuracy
 * Avoids clickbait or sensationalism
 * RETURN EXACTLY ONE TITLE, regardless of topic count
