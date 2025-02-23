@@ -89,7 +89,10 @@ Language Standards for Output:
    - ALWAYS include both original text and translation
    - Format as: "original text (translation)"
    - For titles: Keep original, add translation in parentheses
-   Example: "La vita è bella (Life is Beautiful)"
+   - For names: Do not translate as they are names
+   - Never translate if the translation is the same as the original.
+   - Only translate from Foreign → American English.
+   Example: "La vita è bella (Life is Beautiful)" and "Ne Zha 2 (No translation: this is a person’s name)"
 3. Units and Measurements:
    - Include both metric and imperial: "100 kilometers (62 miles)"
 4. Writing Style:
@@ -470,14 +473,14 @@ For each fallacy detected, format as follows:
 
 ### [Fallacy Name]
 * **Definition**: Brief 5-20 word explanation of this type of fallacy
-* **Handling**: How the article handles this
+* **Handling**: Clearly state if the article supports the fallacy, flags it as improper, adds it, changes it, or highlights it.
 * **Quote**: Format as follows:
-  - For English: "quoted text"
-  - For non-English: "original text (translation)"
-  Example fallacy quotes:
-  - English: "All politicians are corrupt because Senator Smith took a bribe"
-  - Non-English: "Tous les politiciens sont corrompus parce que le sénateur Smith a accepté un pot-de-vin (All politicians are corrupt because Senator Smith took a bribe)"
-* **Explanation**: Specific analysis of how/why this quote demonstrates this fallacy
+- For English: "quoted text"
+- For non-English: "original text (translation)"
+Example fallacy quotes:
+- English: "All politicians are corrupt because Senator Smith took a bribe"
+- Non-English: "Tous les politiciens sont corrompus parce que le sénateur Smith a accepté un pot-de-vin (All politicians are corrupt because Senator Smith took a bribe)"
+* **Explanation**: Provide a specific analysis of how/why this quote demonstrates this fallacy, without repeating what is already stated. Include a detailed analysis of the context and implications.
 
 If and ONLY if NO fallacies found, state: "No apparent logical fallacies detected."
 
