@@ -930,13 +930,12 @@ pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) ->
 ## Global Context (Reference Only)
 {context}
 _Note: Only reference global context if directly relevant to analyzing the article_
-
 ## Source Material
 ----------
 {article}
 ----------
 
-## Core Requirements 
+## Core Requirements
 - Analyze the article's content, not the global context
 - Reveal deeper context and connections beyond the article's surface details
 - Illuminate cultural nuances and regional perspectives specific to the article
@@ -947,9 +946,9 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 
 ## Analysis Requirements
 - Choose at least **one category from each of the following groups**:
-  - **Systemic Analysis:** (Technical Depth, Global Patterns, Hidden Dimensions)
-  - **Human & Cultural Impact:** (Cultural Lens, Ripple Effects, Character Studies)
-  - **Creative & Alternative Perspectives:** (Delightful Ironies, Pattern Recognition, Unexpected Angles, etc.)
+- **Systemic Analysis:** (Technical Depth, Global Patterns, Hidden Dimensions)
+- **Human & Cultural Impact:** (Cultural Lens, Ripple Effects, Character Studies)
+- **Creative & Alternative Perspectives:** (That's Ironic, Pattern Recognition, Unexpected Angles, Popular Culture)
 - Do **not** overuse Cultural Lens, Ripple Effects, or Character Studies unless uniquely fitting.
 - If the article discusses **technology, business, economics, or science**, prioritize at least one **Systemic Analysis** category.
 - If the article covers **a person or event**, consider Character Studies but balance it with a **Systemic or Historical** category.
@@ -958,15 +957,14 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - If an insight applies to nearly any article, reconsider its relevance to this one.
 - Provide **2-4 key insights** per chosen category.
 - Each insight should be **15-30 words**, balancing brevity with substance.
-- **- After completing all other analyses, ALWAYS include the Devil's Advocate category
+- **After completing all other analyses, ALWAYS include the Devil's Advocate category
 - The Devil's Advocate section should:
-  - Challenge at least one key insight from each previous category used
-  - Provide specific, concrete alternatives to the assumptions made
-  - Maintain the same level of analytical rigor as the primary analysis
-  - Focus on substantive critiques rather than superficial contradictions
-  - Ground counter-arguments in evidence where possible
-- Devil's Advocate insights should follow the same 15-30 word format and quantity requirements as other categoriesround insights in specific examples**.
-
+- Challenge at least one key insight from each previous category used
+- Provide specific, concrete alternatives to the assumptions made
+- Maintain the same level of analytical rigor as the primary analysis
+- Focus on substantive critiques rather than superficial contradictions
+- Ground counter-arguments in evidence where possible
+- Devil's Advocate insights should follow the same 15-30 word format and quantity requirements as other categories
 ### 🌍 Cultural Lens
 - Power dynamics and hierarchies
 - Local traditions and values
@@ -1001,21 +999,6 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Overlooked factors
 - Competing narratives
 - Cultural blind spots
-
-### 🔮 Future Threads
-- Emerging patterns
-- Potential disruptions
-- Cultural evolution
-- Technological convergence
-- Societal adaptation
-
-### 😄 Delightful Ironies
-- Historical coincidences
-- Unexpected parallels
-- Amusing contradictions
-- Role reversals
-- Cosmic timing
-
 ### 📅 Time's Echo
 - Events on this date
 - Cyclical patterns
@@ -1036,21 +1019,12 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Unlikely heroes
 - Silent catalysts
 - Generational contrasts
-
 ### 🎨 Creative Connections
 - Art world parallels
 - Literary echoes
 - Musical metaphors
 - Architectural analogies
 - Gaming dynamics
-
-### 🧩 Pattern Recognition
-- Mathematical symmetries
-- Natural world parallels
-- Social physics
-- Economic rhythms
-- Evolutionary echoes
-
 ### 🎬 Scene Shifts
 - Behind the curtain
 - Alternative endings
@@ -1071,29 +1045,42 @@ _Note: Only reference global context if directly relevant to analyzing the artic
 - Key decisions
 - Critical junctures
 - Defining elements
-
-## Example Output:
-
+### 📚 Popular Culture
+- Reactions in popular media
+- Popular books or movies that parallel real-world events
+- Cultural references and their significance
+### 🤔 That's Ironic
+- Historical coincidences
+- Unexpected parallels
+- Amusing contradictions
+- Role reversals
+- Cosmic timing
+### 🧩 Pattern Recognition
+- Mathematical symmetries
+- Natural world parallels
+- Social physics
+- Economic rhythms
+- Evolutionary echoes
+### Example Output:
 ### 📊 Technical Depth
 - The quantum chip's new architecture integrates superconducting circuits with traditional silicon, enabling unprecedented coherence times while maintaining scalability for commercial applications
 - Error correction protocols now handle environmental noise through a distributed network of sensors, reducing decoherence by 60% compared to previous generations
 - Novel gate designs incorporate machine learning optimization, allowing quantum operations to execute 40% faster while maintaining high fidelity
-
-### 🔮 Future Threads
+### 💡 Global Patterns
 - As quantum systems approach practical advantage in specific domains, pharmaceutical companies are already developing hybrid classical-quantum workflows for drug discovery
 - The convergence of quantum computing with AI could revolutionize financial modeling by 2026, though regulatory frameworks remain uncertain
-
+### 🎭 Character Studies
+- The CEO's decision to prioritize sustainability reflects a broader industry trend towards corporate social responsibility
+### 📚 Popular Culture
+- The film "Invasion of the Body Snatchers" parallels real-world concerns about political manipulation and loss of individuality
+### 🤔 That's Ironic
+- The rapid advancement of quantum computing ironically highlights the limitations of classical computing in solving certain problems
+- While quantum computers excel at modeling uncertainty, their own development has been remarkably predictable, following Moore's Law-like scaling
 ### 🧩 Pattern Recognition
 - Like the transition from vacuum tubes to transistors, this quantum breakthrough combines materials innovation with clever engineering workarounds to solve scaling limitations
 - The industry's collaborative approach to error correction mirrors early classical computing, where shared standards accelerated development across competing platforms
 - Current quantum scaling challenges echo semiconductor manufacturing hurdles of the 1970s, suggesting similar solutions might apply
 - The emergence of quantum-specific programming languages parallels the evolution from machine code to high-level languages in classical computing
-
-### 😄 Delightful Ironies
-- While quantum computers excel at modeling uncertainty, their own development has been remarkably predictable, following Moore's Law-like scaling
-- The same Copenhagen interpretation that puzzled Einstein now enables practical quantum computing advances
-- The quest for absolute precision in quantum gates ironically depends on carefully managed randomness
-
 ### 😈 Devil's Advocate
 - Critically examine assumptions and claims made in previous sections
 - Challenge conventional interpretations
