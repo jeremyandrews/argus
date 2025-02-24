@@ -75,6 +75,7 @@ impl E5Config {
 }
 
 fn init_e5_model(config: &E5Config) -> Result<()> {
+    info!(target: TARGET_VECTOR, "Starting to load E5 model from {}", config.model_path);
     let bert_config = BertConfig {
         hidden_size: config.dimensions,
         intermediate_size: 4096,
@@ -94,30 +95,57 @@ fn init_e5_model(config: &E5Config) -> Result<()> {
         model_type: None,
     };
 
-    info!(target: TARGET_VECTOR, "Loading E5 model from {}", config.model_path);
-
     // Load the safetensors file
-    let tensors =
-        candle_core::safetensors::load_buffer(&std::fs::read(&config.model_path)?, &config.device)?;
+    let tensors = match candle_core::safetensors::load_buffer(
+        &std::fs::read(&config.model_path)?,
+        &config.device,
+    ) {
+        Ok(t) => t,
+        Err(e) => {
+            error!(target: TARGET_VECTOR, "!!! Failed to load model tensors: {}", e);
+            return Err(anyhow::anyhow!("Failed to load model tensors"));
+        }
+    };
 
     // Create VarBuilder from the loaded tensors
     let vb = VarBuilder::from_tensors(tensors, DType::F32, &config.device);
 
-    let model = BertModel::load(vb, &bert_config)?;
+    // Load the model
+    let model = match BertModel::load(vb, &bert_config) {
+        Ok(m) => m,
+        Err(e) => {
+            error!(target: TARGET_VECTOR, "!!! Failed to load BERT model: {}", e);
+            return Err(anyhow::anyhow!("Failed to load BERT model"));
+        }
+    };
 
-    MODEL
-        .set(Arc::new(model))
-        .map_err(|_| anyhow::anyhow!("Failed to set model"))?;
+    // Set the model in the static
+    if MODEL.set(Arc::new(model)).is_err() {
+        error!(target: TARGET_VECTOR, "!!! Failed to set model in static");
+        return Err(anyhow::anyhow!("Failed to set model in static"));
+    }
+
+    info!(target: TARGET_VECTOR, "Successfully loaded E5 model");
     Ok(())
 }
 
 fn init_e5_tokenizer(config: &E5Config) -> Result<()> {
-    info!(target: TARGET_VECTOR, "Loading E5 tokenizer from {}", config.tokenizer_path);
-    let tokenizer = Tokenizer::from_file(&config.tokenizer_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
-    TOKENIZER
-        .set(Arc::new(tokenizer))
-        .map_err(|_| anyhow::anyhow!("Failed to set tokenizer"))?;
+    info!(target: TARGET_VECTOR, "Starting to load E5 tokenizer from {}", config.tokenizer_path);
+
+    let tokenizer = match Tokenizer::from_file(&config.tokenizer_path) {
+        Ok(t) => t,
+        Err(e) => {
+            error!(target: TARGET_VECTOR, "!!! Failed to load tokenizer: {}", e);
+            return Err(anyhow::anyhow!("Failed to load tokenizer"));
+        }
+    };
+
+    if TOKENIZER.set(Arc::new(tokenizer)).is_err() {
+        error!(target: TARGET_VECTOR, "!!! Failed to set tokenizer in static");
+        return Err(anyhow::anyhow!("Failed to set tokenizer in static"));
+    }
+
+    info!(target: TARGET_VECTOR, "Successfully loaded E5 tokenizer");
     Ok(())
 }
 
