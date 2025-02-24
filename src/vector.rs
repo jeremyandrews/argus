@@ -159,57 +159,93 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let encoding = tokenizer
         .encode(prefixed_text, true)
         .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
-    let tokenize_end = Instant::now();
 
+    // Truncate to max_length - 1 to avoid index boundary issues
+    let max_len = config.max_length - 1;
+    let input_ids: Vec<i64> = encoding
+        .get_ids()
+        .iter()
+        .take(max_len)
+        .map(|&x| x as i64)
+        .collect();
+    let attention_mask: Vec<i64> = encoding
+        .get_attention_mask()
+        .iter()
+        .take(max_len)
+        .map(|&x| x as i64)
+        .collect();
+
+    let tokenize_end = Instant::now();
     let inference_start = Instant::now();
-    let input_ids = Tensor::new(
-        encoding
-            .get_ids()
-            .iter()
-            .map(|&x| x as i64)
-            .collect::<Vec<_>>(),
-        &config.device,
-    )?;
-    let attention_mask = Tensor::new(
-        encoding
-            .get_attention_mask()
-            .iter()
-            .map(|&x| x as i64)
-            .collect::<Vec<_>>(),
-        &config.device,
-    )?;
+
+    let input_ids = Tensor::new(input_ids, &config.device)?;
+    let attention_mask = Tensor::new(attention_mask, &config.device)?;
 
     let input_ids = input_ids.unsqueeze(0)?;
     let attention_mask = attention_mask.unsqueeze(0)?;
 
-    // Get the last hidden state directly
+    // Get the last hidden state
     let hidden_state = model.forward(&input_ids, &attention_mask, None)?;
 
+    // Convert attention mask to proper shape for multiplication
     let mask = attention_mask.unsqueeze(2)?;
     let mask = mask.to_dtype(DType::F32)?;
+
+    // Expand mask to match hidden state dimensions
+    let mask = mask.broadcast_as(hidden_state.shape())?;
+
     let masked = hidden_state.mul(&mask)?;
     let summed = masked.sum(1)?;
     let counts = mask.sum(1)?;
     let mean_pooled = summed.div(&counts)?;
-
     let norm = mean_pooled.sqr()?.sum_all()?.sqrt()?;
     let normalized = mean_pooled.div(&norm)?;
-
     let vector = normalized.squeeze(0)?.to_vec1::<f32>()?;
+
     let end_time = Instant::now();
 
+    // Calculate statistical properties of the embedding
+    let sum: f32 = vector.iter().sum();
+    let mean = sum / vector.len() as f32;
+    let variance: f32 =
+        vector.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / vector.len() as f32;
+    let std_dev = variance.sqrt();
+    let max = vector.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let min = vector.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+    let active_dimensions = vector.iter().filter(|&&x| x > mean).count();
+    let magnitude: f32 = vector.iter().map(|x| x.powi(2)).sum::<f32>().sqrt();
+
     info!(target: TARGET_VECTOR,
-        "Embedding generation timing:\n\
-         - Tokenization: {:?}\n\
-         - Model inference: {:?}\n\
+        "Embedding generation successful:\n\
+         Timing:\n\
+         - Input length: {} tokens\n\
+         - Tokenization time: {:?}\n\
+         - Inference time: {:?}\n\
          - Total time: {:?}\n\
-         - Input text length: {} chars\n\
-         - Tokens generated: {}",
+         \n\
+         Statistics:\n\
+         - Dimensions: {}\n\
+         - Mean: {:.4}\n\
+         - Std Dev: {:.4}\n\
+         - Min: {:.4}\n\
+         - Max: {:.4}\n\
+         - Active dimensions: {}/{} ({:.1}%)\n\
+         - Vector magnitude: {:.6}\n\
+         - Original text length: {} chars",
+        input_ids.dims()[1],
         tokenize_end.duration_since(tokenize_start),
         end_time.duration_since(inference_start),
         end_time.duration_since(start_time),
-        text.len(),
-        encoding.get_ids().len()
+        vector.len(),
+        mean,
+        std_dev,
+        min,
+        max,
+        active_dimensions,
+        vector.len(),
+        (active_dimensions as f32 / vector.len() as f32) * 100.0,
+        magnitude,
+        text.len()
     );
 
     Ok(vector)
