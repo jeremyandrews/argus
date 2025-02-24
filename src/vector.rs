@@ -26,7 +26,7 @@ struct E5Config {
 impl Default for E5Config {
     fn default() -> Self {
         Self {
-            model_path: "models/e5-large.safetensors".to_string(),
+            model_path: "models/e5-large-v2.safetensors".to_string(),
             tokenizer_path: "models/e5-tokenizer.json".to_string(),
             dimensions: 1024,
             max_length: 512,
@@ -47,8 +47,8 @@ fn init_e5_model(config: &E5Config) -> Result<()> {
         layer_norm_eps: 1e-12,
         pad_token_id: 0,
         hidden_act: HiddenAct::Gelu,
-        hidden_dropout_prob: 0.1,
-        type_vocab_size: 2,
+        hidden_dropout_prob: 0.0,
+        type_vocab_size: 1,
         initializer_range: 0.02,
         position_embedding_type: PositionEmbeddingType::Absolute,
         use_cache: false,
