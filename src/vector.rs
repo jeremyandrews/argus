@@ -21,6 +21,7 @@ const MODEL_URL: &str =
     "https://huggingface.co/intfloat/e5-large-v2/resolve/main/model.safetensors";
 const TOKENIZER_URL: &str =
     "https://huggingface.co/intfloat/e5-large-v2/resolve/main/tokenizer.json";
+const TARGET_VECTOR: &str = "vector";
 
 struct E5Config {
     model_path: String,
@@ -53,20 +54,20 @@ impl E5Config {
 
         // Check and download model file if needed
         if !Path::new(&self.model_path).exists() {
-            info!("Downloading E5 model from {}", MODEL_URL);
+            info!(target: TARGET_VECTOR, "Downloading E5 model from {}", MODEL_URL);
             let response = reqwest::get(MODEL_URL).await?;
             let bytes = response.bytes().await?;
             fs::write(&self.model_path, bytes).await?;
-            info!("Downloaded E5 model to {}", self.model_path);
+            info!(target: TARGET_VECTOR, "Downloaded E5 model to {}", self.model_path);
         }
 
         // Check and download tokenizer file if needed
         if !Path::new(&self.tokenizer_path).exists() {
-            info!("Downloading E5 tokenizer from {}", TOKENIZER_URL);
+            info!(target: TARGET_VECTOR, "Downloading E5 tokenizer from {}", TOKENIZER_URL);
             let response = reqwest::get(TOKENIZER_URL).await?;
             let bytes = response.bytes().await?;
             fs::write(&self.tokenizer_path, bytes).await?;
-            info!("Downloaded E5 tokenizer to {}", self.tokenizer_path);
+            info!(target: TARGET_VECTOR, "Downloaded E5 tokenizer to {}", self.tokenizer_path);
         }
 
         Ok(())
@@ -93,7 +94,7 @@ fn init_e5_model(config: &E5Config) -> Result<()> {
         model_type: None,
     };
 
-    info!("Loading E5 model from {}", config.model_path);
+    info!(target: TARGET_VECTOR, "Loading E5 model from {}", config.model_path);
 
     // Load the safetensors file
     let tensors =
@@ -111,7 +112,7 @@ fn init_e5_model(config: &E5Config) -> Result<()> {
 }
 
 fn init_e5_tokenizer(config: &E5Config) -> Result<()> {
-    info!("Loading E5 tokenizer from {}", config.tokenizer_path);
+    info!(target: TARGET_VECTOR, "Loading E5 tokenizer from {}", config.tokenizer_path);
     let tokenizer = Tokenizer::from_file(&config.tokenizer_path)
         .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
     TOKENIZER
@@ -169,7 +170,7 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let vector = normalized.squeeze(0)?.to_vec1::<f32>()?;
     let end_time = Instant::now();
 
-    info!(
+    info!(target: TARGET_VECTOR,
         "Embedding generation timing:\n\
          - Tokenization: {:?}\n\
          - Model inference: {:?}\n\
@@ -201,7 +202,7 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
         init_e5_tokenizer(&config)?;
         INITIALIZED.store(true, Ordering::Relaxed);
 
-        info!(
+        info!(target: TARGET_VECTOR,
             "Initialization timing: \n\
              - Model download/check: {:?}\n\
              - Model initialization: {:?}\n\
@@ -220,11 +221,8 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 
             // Basic validation
             if embedding.len() != config.dimensions {
-                error!(
-                    "Unexpected embedding dimensions: got {}, expected {}",
-                    embedding.len(),
-                    config.dimensions
-                );
+                error!(target: TARGET_VECTOR, "Unexpected embedding dimensions: got {}, expected {}", 
+                    embedding.len(), config.dimensions);
                 return Ok(None);
             }
 
@@ -245,7 +243,7 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 
             let end_time = Instant::now();
 
-            info!(
+            info!(target: TARGET_VECTOR,
                 "Embedding generation complete:\n\
                  Timing:\n\
                  - Embedding generation: {:?}\n\
@@ -280,7 +278,7 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
         }
         Err(e) => {
             let end_time = Instant::now();
-            error!(
+            error!(target: TARGET_VECTOR,
                 "Failed to generate embedding after {:?}: {:?}",
                 end_time.duration_since(total_start),
                 e
