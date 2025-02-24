@@ -87,7 +87,7 @@ fn init_e5_model(config: &E5Config) -> Result<()> {
         pad_token_id: 0,
         hidden_act: HiddenAct::Gelu,
         hidden_dropout_prob: 0.0,
-        type_vocab_size: 1,
+        type_vocab_size: 2,
         initializer_range: 0.02,
         position_embedding_type: PositionEmbeddingType::Absolute,
         use_cache: false,
