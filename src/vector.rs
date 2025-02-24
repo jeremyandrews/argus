@@ -5,14 +5,21 @@ use candle_transformers::models::bert::{
     BertModel, Config as BertConfig, HiddenAct, PositionEmbeddingType,
 };
 use once_cell::sync::OnceCell;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokenizers::Tokenizer;
+use tokio::fs;
 use tracing::{error, info};
 
 // Static globals
 static MODEL: OnceCell<Arc<BertModel>> = OnceCell::new();
 static TOKENIZER: OnceCell<Arc<Tokenizer>> = OnceCell::new();
+
+const MODEL_URL: &str =
+    "https://huggingface.co/intfloat/e5-large-v2/resolve/main/model.safetensors";
+const TOKENIZER_URL: &str =
+    "https://huggingface.co/intfloat/e5-large-v2/resolve/main/tokenizer.json";
 
 struct E5Config {
     model_path: String,
@@ -33,6 +40,35 @@ impl Default for E5Config {
             _similarity_threshold: 0.85,
             device: Device::Cpu,
         }
+    }
+}
+
+impl E5Config {
+    async fn ensure_models_exist(&self) -> Result<()> {
+        // Create models directory if it doesn't exist
+        if !Path::new("models").exists() {
+            fs::create_dir("models").await?;
+        }
+
+        // Check and download model file if needed
+        if !Path::new(&self.model_path).exists() {
+            info!("Downloading E5 model from {}", MODEL_URL);
+            let response = reqwest::get(MODEL_URL).await?;
+            let bytes = response.bytes().await?;
+            fs::write(&self.model_path, bytes).await?;
+            info!("Downloaded E5 model to {}", self.model_path);
+        }
+
+        // Check and download tokenizer file if needed
+        if !Path::new(&self.tokenizer_path).exists() {
+            info!("Downloading E5 tokenizer from {}", TOKENIZER_URL);
+            let response = reqwest::get(TOKENIZER_URL).await?;
+            let bytes = response.bytes().await?;
+            fs::write(&self.tokenizer_path, bytes).await?;
+            info!("Downloaded E5 tokenizer to {}", self.tokenizer_path);
+        }
+
+        Ok(())
     }
 }
 
@@ -136,6 +172,8 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
     static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
     if !INITIALIZED.load(Ordering::Relaxed) {
+        // Ensure models exist before initialization
+        config.ensure_models_exist().await?;
         init_e5_model(&config)?;
         init_e5_tokenizer(&config)?;
         INITIALIZED.store(true, Ordering::Relaxed);
@@ -143,7 +181,26 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 
     match get_article_embedding(text, &config).await {
         Ok(embedding) => {
-            info!("Generated embedding with {} dimensions", embedding.len());
+            // Basic validation
+            if embedding.len() != config.dimensions {
+                error!(
+                    "Unexpected embedding dimensions: got {}, expected {}",
+                    embedding.len(),
+                    config.dimensions
+                );
+                return Ok(None);
+            }
+
+            // Check if embedding contains valid floats
+            if embedding.iter().any(|x| x.is_nan() || x.is_infinite()) {
+                error!("Embedding contains invalid values (NaN or infinite)");
+                return Ok(None);
+            }
+
+            info!(
+                "Generated valid embedding with {} dimensions",
+                embedding.len()
+            );
             Ok(Some(embedding))
         }
         Err(e) => {
