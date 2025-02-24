@@ -191,14 +191,23 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let mask = attention_mask.unsqueeze(2)?;
     let mask = mask.to_dtype(DType::F32)?;
 
-    // Expand mask to match hidden state dimensions
-    let mask = mask.broadcast_as(hidden_state.shape())?;
-
+    // Masked mean pooling
     let masked = hidden_state.mul(&mask)?;
-    let summed = masked.sum(1)?;
-    let counts = mask.sum(1)?;
-    let mean_pooled = summed.div(&counts)?;
-    let norm = mean_pooled.sqr()?.sum_all()?.sqrt()?;
+    let summed = masked.sum(1)?; // Sum over sequence length
+    let mask_sum = mask.sum(1)?; // Get token counts
+    let mask_sum = mask_sum.squeeze(2)?; // Remove last dimension
+
+    // Ensure shapes match for division
+    let mean_pooled = if mask_sum.dims()[1] == 1 {
+        summed.div(&mask_sum)?
+    } else {
+        // If shapes don't match, create a broadcasted version
+        let mask_sum = mask_sum.sum(1)?.unsqueeze(1)?;
+        summed.div(&mask_sum)?
+    };
+
+    // Normalize the pooled output
+    let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?;
     let normalized = mean_pooled.div(&norm)?;
     let vector = normalized.squeeze(0)?.to_vec1::<f32>()?;
 
