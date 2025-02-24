@@ -195,7 +195,7 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let attention_mask_sum = attention_mask_float.sum(1)?.unsqueeze(1)?;
 
     // 3. Mask the hidden states (multiply by attention mask)
-    let masked_hidden = hidden_state.mul(&attention_mask_float.unsqueeze(2)?)?;
+    let masked_hidden = hidden_state.mul(&attention_mask_float)?;
 
     // 4. Sum the masked hidden states along dim 1
     let summed = masked_hidden.sum(1)?;
