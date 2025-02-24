@@ -82,7 +82,7 @@ fn init_e5_model(config: &E5Config) -> Result<()> {
         max_position_embeddings: config.max_length,
         num_attention_heads: 16,
         num_hidden_layers: 24,
-        vocab_size: 250000,
+        vocab_size: 30522,
         layer_norm_eps: 1e-12,
         pad_token_id: 0,
         hidden_act: HiddenAct::Gelu,
