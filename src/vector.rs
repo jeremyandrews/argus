@@ -187,21 +187,24 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     // Get the last hidden state
     let hidden_state = model.forward(&input_ids, &attention_mask, None)?;
 
-    // Convert attention mask to float and expand dimensions
-    let mask = attention_mask.to_dtype(DType::F32)?;
-    let mask = mask.unsqueeze(2)?;
-    let mask = mask.broadcast_as(hidden_state.shape())?;
+    // Following E5's pooling implementation:
+    // 1. Convert attention mask to float
+    let attention_mask_float = attention_mask.to_dtype(DType::F32)?;
 
-    // Apply mask and pool
-    let masked = hidden_state.mul(&mask)?;
-    let sum_mask = mask.sum(1)?; // [1, 1024]
-    let sum_embeddings = masked.sum(1)?; // [1, 1024]
+    // 2. Sum up the attention mask along dim 1 and add a new dimension
+    let attention_mask_sum = attention_mask_float.sum(1)?.unsqueeze(1)?;
 
-    // Mean pooling
-    let mean_pooled = sum_embeddings.div(&sum_mask)?;
+    // 3. Mask the hidden states (multiply by attention mask)
+    let masked_hidden = hidden_state.mul(&attention_mask_float.unsqueeze(2)?)?;
 
-    // Normalize
-    let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?;
+    // 4. Sum the masked hidden states along dim 1
+    let summed = masked_hidden.sum(1)?;
+
+    // 5. Divide by attention mask sum to get mean
+    let mean_pooled = summed.div(&attention_mask_sum)?;
+
+    // 6. Normalize the vector
+    let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?.unsqueeze(1)?;
     let normalized = mean_pooled.div(&norm)?;
 
     // Get final vector
