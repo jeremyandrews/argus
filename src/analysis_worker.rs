@@ -12,6 +12,7 @@ use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
+use crate::vector::get_article_vectors;
 use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 // Import necessary items from decision_worker
@@ -582,6 +583,17 @@ async fn process_analysis_item(
                     return false; // Skip processing if saving fails
                 }
 
+                // Generate vector embedding
+                let vector_start = Instant::now();
+                if let Ok(Some(embedding)) = get_article_vectors(&article_text).await {
+                    info!(
+                        "Generated vector embedding with {} dimensions in {:?}",
+                        embedding.len(),
+                        vector_start.elapsed()
+                    );
+                    // Later we can store this in the database or use it for similarity search
+                }
+
                 // Send notification to app
                 if let Some(r2_url) = send_to_app(&response_json).await {
                     // Update the article with R2 details
@@ -727,6 +739,17 @@ async fn process_analysis_item(
                                 "Failed to save article to database: {:?}", e
                             );
                             return false; // Skip processing if saving fails
+                        }
+
+                        // Generate vector embedding
+                        let vector_start = Instant::now();
+                        if let Ok(Some(embedding)) = get_article_vectors(&article_text).await {
+                            info!(
+                                "Generated vector embedding with {} dimensions in {:?}",
+                                embedding.len(),
+                                vector_start.elapsed()
+                            );
+                            // Later we can store this in the database or use it for similarity search
                         }
 
                         // Send notification to app

@@ -13,6 +13,7 @@ pub mod prompts;
 pub mod rss;
 pub mod slack;
 pub mod util;
+pub mod vector;
 
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
