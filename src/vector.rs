@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokenizers::Tokenizer;
 use tokio::fs;
+use tokio::time::Instant;
 use tracing::{error, info};
 
 // Static globals
@@ -120,15 +121,18 @@ fn init_e5_tokenizer(config: &E5Config) -> Result<()> {
 }
 
 async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>> {
+    let start_time = Instant::now();
     let model = MODEL.get().expect("E5 model not initialized");
     let tokenizer = TOKENIZER.get().expect("E5 tokenizer not initialized");
 
+    let tokenize_start = Instant::now();
     let prefixed_text = format!("passage: {}", text);
-
     let encoding = tokenizer
         .encode(prefixed_text, true)
         .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+    let tokenize_end = Instant::now();
 
+    let inference_start = Instant::now();
     let input_ids = Tensor::new(
         encoding
             .get_ids()
@@ -163,6 +167,21 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let normalized = mean_pooled.div(&norm)?;
 
     let vector = normalized.squeeze(0)?.to_vec1::<f32>()?;
+    let end_time = Instant::now();
+
+    info!(
+        "Embedding generation timing:\n\
+         - Tokenization: {:?}\n\
+         - Model inference: {:?}\n\
+         - Total time: {:?}\n\
+         - Input text length: {} chars\n\
+         - Tokens generated: {}",
+        tokenize_end.duration_since(tokenize_start),
+        end_time.duration_since(inference_start),
+        end_time.duration_since(start_time),
+        text.len(),
+        encoding.get_ids().len()
+    );
 
     Ok(vector)
 }
@@ -171,16 +190,34 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
     let config = E5Config::default();
     static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+    let total_start = Instant::now();
+
     if !INITIALIZED.load(Ordering::Relaxed) {
-        // Ensure models exist before initialization
+        let init_start = Instant::now();
         config.ensure_models_exist().await?;
+        let model_init_start = Instant::now();
         init_e5_model(&config)?;
+        let tokenizer_init_start = Instant::now();
         init_e5_tokenizer(&config)?;
         INITIALIZED.store(true, Ordering::Relaxed);
+
+        info!(
+            "Initialization timing: \n\
+             - Model download/check: {:?}\n\
+             - Model initialization: {:?}\n\
+             - Tokenizer initialization: {:?}\n\
+             - Total init time: {:?}",
+            model_init_start.duration_since(init_start),
+            tokenizer_init_start.duration_since(model_init_start),
+            total_start.duration_since(tokenizer_init_start),
+            total_start.duration_since(init_start)
+        );
     }
 
     match get_article_embedding(text, &config).await {
         Ok(embedding) => {
+            let validation_start = Instant::now();
+
             // Basic validation
             if embedding.len() != config.dimensions {
                 error!(
@@ -191,20 +228,63 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
                 return Ok(None);
             }
 
-            // Check if embedding contains valid floats
-            if embedding.iter().any(|x| x.is_nan() || x.is_infinite()) {
-                error!("Embedding contains invalid values (NaN or infinite)");
-                return Ok(None);
-            }
+            // Statistical calculations
+            let stats_start = Instant::now();
+
+            let sum: f32 = embedding.iter().sum();
+            let mean = sum / embedding.len() as f32;
+            let variance: f32 =
+                embedding.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / embedding.len() as f32;
+            let std_dev = variance.sqrt();
+            let max = embedding.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+            let min = embedding.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+
+            let active_dimensions = embedding.iter().filter(|&&x| x > mean).count();
+
+            let magnitude: f32 = embedding.iter().map(|x| x.powi(2)).sum::<f32>().sqrt();
+
+            let end_time = Instant::now();
 
             info!(
-                "Generated valid embedding with {} dimensions",
-                embedding.len()
+                "Embedding generation complete:\n\
+                 Timing:\n\
+                 - Embedding generation: {:?}\n\
+                 - Validation: {:?}\n\
+                 - Statistics calculation: {:?}\n\
+                 - Total processing time: {:?}\n\
+                 \n\
+                 Statistics:\n\
+                 - Dimensions: {}\n\
+                 - Mean: {:.4}\n\
+                 - Std Dev: {:.4}\n\
+                 - Min: {:.4}\n\
+                 - Max: {:.4}\n\
+                 - Active dimensions: {}/{} ({:.1}%)\n\
+                 - Vector magnitude: {:.6}",
+                validation_start.duration_since(total_start),
+                stats_start.duration_since(validation_start),
+                end_time.duration_since(stats_start),
+                end_time.duration_since(total_start),
+                embedding.len(),
+                mean,
+                std_dev,
+                min,
+                max,
+                active_dimensions,
+                embedding.len(),
+                (active_dimensions as f32 / embedding.len() as f32) * 100.0,
+                magnitude
             );
+
             Ok(Some(embedding))
         }
         Err(e) => {
-            error!("Failed to generate embedding: {:?}", e);
+            let end_time = Instant::now();
+            error!(
+                "Failed to generate embedding after {:?}: {:?}",
+                end_time.duration_since(total_start),
+                e
+            );
             Ok(None)
         }
     }
