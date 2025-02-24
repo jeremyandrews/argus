@@ -187,28 +187,24 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     // Get the last hidden state
     let hidden_state = model.forward(&input_ids, &attention_mask, None)?;
 
-    // Convert attention mask to proper shape for multiplication
-    let mask = attention_mask.unsqueeze(2)?;
-    let mask = mask.to_dtype(DType::F32)?;
+    // Convert attention mask to float and expand dimensions
+    let mask = attention_mask.to_dtype(DType::F32)?;
+    let mask = mask.unsqueeze(2)?;
+    let mask = mask.broadcast_as(hidden_state.shape())?;
 
-    // Masked mean pooling
+    // Apply mask and pool
     let masked = hidden_state.mul(&mask)?;
-    let summed = masked.sum(1)?; // Sum over sequence length
-    let mask_sum = mask.sum(1)?; // Get token counts
-    let mask_sum = mask_sum.squeeze(2)?; // Remove last dimension
+    let sum_mask = mask.sum(1)?; // [1, 1024]
+    let sum_embeddings = masked.sum(1)?; // [1, 1024]
 
-    // Ensure shapes match for division
-    let mean_pooled = if mask_sum.dims()[1] == 1 {
-        summed.div(&mask_sum)?
-    } else {
-        // If shapes don't match, create a broadcasted version
-        let mask_sum = mask_sum.sum(1)?.unsqueeze(1)?;
-        summed.div(&mask_sum)?
-    };
+    // Mean pooling
+    let mean_pooled = sum_embeddings.div(&sum_mask)?;
 
-    // Normalize the pooled output
+    // Normalize
     let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?;
     let normalized = mean_pooled.div(&norm)?;
+
+    // Get final vector
     let vector = normalized.squeeze(0)?.to_vec1::<f32>()?;
 
     let end_time = Instant::now();
