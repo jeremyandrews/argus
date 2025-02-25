@@ -219,7 +219,8 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     info!(target: TARGET_VECTOR, "Shape of valid_token_counts: {:?}", valid_token_counts.shape());
 
     // Perform mean pooling (ensure correct shape for division)
-    let mean_pooled = summed_hidden.div(&valid_token_counts.unsqueeze(1)?)?;
+    let mean_pooled =
+        summed_hidden.div(&valid_token_counts.broadcast_as(summed_hidden.shape())?)?;
     info!(target: TARGET_VECTOR, "Shape of mean_pooled: {:?}", mean_pooled.shape());
 
     // Normalize the vector
