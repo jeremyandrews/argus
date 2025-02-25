@@ -187,32 +187,34 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     // Get the last hidden state
     let hidden_state = model.forward(&input_ids, &attention_mask, None)?;
 
-    // Log the shape of hidden_state before any modification
     info!(target: TARGET_VECTOR, "Shape of hidden_state: {:?}", hidden_state.shape());
 
     // Convert attention mask to float
     let attention_mask_float = attention_mask.to_dtype(DType::F32)?;
     info!(target: TARGET_VECTOR, "Shape of attention_mask_float: {:?}", attention_mask_float.shape());
 
-    // Sum up the attention mask along dim 1 and add a new dimension
+    // 1. Sum up the attention mask along dim 1 and add a new dimension
     let attention_mask_sum = attention_mask_float.sum(1)?.unsqueeze(1)?;
     info!(target: TARGET_VECTOR, "Shape of attention_mask_sum: {:?}", attention_mask_sum.shape());
 
-    // Mask the hidden states (multiply by attention mask)
-    let masked_hidden = hidden_state.mul(&attention_mask_float.unsqueeze(2)?)?;
+    // 2. Mask the hidden states (multiply by attention mask)
+    let attention_mask_expanded = attention_mask_float
+        .unsqueeze(2)?
+        .expand(hidden_state.shape())?;
+    info!(target: TARGET_VECTOR, "Shape of attention_mask_expanded: {:?}", attention_mask_expanded.shape());
+
+    let masked_hidden = hidden_state.mul(&attention_mask_expanded)?;
     info!(target: TARGET_VECTOR, "Shape of masked_hidden: {:?}", masked_hidden.shape());
 
-    // Sum the masked hidden states along dim 1
+    // 3. Sum the masked hidden states along dim 1
     let summed = masked_hidden.sum(1)?;
     info!(target: TARGET_VECTOR, "Shape of summed: {:?}", summed.shape());
 
-    // Before division, log the tensor shapes to confirm the issue
-    info!(target: TARGET_VECTOR, "Before division - summed: {:?}, attention_mask_sum: {:?}", summed.shape(), attention_mask_sum.shape());
-
+    // 4. Expand attention_mask_sum to match summed shape before division
     let attention_mask_expanded = attention_mask_sum.expand(summed.shape())?;
     info!(target: TARGET_VECTOR, "Expanded attention_mask_sum shape: {:?}", attention_mask_expanded.shape());
 
-    // This is the line that fails - let's ensure both sides match!
+    // 5. Divide by attention mask sum to get mean
     let mean_pooled = summed.div(&attention_mask_expanded)?;
     info!(target: TARGET_VECTOR, "Shape of mean_pooled: {:?}", mean_pooled.shape());
 
