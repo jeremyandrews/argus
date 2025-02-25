@@ -241,22 +241,7 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let magnitude: f32 = vector.iter().map(|x| x.powi(2)).sum::<f32>().sqrt();
 
     info!(target: TARGET_VECTOR,
-        "Embedding generation successful:\n\
-         Timing:\n\
-         - Input length: {} tokens\n\
-         - Tokenization time: {:?}\n\
-         - Inference time: {:?}\n\
-         - Total time: {:?}\n\
-         \n\
-         Statistics:\n\
-         - Dimensions: {}\n\
-         - Mean: {:.4}\n\
-         - Std Dev: {:.4}\n\
-         - Min: {:.4}\n\
-         - Max: {:.4}\n\
-         - Active dimensions: {}/{} ({:.1}%)\n\
-         - Vector magnitude: {:.6}\n\
-         - Original text length: {} chars",
+        "Embedding generation successful: Timing: Input length: {} tokens; Tokenization time: {:?}; Inference time: {:?}; Total time: {:?} - Statistics: Dimensions: {}; Mean: {:.4}; Std Dev: {:.4}; Min: {:.4}; Max: {:.4}; Active dimensions: {}/{} ({:.1}%); Vector magnitude: {:.6}; Original text length: {} chars",
         input_ids.dims()[1],
         tokenize_end.duration_since(tokenize_start),
         end_time.duration_since(inference_start),
@@ -292,11 +277,7 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
         INITIALIZED.store(true, Ordering::Relaxed);
 
         info!(target: TARGET_VECTOR,
-            "Initialization timing: \n\
-             - Model download/check: {:?}\n\
-             - Model initialization: {:?}\n\
-             - Tokenizer initialization: {:?}\n\
-             - Total init time: {:?}",
+            "Initialization timing: Model download/check: {:?}; Model initialization: {:?}; Tokenizer initialization: {:?}; Total init time: {:?}",
             model_init_start.duration_since(init_start),
             tokenizer_init_start.duration_since(model_init_start),
             total_start.duration_since(tokenizer_init_start),
@@ -332,22 +313,7 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 
             let end_time = Instant::now();
 
-            info!(target: TARGET_VECTOR,
-                "Embedding generation complete:\n\
-                 Timing:\n\
-                 - Embedding generation: {:?}\n\
-                 - Validation: {:?}\n\
-                 - Statistics calculation: {:?}\n\
-                 - Total processing time: {:?}\n\
-                 \n\
-                 Statistics:\n\
-                 - Dimensions: {}\n\
-                 - Mean: {:.4}\n\
-                 - Std Dev: {:.4}\n\
-                 - Min: {:.4}\n\
-                 - Max: {:.4}\n\
-                 - Active dimensions: {}/{} ({:.1}%)\n\
-                 - Vector magnitude: {:.6}",
+            info!(target: TARGET_VECTOR, "Embedding generation complete: Timing: Embedding generation: {:?}; Validation: {:?}; Statistics calculation: {:?}; Total processing time: {:?} - Statistics: Dimensions: {}; Mean: {:.4}; Std Dev: {:.4}; Min: {:.4}; Max: {:.4}; Active dimensions: {}/{} ({:.1}%); Vector magnitude: {:.6}",
                 validation_start.duration_since(total_start),
                 stats_start.duration_since(validation_start),
                 end_time.duration_since(stats_start),
