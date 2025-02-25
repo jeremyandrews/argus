@@ -221,7 +221,8 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
 
     // Normalize the vector
     let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?.unsqueeze(1)?;
-    let normalized = mean_pooled.div(&norm)?;
+    let norm_expanded = norm.expand(mean_pooled.shape())?; // [1, 1024]
+    let normalized = mean_pooled.div(&norm_expanded)?;
 
     // Get final vector
     let vector = normalized.squeeze(0)?.to_vec1::<f32>()?;
