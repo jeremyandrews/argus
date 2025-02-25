@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, Vectors,
+    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, Vector, VectorParams, Vectors,
     VectorsConfig, WriteOrdering,
 };
 use qdrant_client::Qdrant;
@@ -393,7 +393,6 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
         json!(sqlite_id).try_into().unwrap(),
     );
 
-    debug_assert!(sqlite_id > 0, "SQLite ID should always be positive");
     let point = PointStruct {
         id: Some(PointId {
             point_id_options: Some(PointIdOptions::Num(
@@ -402,7 +401,7 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
                     .expect("SQLite ID should never be negative"),
             )),
         }),
-        vectors: Some(Vectors::from(embedding)),
+        vectors: Some(Vectors::from(Vector::new_dense(embedding))),
         payload,
         ..Default::default()
     };
