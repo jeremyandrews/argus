@@ -592,7 +592,7 @@ impl Database {
         title_domain_hash: Option<&str>,
         r2_url: Option<&str>,
         pub_date: Option<&str>,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<i64, sqlx::Error> {
         // Parse the URL
         let parsed_url = match Url::parse(url) {
             Ok(parsed) => parsed,
@@ -615,7 +615,7 @@ impl Database {
         let max_retries = 5;
 
         for attempt in 1..=max_retries {
-            match sqlx::query(
+            match sqlx::query_as::<_, (i64,)>(
             r#"
             INSERT INTO articles (url, normalized_url, seen_at, pub_date, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
@@ -643,11 +643,11 @@ impl Database {
         .bind(hash)
         .bind(title_domain_hash)
         .bind(r2_url)
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await {
-            Ok(_) => {
-                debug!(target: TARGET_DB, "Article added/updated: {}", url);
-                return Ok(());
+            Ok((id,)) => {
+                debug!(target: TARGET_DB, "Article added/updated: {} with id {}", url, id);
+                return Ok(id);
             }
             Err(err) => {
                 if err.is_database_lock_error() {

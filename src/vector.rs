@@ -5,6 +5,14 @@ use candle_transformers::models::bert::{
     BertModel, Config as BertConfig, HiddenAct, PositionEmbeddingType,
 };
 use once_cell::sync::OnceCell;
+use qdrant_client::qdrant::vectors_config::Config;
+use qdrant_client::qdrant::{
+    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, Vectors,
+    VectorsConfig, WriteOrdering,
+};
+use qdrant_client::Qdrant;
+use serde_json::json;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -22,6 +30,31 @@ const MODEL_URL: &str =
 const TOKENIZER_URL: &str =
     "https://huggingface.co/intfloat/e5-large-v2/resolve/main/tokenizer.json";
 const TARGET_VECTOR: &str = "vector";
+const QDRANT_URL_ENV: &str = "QDRANT_URL";
+
+/**
+ * Created Qdrant schema:
+ * $ curl -X PUT 'http://qdrant:6333/collections/articles' \
+ *     -H 'Content-Type: application/json' \
+ *     -d '{
+ *     "name": "articles",
+ *     "vectors": {
+ *         "size": 1024,
+ *         "distance": "Cosine"
+ *     },
+ *     "payload_schema": {
+ *         "sqlite_id": "integer"
+ *     },
+ *     "optimizers_config": {
+ *         "indexing_threshold": 20000
+ *     },
+ *     "hnsw_config": {
+ *         "m": 16,
+ *         "ef_construct": 100,
+ *         "full_scan_threshold": 10000
+ *     }
+ * }'
+ */
 
 struct E5Config {
     model_path: String,
@@ -341,4 +374,63 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
             Ok(None)
         }
     }
+}
+
+pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> {
+    let qdrant_url =
+        std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required");
+    let client = Qdrant::from_url(&qdrant_url)
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let mut payload: HashMap<String, qdrant_client::qdrant::Value> = HashMap::new();
+    payload.insert(
+        "sqlite_id".to_string(),
+        json!(sqlite_id).try_into().unwrap(),
+    );
+
+    let point = PointStruct {
+        id: Some(PointId::from(sqlite_id.to_string())),
+        vectors: Some(Vectors::from(embedding)),
+        payload: payload,
+        ..Default::default()
+    };
+
+    let upsert_points = UpsertPoints {
+        collection_name: "articles".to_string(),
+        points: vec![point],
+        wait: Some(true),
+        ordering: Some(WriteOrdering::default()),
+        shard_key_selector: None,
+    };
+
+    client.upsert_points(upsert_points).await?;
+
+    Ok(())
+}
+
+async fn _create_collection() -> Result<()> {
+    let qdrant_url =
+        std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required");
+    let client = Qdrant::from_url(&qdrant_url)
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let vector_params = VectorParams {
+        size: 1024, // E5 embedding size
+        distance: Distance::Cosine as i32,
+        ..Default::default()
+    };
+
+    let create_collection = CreateCollection {
+        collection_name: "articles".to_string(),
+        vectors_config: Some(VectorsConfig {
+            config: Some(Config::Params(vector_params)),
+        }),
+        ..Default::default()
+    };
+
+    client.create_collection(create_collection).await?;
+
+    Ok(())
 }

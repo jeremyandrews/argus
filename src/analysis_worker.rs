@@ -12,7 +12,7 @@ use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
-use crate::vector::get_article_vectors;
+use crate::vector::{get_article_vectors, store_embedding};
 use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 // Import necessary items from decision_worker
@@ -562,7 +562,7 @@ async fn process_analysis_item(
                 });
 
                 // Save the article first
-                if let Err(e) = db
+                let article_id = match db
                     .add_article(
                         &article_url,
                         true,
@@ -576,12 +576,15 @@ async fn process_analysis_item(
                     )
                     .await
                 {
-                    error!(
-                        target: TARGET_LLM_REQUEST,
-                        "Failed to save article to database: {:?}", e
-                    );
-                    return false; // Skip processing if saving fails
-                }
+                    Ok(id) => id,
+                    Err(e) => {
+                        error!(
+                            target: TARGET_LLM_REQUEST,
+                            "Failed to save article to database: {:?}", e
+                        );
+                        return false; // Skip processing if saving fails
+                    }
+                };
 
                 // Generate vector embedding
                 let vector_start = Instant::now();
@@ -591,7 +594,12 @@ async fn process_analysis_item(
                         embedding.len(),
                         vector_start.elapsed()
                     );
-                    // Later we can store this in the database or use it for similarity search
+                    if let Err(e) = store_embedding(article_id, embedding).await {
+                        error!(
+                            target: TARGET_LLM_REQUEST,
+                            "Failed to store vector embedding: {:?}", e
+                        );
+                    }
                 }
 
                 // Send notification to app
@@ -720,7 +728,7 @@ async fn process_analysis_item(
                         });
 
                         // Save the article first
-                        if let Err(e) = db
+                        let article_id = match db
                             .add_article(
                                 &article_url,
                                 true,
@@ -734,12 +742,15 @@ async fn process_analysis_item(
                             )
                             .await
                         {
-                            error!(
-                                target: TARGET_LLM_REQUEST,
-                                "Failed to save article to database: {:?}", e
-                            );
-                            return false; // Skip processing if saving fails
-                        }
+                            Ok(id) => id,
+                            Err(e) => {
+                                error!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "Failed to save article to database: {:?}", e
+                                );
+                                return false; // Skip processing if saving fails
+                            }
+                        };
 
                         // Generate vector embedding
                         let vector_start = Instant::now();
@@ -749,7 +760,12 @@ async fn process_analysis_item(
                                 embedding.len(),
                                 vector_start.elapsed()
                             );
-                            // Later we can store this in the database or use it for similarity search
+                            if let Err(e) = store_embedding(article_id, embedding).await {
+                                error!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "Failed to store vector embedding: {:?}", e
+                                );
+                            }
                         }
 
                         // Send notification to app

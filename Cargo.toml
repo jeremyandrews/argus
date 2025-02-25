@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 
 [dependencies]
@@ -25,6 +25,7 @@ jsonwebtoken = "9.0"
 lazy_static = "1.5"
 ollama-rs = "0.2"
 once_cell = "1.19"
+qdrant-client = "1.13"
 rand = "0.9"
 regex = "1.0"
 readability = "0.3"
