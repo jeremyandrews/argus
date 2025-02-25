@@ -193,32 +193,35 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let attention_mask_float = attention_mask.to_dtype(DType::F32)?;
     info!(target: TARGET_VECTOR, "Shape of attention_mask_float: {:?}", attention_mask_float.shape());
 
-    // 1. Sum up the attention mask along dim 1 and add a new dimension
-    let attention_mask_sum = attention_mask_float.sum(1)?.unsqueeze(1)?;
-    info!(target: TARGET_VECTOR, "Shape of attention_mask_sum: {:?}", attention_mask_sum.shape());
-
-    // 2. Mask the hidden states (multiply by attention mask)
+    // Expand attention mask for broadcasting (match hidden_state shape)
     let attention_mask_expanded = attention_mask_float
         .unsqueeze(2)?
         .expand(hidden_state.shape())?;
     info!(target: TARGET_VECTOR, "Shape of attention_mask_expanded: {:?}", attention_mask_expanded.shape());
 
+    // Apply attention mask (zero out padding embeddings)
     let masked_hidden = hidden_state.mul(&attention_mask_expanded)?;
     info!(target: TARGET_VECTOR, "Shape of masked_hidden: {:?}", masked_hidden.shape());
 
-    // 3. Sum the masked hidden states along dim 1
-    let summed = masked_hidden.sum(1)?;
-    info!(target: TARGET_VECTOR, "Shape of summed: {:?}", summed.shape());
+    // Sum the masked hidden states along the sequence length dimension
+    let summed_hidden = masked_hidden.sum(1)?;
+    info!(target: TARGET_VECTOR, "Shape of summed_hidden: {:?}", summed_hidden.shape());
 
-    // 4. Expand attention_mask_sum to match summed shape before division
-    let attention_mask_expanded = attention_mask_sum.broadcast_as(summed.shape())?;
-    info!(target: TARGET_VECTOR, "Expanded attention_mask_sum shape: {:?}", attention_mask_expanded.shape());
+    // Sum the attention mask to count the number of valid tokens
+    let valid_token_counts = attention_mask_float.sum(1)?.clamp(1.0, f32::MAX)?; // Prevent division by zero
+    info!(target: TARGET_VECTOR, "Shape of valid_token_counts: {:?}", valid_token_counts.shape());
 
-    // 5. Divide by attention mask sum to get mean
-    let mean_pooled = summed.div(&attention_mask_expanded)?;
+    // Ensure valid_token_counts can be broadcasted properly
+    let valid_token_counts_expanded = valid_token_counts
+        .unsqueeze(1)?
+        .expand(summed_hidden.shape())?;
+    info!(target: TARGET_VECTOR, "Expanded valid_token_counts shape: {:?}", valid_token_counts_expanded.shape());
+
+    // Compute the mean-pooling
+    let mean_pooled = summed_hidden.div(&valid_token_counts_expanded)?;
     info!(target: TARGET_VECTOR, "Shape of mean_pooled: {:?}", mean_pooled.shape());
 
-    // 6. Normalize the vector
+    // Normalize the vector
     let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?.unsqueeze(1)?;
     let normalized = mean_pooled.div(&norm)?;
 
