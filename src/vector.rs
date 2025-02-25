@@ -204,7 +204,8 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     let summed = masked_hidden.sum(1)?;
 
     // 5. Divide by attention mask sum to get mean
-    let mean_pooled = summed.div(&attention_mask_sum.broadcast_as(summed.shape().clone())?)?;
+    let attention_mask_sum = attention_mask_sum.expand(summed.shape())?;
+    let mean_pooled = summed.div(&attention_mask_sum)?;
 
     // 6. Normalize the vector
     let norm = mean_pooled.sqr()?.sum(1)?.sqrt()?.unsqueeze(1)?;
