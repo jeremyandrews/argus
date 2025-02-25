@@ -208,7 +208,10 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     info!(target: TARGET_VECTOR, "Shape of summed_hidden: {:?}", summed_hidden.shape());
 
     // Sum the attention mask to count the number of valid tokens
-    let valid_token_counts = attention_mask_float.sum(1)?.clamp(1.0, f32::MAX)?; // Prevent division by zero
+    let valid_token_counts = attention_mask_float
+        .sum(1)?
+        .unsqueeze(1)?
+        .clamp(1.0, f32::MAX)?;
     info!(target: TARGET_VECTOR, "Shape of valid_token_counts: {:?}", valid_token_counts.shape());
 
     // Ensure valid_token_counts can be broadcasted properly
