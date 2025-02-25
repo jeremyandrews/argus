@@ -5,6 +5,7 @@ use candle_transformers::models::bert::{
     BertModel, Config as BertConfig, HiddenAct, PositionEmbeddingType,
 };
 use once_cell::sync::OnceCell;
+use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
     CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, Vectors,
@@ -33,28 +34,31 @@ const TARGET_VECTOR: &str = "vector";
 const QDRANT_URL_ENV: &str = "QDRANT_URL";
 
 /**
- * Created Qdrant schema:
- * $ curl -X PUT 'http://qdrant:6333/collections/articles' \
- *     -H 'Content-Type: application/json' \
- *     -d '{
- *     "name": "articles",
- *     "vectors": {
- *         "size": 1024,
- *         "distance": "Cosine"
- *     },
- *     "payload_schema": {
- *         "sqlite_id": "integer"
- *     },
- *     "optimizers_config": {
- *         "indexing_threshold": 20000
- *     },
- *     "hnsw_config": {
- *         "m": 16,
- *         "ef_construct": 100,
- *         "full_scan_threshold": 10000
- *     }
- * }'
- */
+* Created Qdrant schema:
+* $ curl -X PUT 'http://qdrant:6333/collections/articles' \
+*     -H 'Content-Type: application/json' \
+*     -d '{
+*     "name": "articles",
+*     "vectors": {
+*         "size": 1024,
+*         "distance": "Cosine"
+*     },
+*     "payload_schema": {
+*         "sqlite_id": "integer"
+*     },
+*     "optimizers_config": {
+*         "indexing_threshold": 20000
+*     },
+*     "hnsw_config": {
+*         "m": 16,
+*         "ef_construct": 100,
+*         "full_scan_threshold": 10000
+*     },
+*     "points_count": 0,
+*     "on_disk_payload": true,
+*     "points_id_type": "numeric"
+* }'
+*/
 
 struct E5Config {
     model_path: String,
@@ -377,11 +381,11 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 }
 
 pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> {
-    let qdrant_url =
-        std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required");
-    let client = Qdrant::from_url(&qdrant_url)
-        .timeout(std::time::Duration::from_secs(60))
-        .build()?;
+    let client = Qdrant::from_url(
+        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .build()?;
 
     let mut payload: HashMap<String, qdrant_client::qdrant::Value> = HashMap::new();
     payload.insert(
@@ -389,10 +393,17 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
         json!(sqlite_id).try_into().unwrap(),
     );
 
+    debug_assert!(sqlite_id > 0, "SQLite ID should always be positive");
     let point = PointStruct {
-        id: Some(PointId::from(sqlite_id.to_string())),
+        id: Some(PointId {
+            point_id_options: Some(PointIdOptions::Num(
+                sqlite_id
+                    .try_into()
+                    .expect("SQLite ID should never be negative"),
+            )),
+        }),
         vectors: Some(Vectors::from(embedding)),
-        payload: payload,
+        payload,
         ..Default::default()
     };
 
@@ -404,9 +415,22 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
         shard_key_selector: None,
     };
 
-    client.upsert_points(upsert_points).await?;
-
-    Ok(())
+    match client.upsert_points(upsert_points).await {
+        Ok(_) => {
+            info!(
+                target: TARGET_VECTOR,
+                "Successfully stored embedding for article {}", sqlite_id
+            );
+            Ok(())
+        }
+        Err(e) => {
+            error!(
+                target: TARGET_VECTOR,
+                "Failed to store embedding for article {}: {:?}", sqlite_id, e
+            );
+            Err(anyhow::anyhow!("Failed to store embedding: {:?}", e))
+        }
+    }
 }
 
 async fn _create_collection() -> Result<()> {
