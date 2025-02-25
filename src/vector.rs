@@ -211,7 +211,7 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     info!(target: TARGET_VECTOR, "Shape of summed: {:?}", summed.shape());
 
     // 4. Expand attention_mask_sum to match summed shape before division
-    let attention_mask_expanded = attention_mask_sum.expand(summed.shape())?;
+    let attention_mask_expanded = attention_mask_sum.broadcast_as(summed.shape())?;
     info!(target: TARGET_VECTOR, "Expanded attention_mask_sum shape: {:?}", attention_mask_expanded.shape());
 
     // 5. Divide by attention mask sum to get mean
