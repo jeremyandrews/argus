@@ -630,6 +630,7 @@ impl Database {
                 hash = excluded.hash,
                 title_domain_hash = excluded.title_domain_hash,
                 r2_url = excluded.r2_url
+            RETURNING id
             "#,
         )
         .bind(url)
