@@ -215,9 +215,7 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
     info!(target: TARGET_VECTOR, "Shape of valid_token_counts: {:?}", valid_token_counts.shape());
 
     // Ensure valid_token_counts can be broadcasted properly
-    let valid_token_counts_expanded = valid_token_counts
-        .unsqueeze(1)?
-        .expand(summed_hidden.shape())?;
+    let valid_token_counts_expanded = valid_token_counts.expand(summed_hidden.shape())?;
     info!(target: TARGET_VECTOR, "Expanded valid_token_counts shape: {:?}", valid_token_counts_expanded.shape());
 
     // Compute the mean-pooling
