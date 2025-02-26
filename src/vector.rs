@@ -407,6 +407,7 @@ pub async fn store_embedding(
         json!(published_date).try_into().unwrap(),
     );
     payload.insert("category".to_string(), json!(category).try_into().unwrap());
+    info!(target: TARGET_VECTOR, "store_embedding: payload for article {}: {:?}", sqlite_id, payload);
 
     let point = PointStruct {
         id: Some(PointId {
