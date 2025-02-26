@@ -9,8 +9,8 @@ use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::vectors::VectorsOptions;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, NamedVectors, PointId, PointStruct, UpsertPoints, Vector,
-    VectorParams, VectorsConfig, WriteOrdering,
+    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, VectorsConfig,
+    WriteOrdering,
 };
 use qdrant_client::Qdrant;
 use serde_json::json;
@@ -407,17 +407,11 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
             )),
         }),
         vectors: Some(qdrant_client::qdrant::Vectors {
-            vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
-                vectors: [(
-                    "default".to_string(),
-                    Vector {
-                        data: embedding,
-                        indices: None,
-                        vector: None,
-                        vectors_count: None,
-                    },
-                )]
-                .into(),
+            vectors_options: Some(VectorsOptions::Vector(qdrant_client::qdrant::Vector {
+                data: embedding,
+                indices: None,
+                vector: None,
+                vectors_count: None,
             })),
         }),
         payload,
