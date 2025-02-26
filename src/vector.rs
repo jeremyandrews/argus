@@ -381,7 +381,12 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
     }
 }
 
-pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> {
+pub async fn store_embedding(
+    sqlite_id: i64,
+    embedding: Vec<f32>,
+    published_date: &str,
+    category: &str,
+) -> Result<()> {
     info!(target: TARGET_VECTOR, "store_embedding: embedding length = {}", embedding.len());
 
     let client = Qdrant::from_url(
@@ -390,13 +395,12 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
     .timeout(std::time::Duration::from_secs(60))
     .build()?;
 
-    info!(target: TARGET_VECTOR, "Embedding vector being sent: {:?}", embedding);
-
     let mut payload: HashMap<String, qdrant_client::qdrant::Value> = HashMap::new();
     payload.insert(
-        "sqlite_id".to_string(),
-        json!(sqlite_id).try_into().unwrap(),
+        "published_date".to_string(),
+        json!(published_date).try_into().unwrap(),
     );
+    payload.insert("category".to_string(), json!(category).try_into().unwrap());
 
     let point = PointStruct {
         id: Some(PointId {

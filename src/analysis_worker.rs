@@ -594,7 +594,14 @@ async fn process_analysis_item(
                         embedding.len(),
                         vector_start.elapsed()
                     );
-                    if let Err(e) = store_embedding(article_id, embedding).await {
+                    if let Err(e) = store_embedding(
+                        article_id,
+                        embedding,
+                        pub_date.as_deref().unwrap_or("unknown"),
+                        topic,
+                    )
+                    .await
+                    {
                         error!(
                             target: TARGET_LLM_REQUEST,
                             "Failed to store vector embedding: {:?}", e
@@ -760,7 +767,14 @@ async fn process_analysis_item(
                                 embedding.len(),
                                 vector_start.elapsed()
                             );
-                            if let Err(e) = store_embedding(article_id, embedding).await {
+                            if let Err(e) = store_embedding(
+                                article_id,
+                                embedding,
+                                pub_date.as_deref().unwrap_or("default value"),
+                                &topic,
+                            )
+                            .await
+                            {
                                 error!(
                                     target: TARGET_LLM_REQUEST,
                                     "Failed to store vector embedding: {:?}", e
