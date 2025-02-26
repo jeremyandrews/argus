@@ -12,7 +12,7 @@ use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
-use crate::vector::{get_article_vectors, store_embedding};
+use crate::vector::{get_article_vectors, get_similar_articles, store_embedding};
 use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 // Import necessary items from decision_worker
@@ -569,7 +569,7 @@ async fn process_analysis_item(
                 let quality = calculate_quality_score(sources_quality, argument_quality);
 
                 // Construct the response JSON using the results from process_analysis
-                let response_json = json!({
+                let mut response_json = json!({
                     "topic": topic,
                     "title": article_title,
                     "url": article_url,
@@ -626,9 +626,23 @@ async fn process_analysis_item(
                         embedding.len(),
                         vector_start.elapsed()
                     );
+                    if let Ok(similar) = get_similar_articles(&embedding, 10).await {
+                        response_json["similar_articles"] = similar
+                            .into_iter()
+                            .map(|article| {
+                                json!({
+                                    "id": article.id,
+                                    "category": article.category,
+                                    "published_date": article.published_date,
+                                    "quality_score": article.quality_score,
+                                    "similarity_score": article.score
+                                })
+                            })
+                            .collect();
+                    }
                     if let Err(e) = store_embedding(
                         article_id,
-                        embedding,
+                        &embedding,
                         pub_date.as_deref().unwrap_or("unknown"),
                         topic,
                         quality,
@@ -747,7 +761,7 @@ async fn process_analysis_item(
 
                         let quality = calculate_quality_score(sources_quality, argument_quality);
 
-                        let response_json = json!({
+                        let mut response_json = json!({
                             "topic": topic,
                             "title": article_title,
                             "url": article_url,
@@ -803,9 +817,23 @@ async fn process_analysis_item(
                                 embedding.len(),
                                 vector_start.elapsed()
                             );
+                            if let Ok(similar) = get_similar_articles(&embedding, 10).await {
+                                response_json["similar_articles"] = similar
+                                    .into_iter()
+                                    .map(|article| {
+                                        json!({
+                                            "id": article.id,
+                                            "category": article.category,
+                                            "published_date": article.published_date,
+                                            "quality_score": article.quality_score,
+                                            "similarity_score": article.score
+                                        })
+                                    })
+                                    .collect();
+                            }
                             if let Err(e) = store_embedding(
                                 article_id,
-                                embedding,
+                                &embedding,
                                 pub_date.as_deref().unwrap_or("default value"),
                                 &topic,
                                 quality,

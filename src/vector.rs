@@ -9,8 +9,8 @@ use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::vectors::VectorsOptions;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, VectorsConfig,
-    WriteOrdering,
+    CreateCollection, Distance, PointId, PointStruct, SearchParams, SearchPoints, UpsertPoints,
+    VectorParams, VectorsConfig, WithPayloadSelector, WithVectorsSelector, WriteOrdering,
 };
 use qdrant_client::Qdrant;
 use serde_json::json;
@@ -389,7 +389,7 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 
 pub async fn store_embedding(
     sqlite_id: i64,
-    embedding: Vec<f32>,
+    embedding: &Vec<f32>,
     published_date: &str,
     category: &str,
     quality: i8,
@@ -424,7 +424,7 @@ pub async fn store_embedding(
         }),
         vectors: Some(qdrant_client::qdrant::Vectors {
             vectors_options: Some(VectorsOptions::Vector(qdrant_client::qdrant::Vector {
-                data: embedding,
+                data: embedding.clone(),
                 indices: None,
                 vector: None,
                 vectors_count: None,
@@ -458,6 +458,121 @@ pub async fn store_embedding(
             Err(anyhow::anyhow!("Failed to store embedding: {:?}", e))
         }
     }
+}
+
+pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Vec<ArticleMatch>> {
+    info!(target: TARGET_VECTOR, "search_similar_articles: embedding length = {}", embedding.len());
+
+    let client = Qdrant::from_url(
+        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .build()?;
+
+    // Create the search request
+    let search_points = SearchPoints {
+        collection_name: "articles".to_string(),
+        vector: embedding.clone(),
+        limit,
+        with_payload: Some(WithPayloadSelector::from(true)),
+        with_vectors: Some(WithVectorsSelector::from(false)),
+        params: Some(SearchParams {
+            hnsw_ef: Some(128),
+            exact: Some(true),
+            ..Default::default()
+        }),
+        score_threshold: Some(0.5),
+        // The sort field doesn't exist on SearchPoints, we'll sort after fetching
+        ..Default::default()
+    };
+
+    match client.search_points(search_points).await {
+        Ok(response) => {
+            let mut matches: Vec<ArticleMatch> = response
+                .result
+                .into_iter()
+                .map(|scored_point| {
+                    let id = match scored_point.id.unwrap().point_id_options.unwrap() {
+                        PointIdOptions::Num(num) => num as i64,
+                        _ => panic!("Expected numeric point ID"),
+                    };
+
+                    let payload = scored_point.payload;
+                    let published_date = payload
+                        .get("published_date")
+                        .and_then(|v| v.kind.as_ref())
+                        .and_then(|k| {
+                            if let qdrant_client::qdrant::value::Kind::StringValue(s) = k {
+                                Some(s.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+
+                    let category = payload
+                        .get("category")
+                        .and_then(|v| v.kind.as_ref())
+                        .and_then(|k| {
+                            if let qdrant_client::qdrant::value::Kind::StringValue(s) = k {
+                                Some(s.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default();
+
+                    let quality_score = payload
+                        .get("quality_score")
+                        .and_then(|v| v.kind.as_ref())
+                        .and_then(|k| {
+                            if let qdrant_client::qdrant::value::Kind::IntegerValue(i) = k {
+                                Some(*i as i8)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0);
+
+                    ArticleMatch {
+                        id,
+                        published_date,
+                        category,
+                        quality_score,
+                        score: scored_point.score,
+                    }
+                })
+                .collect();
+
+            // Sort by quality_score in descending order
+            matches.sort_by(|a, b| b.quality_score.cmp(&a.quality_score));
+
+            info!(
+                target: TARGET_VECTOR,
+                "Found {} similar articles", matches.len()
+            );
+            Ok(matches)
+        }
+        Err(e) => {
+            error!(
+                target: TARGET_VECTOR,
+                "Failed to search for similar articles: {:?}", e
+            );
+            Err(anyhow::anyhow!(
+                "Failed to search for similar articles: {:?}",
+                e
+            ))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ArticleMatch {
+    pub id: i64,
+    pub published_date: String,
+    pub category: String,
+    pub quality_score: i8,
+    pub score: f32, // similarity score from Qdrant
 }
 
 async fn _create_collection() -> Result<()> {
