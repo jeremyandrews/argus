@@ -6,11 +6,13 @@ use candle_transformers::models::bert::{
 };
 use once_cell::sync::OnceCell;
 use qdrant_client::qdrant::point_id::PointIdOptions;
+use qdrant_client::qdrant::vectors::VectorsOptions;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, VectorsConfig,
-    WriteOrdering,
+    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, Vector, VectorParams,
+    VectorsConfig, WriteOrdering,
 };
+use qdrant_client::qdrant::{NamedVectors, SparseIndices};
 use qdrant_client::Qdrant;
 use serde_json::json;
 use std::collections::HashMap;
@@ -389,6 +391,8 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
     .timeout(std::time::Duration::from_secs(60))
     .build()?;
 
+    info!(target: TARGET_VECTOR, "Embedding vector being sent: {:?}", embedding);
+
     let mut payload: HashMap<String, qdrant_client::qdrant::Value> = HashMap::new();
     payload.insert(
         "sqlite_id".to_string(),
@@ -403,7 +407,20 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
                     .expect("SQLite ID should never be negative"),
             )),
         }),
-        vectors: Some(embedding.into()),
+        vectors: Some(qdrant_client::qdrant::Vectors {
+            vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
+                vectors: [(
+                    "default".to_string(),
+                    Vector {
+                        data: embedding,
+                        indices: Some(SparseIndices { data: vec![] }), // Changed to use 'data' field
+                        vector: None,
+                        vectors_count: Some(0),
+                    },
+                )]
+                .into(),
+            })),
+        }),
         payload,
         ..Default::default()
     };
