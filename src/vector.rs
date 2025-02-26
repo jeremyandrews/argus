@@ -45,7 +45,13 @@ const QDRANT_URL_ENV: &str = "QDRANT_URL";
 *         "distance": "Cosine"
 *     },
 *     "payload_schema": {
-*         "sqlite_id": "integer"
+*         "sqlite_id": "integer",
+*         "published_date": {
+*             "type": "datetime"
+*         },
+*         "category": {
+*             "type": "keyword"
+*         }
 *     },
 *     "optimizers_config": {
 *         "indexing_threshold": 20000
