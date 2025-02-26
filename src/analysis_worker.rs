@@ -626,19 +626,34 @@ async fn process_analysis_item(
                         embedding.len(),
                         vector_start.elapsed()
                     );
-                    if let Ok(similar) = get_similar_articles(&embedding, 10).await {
-                        response_json["similar_articles"] = similar
-                            .into_iter()
-                            .map(|article| {
-                                json!({
+                    if let Ok(similar_articles) = get_similar_articles(&embedding, 10).await {
+                        let mut similar_articles_with_details = Vec::new();
+                        for article in similar_articles {
+                            if let Ok(Some((url, title, tiny_summary))) =
+                                db.get_article_details_by_id(article.id).await
+                            {
+                                similar_articles_with_details.push(json!({
+                                    "id": article.id,
+                                    "url": url,
+                                    "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
+                                    "tiny_summary": tiny_summary,
+                                    "category": article.category,
+                                    "published_date": article.published_date,
+                                    "quality_score": article.quality_score,
+                                    "similarity_score": article.score
+                                }));
+                            } else {
+                                // Include basic info if details can't be fetched
+                                similar_articles_with_details.push(json!({
                                     "id": article.id,
                                     "category": article.category,
                                     "published_date": article.published_date,
                                     "quality_score": article.quality_score,
                                     "similarity_score": article.score
-                                })
-                            })
-                            .collect();
+                                }));
+                            }
+                        }
+                        response_json["similar_articles"] = json!(similar_articles_with_details);
                     }
                     if let Err(e) = store_embedding(
                         article_id,
@@ -817,19 +832,36 @@ async fn process_analysis_item(
                                 embedding.len(),
                                 vector_start.elapsed()
                             );
-                            if let Ok(similar) = get_similar_articles(&embedding, 10).await {
-                                response_json["similar_articles"] = similar
-                                    .into_iter()
-                                    .map(|article| {
-                                        json!({
+                            if let Ok(similar_articles) = get_similar_articles(&embedding, 10).await
+                            {
+                                let mut similar_articles_with_details = Vec::new();
+                                for article in similar_articles {
+                                    if let Ok(Some((url, title, tiny_summary))) =
+                                        db.get_article_details_by_id(article.id).await
+                                    {
+                                        similar_articles_with_details.push(json!({
+                                            "id": article.id,
+                                            "url": url,
+                                            "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
+                                            "tiny_summary": tiny_summary,
+                                            "category": article.category,
+                                            "published_date": article.published_date,
+                                            "quality_score": article.quality_score,
+                                            "similarity_score": article.score
+                                        }));
+                                    } else {
+                                        // Include basic info if details can't be fetched
+                                        similar_articles_with_details.push(json!({
                                             "id": article.id,
                                             "category": article.category,
                                             "published_date": article.published_date,
                                             "quality_score": article.quality_score,
                                             "similarity_score": article.score
-                                        })
-                                    })
-                                    .collect();
+                                        }));
+                                    }
+                                }
+                                response_json["similar_articles"] =
+                                    json!(similar_articles_with_details);
                             }
                             if let Err(e) = store_embedding(
                                 article_id,

@@ -1129,4 +1129,38 @@ impl Database {
             .map(|(topic, priority)| SubscriptionInfo { topic, priority })
             .collect())
     }
+
+    pub async fn get_article_details_by_id(
+        &self,
+        article_id: i64,
+    ) -> Result<Option<(String, Option<String>, String)>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT url, tiny_summary, analysis
+            FROM articles
+            WHERE id = ?1
+            "#,
+        )
+        .bind(article_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let url: String = row.get("url");
+            let tiny_summary: Option<String> = row.get("tiny_summary");
+            let analysis_json: String = row.get("analysis");
+
+            // Extract title from the analysis JSON
+            let tiny_title =
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&analysis_json) {
+                    json["tiny_title"].as_str().map(|s| s.to_string())
+                } else {
+                    None
+                };
+
+            Ok(Some((url, tiny_title, tiny_summary.unwrap_or_default())))
+        } else {
+            Ok(None)
+        }
+    }
 }
