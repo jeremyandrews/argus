@@ -273,6 +273,35 @@ async fn wait_for_model_ready(
     }
 }
 
+/// Converts sources_quality and argument_quality (values 1-3) into a combined quality score
+/// where 1 = -1, 2 = 1, 3 = 2 points.
+///
+/// # Arguments
+/// * `sources_quality` - Rating of sources quality from 1-3
+/// * `argument_quality` - Rating of argument quality from 1-3
+///
+/// # Returns
+/// * `i8` - Combined quality score ranging from -2 to 4
+pub fn calculate_quality_score(sources_quality: u8, argument_quality: u8) -> i8 {
+    // Transform values: 1 -> -1, 2 -> 1, 3 -> 2
+    let sources_score = match sources_quality {
+        1 => -1,
+        2 => 1,
+        3 => 2,
+        _ => 0, // Default for invalid values
+    };
+
+    let argument_score = match argument_quality {
+        1 => -1,
+        2 => 1,
+        3 => 2,
+        _ => 0, // Default for invalid values
+    };
+
+    // Combine scores
+    sources_score + argument_score
+}
+
 /// Function to process a single analysis item.
 /// Returns true if an item was processed, false otherwise.
 async fn process_analysis_item(
@@ -537,6 +566,8 @@ async fn process_analysis_item(
                     }
                 };
 
+                let quality = calculate_quality_score(sources_quality, argument_quality);
+
                 // Construct the response JSON using the results from process_analysis
                 let response_json = json!({
                     "topic": topic,
@@ -555,6 +586,7 @@ async fn process_analysis_item(
                     "additional_insights": additional_insights,
                     "sources_quality": sources_quality,
                     "argument_quality": argument_quality,
+                    "quality": quality,
                     "source_type": source_type,
                     "elapsed_time": start_time.elapsed().as_secs_f64(),
                     "model": llm_params.model,
@@ -599,6 +631,7 @@ async fn process_analysis_item(
                         embedding,
                         pub_date.as_deref().unwrap_or("unknown"),
                         topic,
+                        quality,
                     )
                     .await
                     {
@@ -712,6 +745,8 @@ async fn process_analysis_item(
                             }
                         };
 
+                        let quality = calculate_quality_score(sources_quality, argument_quality);
+
                         let response_json = json!({
                             "topic": topic,
                             "title": article_title,
@@ -728,6 +763,7 @@ async fn process_analysis_item(
                             "additional_insights": additional_insights,
                             "sources_quality": sources_quality,
                             "argument_quality": argument_quality,
+                            "quality": quality,
                             "source_type": source_type,
                             "elapsed_time": start_time.elapsed().as_secs_f64(),
                             "model": llm_params.model,
@@ -772,6 +808,7 @@ async fn process_analysis_item(
                                 embedding,
                                 pub_date.as_deref().unwrap_or("default value"),
                                 &topic,
+                                quality,
                             )
                             .await
                             {

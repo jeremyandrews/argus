@@ -392,6 +392,7 @@ pub async fn store_embedding(
     embedding: Vec<f32>,
     published_date: &str,
     category: &str,
+    quality: i8,
 ) -> Result<()> {
     info!(target: TARGET_VECTOR, "store_embedding: embedding length = {}", embedding.len());
 
@@ -407,6 +408,10 @@ pub async fn store_embedding(
         json!(published_date).try_into().unwrap(),
     );
     payload.insert("category".to_string(), json!(category).try_into().unwrap());
+    payload.insert(
+        "quality_score".to_string(),
+        json!(quality).try_into().unwrap(),
+    );
     info!(target: TARGET_VECTOR, "store_embedding: payload for article {}: {:?}", sqlite_id, payload);
 
     let point = PointStruct {
