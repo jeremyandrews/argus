@@ -8,8 +8,8 @@ use once_cell::sync::OnceCell;
 use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, Vector, VectorParams, Vectors,
-    VectorsConfig, WriteOrdering,
+    CreateCollection, Distance, PointId, PointStruct, UpsertPoints, VectorParams, VectorsConfig,
+    WriteOrdering,
 };
 use qdrant_client::Qdrant;
 use serde_json::json;
@@ -381,6 +381,8 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 }
 
 pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> {
+    info!(target: TARGET_VECTOR, "store_embedding: embedding length = {}", embedding.len());
+
     let client = Qdrant::from_url(
         &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
     )
@@ -401,7 +403,7 @@ pub async fn store_embedding(sqlite_id: i64, embedding: Vec<f32>) -> Result<()> 
                     .expect("SQLite ID should never be negative"),
             )),
         }),
-        vectors: Some(Vectors::from(Vector::new_dense(embedding))),
+        vectors: Some(embedding.into()),
         payload,
         ..Default::default()
     };
