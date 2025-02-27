@@ -629,12 +629,12 @@ async fn process_analysis_item(
                     if let Ok(similar_articles) = get_similar_articles(&embedding, 10).await {
                         let mut similar_articles_with_details = Vec::new();
                         for article in similar_articles {
-                            if let Ok(Some((url, title, tiny_summary))) =
+                            if let Ok(Some((json_url, title, tiny_summary))) =
                                 db.get_article_details_by_id(article.id).await
                             {
                                 similar_articles_with_details.push(json!({
                                     "id": article.id,
-                                    "url": url,
+                                    "json_url": json_url,
                                     "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
                                     "tiny_summary": tiny_summary,
                                     "category": article.category,
@@ -836,12 +836,12 @@ async fn process_analysis_item(
                             {
                                 let mut similar_articles_with_details = Vec::new();
                                 for article in similar_articles {
-                                    if let Ok(Some((url, title, tiny_summary))) =
+                                    if let Ok(Some((json_url, title, tiny_summary))) =
                                         db.get_article_details_by_id(article.id).await
                                     {
                                         similar_articles_with_details.push(json!({
                                             "id": article.id,
-                                            "url": url,
+                                            "json_url": json_url,
                                             "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
                                             "tiny_summary": tiny_summary,
                                             "category": article.category,
