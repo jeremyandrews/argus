@@ -1136,7 +1136,7 @@ impl Database {
     ) -> Result<Option<(String, Option<String>, String)>, sqlx::Error> {
         let row = sqlx::query(
             r#"
-            SELECT json_url, tiny_summary, analysis
+            SELECT r2_url, tiny_summary, analysis
             FROM articles
             WHERE id = ?1
             "#,
@@ -1146,7 +1146,7 @@ impl Database {
         .await?;
 
         if let Some(row) = row {
-            let json_url: String = row.get("json_url");
+            let json_url: String = row.get("r2_url");
             let tiny_summary: Option<String> = row.get("tiny_summary");
             let analysis_json: String = row.get("analysis");
 
