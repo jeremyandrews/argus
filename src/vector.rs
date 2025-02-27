@@ -481,7 +481,7 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
             exact: Some(true),
             ..Default::default()
         }),
-        score_threshold: Some(0.5),
+        score_threshold: Some(0.85),
         // The sort field doesn't exist on SearchPoints, we'll sort after fetching
         ..Default::default()
     };
