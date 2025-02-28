@@ -233,12 +233,17 @@ pub fn tiny_summary_prompt(summary_response: &str) -> String {
 ~~~
 {summary}
 ~~~
-
 CREATE ONE SENTENCE:
 * TARGET LENGTH: 200 characters
 * ABSOLUTE MAXIMUM: 400 characters
 * If your sentence reaches 400 characters, start over and prioritize better
 * Never leave an incomplete thought or hanging sentence
+
+* The summary may include "EVENT:" and "CONTEXT:" prefixes
+* Extract the core information from the EVENT bullet point (who, what, when, where)
+* Use this as the foundation of your sentence
+* Add the most important details from other bullet points
+* You can incorporate relevant context if space allows
 
 REQUIREMENTS:
 * Must fit in a tweet
@@ -254,19 +259,17 @@ For multi-topic articles:
 * Plan your sentence before writing to ensure completion within limit
 
 EXAMPLES OF CORRECT LENGTH:
-
 **Perfect Length (178 chars):**
-"In February 2025, Trump imposed 25% tariffs on cars and semiconductors, ordered mass deportations, and reversed climate policies in his first month as president."
+"In February 2025, Drupal released its Views module allowing users to create organized content lists without SQL queries, offering Page and Block display options with customizable formats."
 
 **Acceptable Length (256 chars):**
-"In his first month as president, Trump imposed 25% tariffs on foreign goods, initiated deportations of undocumented migrants, and reversed environmental policies while denying climate change evidence."
+"In February 2025, the article 'Drupal Views: How to Set Up and Work with' explained how to use Drupal's Views module for organizing content display through the Structure section, with options for Page or Block displays and various format options like tables and grids."
 
 **INCORRECT APPROACH - DO NOT DO THIS:**
-"In his first month, Trump issued numerous executive orders including tariffs, deportations, and environmental reversals, while also renaming geographic features, changing straw policies..." [Incomplete at 400 characters]
+"The article explains how to use the Drupal Views module for organizing content display, including how to add views through the Structure section, configure settings, choose between Page or Block displays..." [Incomplete at 400 characters]
 
 **CORRECT APPROACH - DO THIS INSTEAD:**
-"In February 2025, Trump's first month as president saw three major actions: 25% tariffs on foreign goods, mass deportation orders, and environmental policy reversals."
-
+"In February 2025, an article explained how Drupal's Views module helps organize content by creating custom displays without SQL queries, offering both Page and Block options with various formatting choices."
 {write_in_clear_english}
 {dont_tell_me}"#,
         summary = summary_response,
