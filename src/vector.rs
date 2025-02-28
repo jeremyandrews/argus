@@ -193,13 +193,12 @@ fn init_e5_tokenizer(config: &E5Config) -> Result<()> {
     Ok(())
 }
 
-async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>> {
+async fn get_article_embedding(prefixed_text: &str, config: &E5Config) -> Result<Vec<f32>> {
     let start_time = Instant::now();
     let model = MODEL.get().expect("E5 model not initialized");
     let tokenizer = TOKENIZER.get().expect("E5 tokenizer not initialized");
 
     let tokenize_start = Instant::now();
-    let prefixed_text = format!("passage: {}", text);
     let encoding = tokenizer
         .encode(prefixed_text, true)
         .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
@@ -299,7 +298,7 @@ async fn get_article_embedding(text: &str, config: &E5Config) -> Result<Vec<f32>
         vector.len(),
         (active_dimensions as f32 / vector.len() as f32) * 100.0,
         magnitude,
-        text.len()
+        prefixed_text.len()
     );
 
     Ok(vector)
@@ -329,7 +328,12 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
         );
     }
 
-    match get_article_embedding(text, &config).await {
+    // Use query-focused embedding to direct the model to focus on event identification
+    let prefixed_text = format!(
+        "query: What is the main event described in this article? passage: {}",
+        text
+    );
+    match get_article_embedding(&prefixed_text, &config).await {
         Ok(embedding) => {
             let validation_start = Instant::now();
 
@@ -481,7 +485,7 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
             exact: Some(true),
             ..Default::default()
         }),
-        score_threshold: Some(0.85),
+        score_threshold: Some(0.80),
         // The sort field doesn't exist on SearchPoints, we'll sort after fetching
         ..Default::default()
     };

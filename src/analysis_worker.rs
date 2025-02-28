@@ -620,7 +620,7 @@ async fn process_analysis_item(
 
                 // Generate vector embedding
                 let vector_start = Instant::now();
-                if let Ok(Some(embedding)) = get_article_vectors(&article_text).await {
+                if let Ok(Some(embedding)) = get_article_vectors(&summary).await {
                     info!(
                         "Generated vector embedding with {} dimensions in {:?}",
                         embedding.len(),
@@ -826,7 +826,7 @@ async fn process_analysis_item(
 
                         // Generate vector embedding
                         let vector_start = Instant::now();
-                        if let Ok(Some(embedding)) = get_article_vectors(&article_text).await {
+                        if let Ok(Some(embedding)) = get_article_vectors(&summary).await {
                             info!(
                                 "Generated vector embedding with {} dimensions in {:?}",
                                 embedding.len(),
