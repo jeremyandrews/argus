@@ -286,7 +286,7 @@ impl Database {
         Ok(())
     }
 
-    /// Fetch all device IDs subscribed to a specific topic
+    /// Fetch all device IDs subscribed to a specific topic with high priority
     pub async fn fetch_devices_for_topic(
         &self,
         topic: &str,
@@ -296,7 +296,7 @@ impl Database {
             SELECT d.device_id, COALESCE(ds.priority, 'low') as priority
             FROM device_subscriptions ds
             JOIN devices d ON ds.device_id = d.id
-            WHERE ds.topic = ?1;
+            WHERE ds.topic = ?1 AND (ds.priority = 'high' OR ds.priority IS NULL AND 'high' = 'high');
             "#,
         )
         .bind(topic)
