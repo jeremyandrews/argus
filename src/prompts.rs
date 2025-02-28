@@ -163,15 +163,15 @@ ARTICLE (TO BE SUMMARIZED):
 -----------------------------
 
 IMPORTANT INSTRUCTIONS:
-- **Summarize ONLY the article above.** 
+- **Summarize ONLY the article above.**
 - **IGNORE the global context unless the article explicitly mentions related events.**
 - **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
 
 First, carefully read and thoroughly understand the entire text.
-
 Then, create a comprehensive bullet-point summary that follows these STRICT rules:
 
 1. **Format:** Use ONLY simple bullet points starting with a dash (-).
+
 2. **Length:**
    - Very short texts (≤25 words): Quote verbatim.
    - Short texts (26–100 words): 2–3 bullets.
@@ -179,25 +179,38 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
    - Long texts (501–2000 words): 4–6 bullets.
    - Very long texts (>2000 words): 6–8 bullets.
 
-3. **Each Bullet Point MUST:**
+3. **First Bullet Point MUST:**
+   - Start with "EVENT:" followed by a concise description of the main event (who, what, when, where).
+   - Example: "EVENT: Microsoft announced acquisition of GitHub for $7.5 billion on June 4, 2018."
+
+4. **Each Additional Bullet Point MUST:**
    - Start with a dash (-).
    - Include specific data points (numbers, dates, percentages).
    - Contain multiple related facts in a single coherent sentence.
    - Provide complete context for each point.
    - Use active voice.
    - Be substantial (15–35 words each).
+   - Include full names of key entities (people, organizations, locations) on first mention.
 
-4. **DO NOT:**
-   - Use headings or sections.
+5. **Last Bullet Point MUST:**
+   - Include a "CONTEXT:" section that briefly places the event in broader context.
+   - Example: "CONTEXT: This acquisition follows Microsoft's strategic shift toward open-source development under CEO Satya Nadella."
+
+6. **DO NOT:**
+   - Use headings or sections (except for the EVENT and CONTEXT prefixes).
    - Include nested bullets.
    - Include commentary or analysis.
    - Summarize the global context instead of the article.
 
 **EXAMPLE (Correct):**
-- Introduces new environmental regulations affecting 15 major industries across 3 continents, requiring a 45% reduction in carbon emissions by 2025, while providing $12 billion in transition funding for affected companies.
+- EVENT: European Union approved new environmental regulations affecting 15 major industries across 3 continents on October 12, 2023.
+- The regulations require a 45% reduction in carbon emissions by 2025, while providing $12 billion in transition funding for affected companies.
+- CONTEXT: This legislation represents the EU's most aggressive climate action since the 2015 Paris Agreement.
 
 **EXAMPLE (Incorrect):**
 - Summarizes unrelated global events mentioned in the context above.
+- New environmental regulations were approved.
+- There will be funding for companies.
 
 Now summarize the article text above using these rules:
 
