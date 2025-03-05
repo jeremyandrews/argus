@@ -1216,18 +1216,17 @@ Instructions:
    d) Include regional subdivisions or administrative terms
 
 3. Answer ONLY 'Yes' or 'No' based on these criteria:
-   - Answer 'Yes' ONLY if ALL of these are true:
+   - Answer 'Yes' if ALL of these are true:
      a) Is valid article content (not an error/loading message)
-     b) The article is specifically about {topic} (in any language)
+     b) The article significantly discusses {topic} or applications of {topic} (in any language)
      c) Contains enough content for analysis
      d) Is not primarily a promotion or advertisement
    - Answer 'No' if ANY of these are true:
      a) Contains error messages or technical issues
      b) Is not complete article content
-     c) The article is not primarily about {topic}
-     d) Only mentions {topic} briefly
-     e) Is unrelated to {topic}
-     f) Is primarily a promotion or advertisement
+     c) The article only mentions {topic} in passing and provides no substantive information
+     d) Is unrelated to {topic}
+     e) Is primarily a promotion or advertisement
 
 4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
 Answer:"#,
