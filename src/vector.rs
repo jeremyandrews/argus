@@ -397,6 +397,8 @@ pub async fn store_embedding(
     published_date: &str,
     category: &str,
     quality: i8,
+    entity_ids: Option<Vec<i64>>,
+    event_date: Option<&str>,
 ) -> Result<()> {
     info!(target: TARGET_VECTOR, "store_embedding: embedding length = {}", embedding.len());
 
@@ -407,6 +409,8 @@ pub async fn store_embedding(
     .build()?;
 
     let mut payload: HashMap<String, qdrant_client::qdrant::Value> = HashMap::new();
+
+    // Add basic metadata
     payload.insert(
         "published_date".to_string(),
         json!(published_date).try_into().unwrap(),
@@ -416,6 +420,21 @@ pub async fn store_embedding(
         "quality_score".to_string(),
         json!(quality).try_into().unwrap(),
     );
+
+    // Add entity IDs if available
+    if let Some(ids) = entity_ids {
+        if !ids.is_empty() {
+            payload.insert("entity_ids".to_string(), json!(ids).try_into().unwrap());
+        }
+    }
+
+    // Add event date if available
+    if let Some(date) = event_date {
+        if !date.is_empty() {
+            payload.insert("event_date".to_string(), json!(date).try_into().unwrap());
+        }
+    }
+
     info!(target: TARGET_VECTOR, "store_embedding: payload for article {}: {:?}", sqlite_id, payload);
 
     let point = PointStruct {
@@ -577,6 +596,20 @@ pub struct ArticleMatch {
     pub category: String,
     pub quality_score: i8,
     pub score: f32, // similarity score from Qdrant
+}
+
+/// Find similar articles with entity support (no filtering for now)
+/// This is a temporary implementation that just calls the regular get_similar_articles
+pub async fn get_similar_articles_with_entities(
+    embedding: &Vec<f32>,
+    limit: u64,
+    _entity_ids: Option<&[i64]>, // Ignore entity_ids for now to make things compile
+    _event_date: Option<&str>,   // Ignore event_date for now to make things compile
+) -> Result<Vec<ArticleMatch>> {
+    info!(target: TARGET_VECTOR, "Entity-aware search (temporarily disabled): falling back to regular vector search");
+
+    // For now, just call the regular get_similar_articles without entity filtering
+    get_similar_articles(embedding, limit).await
 }
 
 async fn _create_collection() -> Result<()> {

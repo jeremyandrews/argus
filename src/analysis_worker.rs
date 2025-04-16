@@ -12,7 +12,9 @@ use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
-use crate::vector::{get_article_vectors, get_similar_articles, store_embedding};
+use crate::vector::{
+    get_article_vectors, get_similar_articles, get_similar_articles_with_entities, store_embedding,
+};
 use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 // Import necessary items from decision_worker
@@ -656,12 +658,27 @@ async fn process_analysis_item(
                         }
                         response_json["similar_articles"] = json!(similar_articles_with_details);
                     }
+                    // Get entity IDs for embedding storage
+                    let entity_ids: Option<Vec<i64>> = db
+                        .get_article_entities(article_id)
+                        .await
+                        .ok()
+                        .map(|entities| entities.into_iter().map(|(id, _, _, _)| id).collect());
+
+                    // Get event date
+                    let (_, event_date) = db
+                        .get_article_details_with_dates(article_id)
+                        .await
+                        .unwrap_or((None, None));
+
                     if let Err(e) = store_embedding(
                         article_id,
                         &embedding,
                         pub_date.as_deref().unwrap_or("unknown"),
                         topic,
                         quality,
+                        entity_ids,
+                        event_date.as_deref(),
                     )
                     .await
                     {
@@ -861,7 +878,28 @@ async fn process_analysis_item(
                                 embedding.len(),
                                 vector_start.elapsed()
                             );
-                            if let Ok(similar_articles) = get_similar_articles(&embedding, 10).await
+                            // Get entity IDs from article if available
+                            let entity_ids: Option<Vec<i64>> = db
+                                .get_article_entities(article_id)
+                                .await
+                                .ok()
+                                .map(|entities| {
+                                    entities.into_iter().map(|(id, _, _, _)| id).collect()
+                                });
+
+                            // Get event date from article
+                            let (_, event_date) = db
+                                .get_article_details_with_dates(article_id)
+                                .await
+                                .unwrap_or((None, None));
+
+                            if let Ok(similar_articles) = get_similar_articles_with_entities(
+                                &embedding,
+                                10,
+                                entity_ids.as_deref(),
+                                event_date.as_deref(),
+                            )
+                            .await
                             {
                                 let mut similar_articles_with_details = Vec::new();
                                 for article in similar_articles {
@@ -892,12 +930,48 @@ async fn process_analysis_item(
                                 response_json["similar_articles"] =
                                     json!(similar_articles_with_details);
                             }
+                            // Entity extraction
+                            let entity_extraction_start = Instant::now();
+                            let entity_prompt = prompts::entity_extraction_prompt(
+                                &article_text,
+                                pub_date.as_deref(),
+                            );
+
+                            if let Some(entity_json) = generate_llm_response(
+                                &entity_prompt,
+                                &mut llm_params_clone,
+                                worker_detail,
+                            )
+                            .await
+                            {
+                                info!(
+                                    "Extracted entities in {:?}, processing extraction",
+                                    entity_extraction_start.elapsed()
+                                );
+
+                                if let Err(e) =
+                                    db.process_entity_extraction(article_id, &entity_json).await
+                                {
+                                    error!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "Failed to process entity extraction: {:?}", e
+                                    );
+                                } else {
+                                    debug!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "Successfully processed entity extraction for article"
+                                    );
+                                }
+                            }
+
                             if let Err(e) = store_embedding(
                                 article_id,
                                 &embedding,
                                 pub_date.as_deref().unwrap_or("default value"),
                                 &topic,
                                 quality,
+                                entity_ids.clone(),
+                                event_date.as_deref(),
                             )
                             .await
                             {

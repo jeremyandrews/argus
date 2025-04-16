@@ -39,6 +39,10 @@ Argus is currently in active development with major components implemented and f
 - ✅ **Entity Importance Classification**: System for ranking entity relevance (PRIMARY/SECONDARY/MENTIONED)
 - ✅ **Event Date Tracking**: Added temporal information extraction for event correlation
 - ✅ **Analysis Integration**: Incorporated entity extraction into the analysis workflow
+- ✅ **Entity Module Architecture**: Established specialized module with types, extraction, matching, and repository components
+- ✅ **Multi-Factor Similarity**: Implemented algorithms combining vector similarity with entity overlap
+- ✅ **Vector Integration**: Enhanced vector payloads with entity IDs and temporal data
+- ✅ **Similarity Algorithms**: Created enhanced match detection with weighted scoring across multiple dimensions
 
 ### Notification Systems
 - ✅ **Slack Integration**: Formatting and delivery of notifications to Slack channels

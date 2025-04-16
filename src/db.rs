@@ -20,6 +20,13 @@ pub struct Database {
     pool: Pool<Sqlite>,
 }
 
+impl Database {
+    /// Get access to the database pool
+    pub fn pool(&self) -> &Pool<Sqlite> {
+        &self.pool
+    }
+}
+
 // Helper method to check if an sqlx error is a database lock error
 trait DbLockErrorExt {
     fn is_database_lock_error(&self) -> bool;

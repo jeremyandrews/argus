@@ -5,6 +5,7 @@ pub mod app {
 }
 pub mod db;
 pub mod decision_worker;
+pub mod entity;
 pub mod environment;
 pub mod llm;
 pub mod logging;

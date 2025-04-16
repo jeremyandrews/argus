@@ -71,6 +71,9 @@ We're implementing a comprehensive entity-based system to improve article cluste
 4. ✅ Integration with analysis pipeline - Added entity extraction to the analysis workflow in analysis_worker.rs
 5. ✅ Support for event dates - Added event_date field to articles table for temporal matching
 6. ✅ Entity importance classification - Implemented PRIMARY/SECONDARY/MENTIONED ranking
+7. ✅ Entity module organization - Created specialized module with types, extraction, matching, and repository components
+8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
+9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
 ### Current Focus: Code Refactoring
 We've decided to replace the original `get_similar_articles` function with the enhanced version that uses multi-factor matching. This will avoid maintaining duplicate code paths and simplify the codebase. The enhanced version provides more accurate article matching by considering:
