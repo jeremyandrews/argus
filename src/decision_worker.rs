@@ -118,6 +118,7 @@ pub async fn decision_loop(
                             None,
                             None,
                             pub_date.as_deref(),
+                            None, // event_date
                         )
                         .await;
                     continue;
@@ -515,6 +516,7 @@ async fn process_topics(
                 Some(&title_domain_hash),
                 None,
                 pub_date,
+                None, // event_date
             )
             .await
         {
@@ -608,6 +610,7 @@ async fn handle_access_denied(
                 Some(&title_domain_hash),
                 None,
                 pub_date,
+                None, // event_date
             )
             .await
         {

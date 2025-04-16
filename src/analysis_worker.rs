@@ -605,6 +605,7 @@ async fn process_analysis_item(
                         Some(&title_domain_hash),
                         None, // Placeholder for R2 URL, will update later
                         pub_date.as_deref(),
+                        None, // event_date
                     )
                     .await
                 {
@@ -668,6 +669,33 @@ async fn process_analysis_item(
                             target: TARGET_LLM_REQUEST,
                             "Failed to store vector embedding: {:?}", e
                         );
+                    }
+
+                    // Extract entities from article text for entity-based matching
+                    let entity_extraction_start = Instant::now();
+                    let entity_prompt =
+                        prompts::entity_extraction_prompt(&article_text, pub_date.as_deref());
+
+                    if let Some(entity_json) =
+                        generate_llm_response(&entity_prompt, &llm_params, worker_detail).await
+                    {
+                        info!(
+                            "Extracted entities in {:?}, processing extraction",
+                            entity_extraction_start.elapsed()
+                        );
+
+                        if let Err(e) = db.process_entity_extraction(article_id, &entity_json).await
+                        {
+                            error!(
+                                target: TARGET_LLM_REQUEST,
+                                "Failed to process entity extraction: {:?}", e
+                            );
+                        } else {
+                            debug!(
+                                target: TARGET_LLM_REQUEST,
+                                "Successfully processed entity extraction for article"
+                            );
+                        }
                     }
                 }
 
@@ -811,6 +839,7 @@ async fn process_analysis_item(
                                 Some(&title_domain_hash),
                                 None, // Placeholder for R2 URL, will update later
                                 pub_date.as_deref(),
+                                None, // event_date
                             )
                             .await
                         {
@@ -982,6 +1011,7 @@ async fn process_decision_item(
                         None,  // No title_domain_hash
                         None,  // No R2 URL
                         pub_date.as_deref(),
+                        None, // event_date
                     )
                     .await;
                 return;

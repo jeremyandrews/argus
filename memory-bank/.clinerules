@@ -1,0 +1,42 @@
+# Argus Project Intelligence
+
+## Naming Conventions
+- "Argus" references Argus Panoptes from Greek mythology - the all-seeing giant with many eyes
+- Worker types use consistent naming: Decision Workers and Analysis Workers
+- The system uses "topics" as the primary taxonomy for categorizing content
+
+## Architecture Patterns
+- Analysis Workers can dynamically switch to Decision Worker role when needed, then switch back
+- Workers operate on queue-based model with database-backed persistence
+- Each component can scale independently with multiple parallel workers
+- Notification system has dual channels: Slack (team) and iOS app (individual)
+
+## Project Workflows
+- RSS feeds → Decision Workers → Matched Topics Queue → Analysis Workers → Notifications
+- Life safety concerns follow a specialized path with geographical impact assessment
+- iOS app authentication uses JWT tokens tied to device IDs
+
+## Technology Conventions
+- Rust with tokio for async processing
+- SQLite with SQLx for database operations
+- Local (Ollama) and cloud (OpenAI) LLM integration
+- Prompt templates use structured format with consistent sections
+
+## Quality Analysis
+- Critical analysis examines source credibility and content quality
+- Logical analysis identifies fallacies and reasoning quality
+- Quality scoring uses a three-tier system (1-3) for quick assessment
+- Insights go beyond article content to provide deeper context
+
+## Entity-Based Article Matching
+- Entity extraction uses structured LLM prompts to identify people, organizations, locations, and events
+- Multi-factor similarity uses weighted combination of vector similarity (60%), entity overlap (30%), and temporal proximity (10%)
+- Entity storage follows a normalized database schema with separate tables for entities and article-entity relationships
+- Similarity functions should be consolidated not duplicated - avoid maintaining parallel implementations
+- Entity importance is classified as PRIMARY, SECONDARY, or MENTIONED to prioritize matching weight
+
+## Application Conventions
+- iOS app relies on push notifications with payload size limits
+- Detailed content is stored in R2 and linked in notifications
+- Users subscribe to topics through the iOS app
+- Quality filters allow users to set minimum quality thresholds

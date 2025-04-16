@@ -68,13 +68,15 @@ impl Database {
                 normalized_url TEXT NOT NULL UNIQUE,
                 seen_at TEXT NOT NULL,
                 pub_date TEXT,
+                event_date TEXT,
                 is_relevant BOOLEAN NOT NULL,
                 category TEXT,
                 tiny_summary TEXT,
                 analysis TEXT,
                 hash TEXT,
                 title_domain_hash TEXT,
-                r2_url TEXT
+                r2_url TEXT,
+                cluster_id INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_relevant_category ON articles (is_relevant, category);
             CREATE INDEX IF NOT EXISTS idx_hash ON articles (hash);
@@ -82,6 +84,59 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_r2_url ON articles (r2_url);
             CREATE INDEX IF NOT EXISTS idx_seen_at_r2_url ON articles (seen_at, r2_url);
             CREATE INDEX IF NOT EXISTS idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url);
+            CREATE INDEX IF NOT EXISTS idx_articles_event_date ON articles (event_date);
+            CREATE INDEX IF NOT EXISTS idx_articles_cluster_id ON articles (cluster_id);
+            
+            -- Entity tables for improved article matching
+            CREATE TABLE IF NOT EXISTS entities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL, -- PERSON, ORGANIZATION, LOCATION, EVENT, etc.
+                normalized_name TEXT NOT NULL, -- For easier matching
+                parent_id INTEGER, -- For hierarchical relations (especially locations)
+                UNIQUE(normalized_name, type),
+                FOREIGN KEY (parent_id) REFERENCES entities (id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_entities_normalized_name ON entities (normalized_name);
+            CREATE INDEX IF NOT EXISTS idx_entities_type ON entities (type);
+            CREATE INDEX IF NOT EXISTS idx_entities_parent_id ON entities (parent_id);
+            
+            -- Entity-Article relationships
+            CREATE TABLE IF NOT EXISTS article_entities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article_id INTEGER NOT NULL,
+                entity_id INTEGER NOT NULL,
+                importance TEXT NOT NULL, -- PRIMARY, SECONDARY, MENTIONED
+                context TEXT, -- Additional context about the entity in this article
+                FOREIGN KEY (article_id) REFERENCES articles (id) ON DELETE CASCADE,
+                FOREIGN KEY (entity_id) REFERENCES entities (id) ON DELETE CASCADE,
+                UNIQUE(article_id, entity_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_article_entities_article_id ON article_entities (article_id);
+            CREATE INDEX IF NOT EXISTS idx_article_entities_entity_id ON article_entities (entity_id);
+            CREATE INDEX IF NOT EXISTS idx_article_entities_importance ON article_entities (importance);
+            
+            -- Article clusters
+            CREATE TABLE IF NOT EXISTS article_clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_article_clusters_updated_at ON article_clusters (updated_at);
+            
+            -- Article-cluster relationships
+            CREATE TABLE IF NOT EXISTS article_cluster_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article_id INTEGER NOT NULL,
+                cluster_id INTEGER NOT NULL,
+                added_at TIMESTAMP NOT NULL,
+                FOREIGN KEY (article_id) REFERENCES articles (id) ON DELETE CASCADE,
+                FOREIGN KEY (cluster_id) REFERENCES article_clusters (id) ON DELETE CASCADE,
+                UNIQUE(article_id, cluster_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_article_cluster_members_article_id ON article_cluster_members (article_id);
+            CREATE INDEX IF NOT EXISTS idx_article_cluster_members_cluster_id ON article_cluster_members (cluster_id);
         
             CREATE TABLE IF NOT EXISTS rss_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -592,6 +647,7 @@ impl Database {
         title_domain_hash: Option<&str>,
         r2_url: Option<&str>,
         pub_date: Option<&str>,
+        event_date: Option<&str>,
     ) -> Result<i64, sqlx::Error> {
         // Parse the URL
         let parsed_url = match Url::parse(url) {
@@ -617,12 +673,13 @@ impl Database {
         for attempt in 1..=max_retries {
             match sqlx::query_as::<_, (i64,)>(
             r#"
-            INSERT INTO articles (url, normalized_url, seen_at, pub_date, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            INSERT INTO articles (url, normalized_url, seen_at, pub_date, event_date, is_relevant, category, analysis, tiny_summary, hash, title_domain_hash, r2_url)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             ON CONFLICT(url) DO UPDATE SET
                 url = excluded.url,
                 seen_at = excluded.seen_at,
                 pub_date = excluded.pub_date,
+                event_date = excluded.event_date,
                 is_relevant = excluded.is_relevant,
                 category = excluded.category,
                 analysis = excluded.analysis,
@@ -637,6 +694,7 @@ impl Database {
         .bind(&normalized_url)
         .bind(&seen_at)
         .bind(&pub_date)
+        .bind(&event_date)
         .bind(is_relevant)
         .bind(category)
         .bind(analysis)
@@ -1166,5 +1224,206 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    /// Get article details with dates (for temporal matching)
+    pub async fn get_article_details_with_dates(
+        &self,
+        article_id: i64,
+    ) -> Result<(Option<String>, Option<String>), sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT pub_date, event_date
+            FROM articles
+            WHERE id = ?1
+            "#,
+        )
+        .bind(article_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let pub_date: Option<String> = row.get("pub_date");
+            let event_date: Option<String> = row.get("event_date");
+
+            Ok((pub_date, event_date))
+        } else {
+            Ok((None, None))
+        }
+    }
+
+    // ----- Entity Management Functions -----
+
+    /// Add a new entity to the database or return existing entity ID if it already exists
+    pub async fn add_entity(
+        &self,
+        name: &str,
+        entity_type: &str,
+        normalized_name: &str,
+        parent_id: Option<i64>,
+    ) -> Result<i64, sqlx::Error> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO entities (name, type, normalized_name, parent_id)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(normalized_name, type) DO UPDATE SET
+                name = excluded.name,
+                parent_id = excluded.parent_id
+            RETURNING id
+            "#,
+        )
+        .bind(name)
+        .bind(entity_type)
+        .bind(normalized_name)
+        .bind(parent_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(result.get("id"))
+    }
+
+    /// Link an entity to an article with specified importance
+    pub async fn add_entity_to_article(
+        &self,
+        article_id: i64,
+        entity_id: i64,
+        importance: &str,
+        context: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO article_entities (article_id, entity_id, importance, context)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(article_id, entity_id) DO UPDATE SET
+                importance = excluded.importance,
+                context = excluded.context
+            "#,
+        )
+        .bind(article_id)
+        .bind(entity_id)
+        .bind(importance)
+        .bind(context)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get all entities for a specific article
+    pub async fn get_article_entities(
+        &self,
+        article_id: i64,
+    ) -> Result<Vec<(i64, String, String, String)>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT e.id, e.name, e.type, ae.importance
+            FROM entities e
+            JOIN article_entities ae ON e.id = ae.entity_id
+            WHERE ae.article_id = ?1
+            ORDER BY ae.importance, e.type, e.name
+            "#,
+        )
+        .bind(article_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get("id"),
+                    row.get("name"),
+                    row.get("type"),
+                    row.get("importance"),
+                )
+            })
+            .collect())
+    }
+
+    /// Get detail information about a specific entity
+    pub async fn get_entity_details(
+        &self,
+        entity_id: i64,
+    ) -> Result<Option<(String, String, Option<i64>)>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT name, type, parent_id
+            FROM entities
+            WHERE id = ?1
+            "#,
+        )
+        .bind(entity_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(Some((
+                row.get("name"),
+                row.get("type"),
+                row.get("parent_id"),
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Process entity extraction JSON from LLM and add entities to an article
+    pub async fn process_entity_extraction(
+        &self,
+        article_id: i64,
+        extraction_json: &str,
+    ) -> Result<Vec<i64>, sqlx::Error> {
+        let entities: serde_json::Value = serde_json::from_str(extraction_json)
+            .map_err(|e| sqlx::Error::Protocol(format!("Invalid JSON: {}", e).into()))?;
+
+        let mut added_entity_ids = Vec::new();
+
+        if let Some(entities_array) = entities["entities"].as_array() {
+            for entity in entities_array {
+                // Extract entity data
+                let name = entity["name"]
+                    .as_str()
+                    .ok_or_else(|| sqlx::Error::Protocol("Missing entity name".into()))?;
+                let entity_type = entity["type"]
+                    .as_str()
+                    .ok_or_else(|| sqlx::Error::Protocol("Missing entity type".into()))?;
+                // Create a separate variable for the lowercase name to extend its lifetime
+                let lowercase_name = name.to_lowercase();
+                let normalized_name = entity["normalized_name"]
+                    .as_str()
+                    .unwrap_or(lowercase_name.as_str());
+                let importance = entity["importance"].as_str().unwrap_or("MENTIONED");
+
+                // Add entity to database
+                let entity_id = self
+                    .add_entity(name, entity_type, normalized_name, None)
+                    .await?;
+
+                // Add entity to article with importance
+                self.add_entity_to_article(article_id, entity_id, importance, None)
+                    .await?;
+
+                added_entity_ids.push(entity_id);
+            }
+        }
+
+        // If event_date is present in the extraction, update the article
+        if let Some(event_date) = entities["event_date"].as_str() {
+            if !event_date.is_empty() {
+                sqlx::query(
+                    r#"
+                    UPDATE articles
+                    SET event_date = ?1
+                    WHERE id = ?2
+                    "#,
+                )
+                .bind(event_date)
+                .bind(article_id)
+                .execute(&self.pool)
+                .await?;
+            }
+        }
+
+        Ok(added_entity_ids)
     }
 }

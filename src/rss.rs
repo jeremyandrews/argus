@@ -342,7 +342,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
 
                                                 if is_old {
                                                     debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
-                                                    if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref()).await {
+                                                    if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref(), None).await {
                                                         error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
                                                     }
                                                     continue;
@@ -393,7 +393,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
 
                                                 if is_old {
                                                     debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
-                                                    if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref()).await {
+                                                    if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref(), None).await {
                                                         error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
                                                     }
                                                     continue;
@@ -447,7 +447,7 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
 
                                                             if is_old {
                                                                 debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
-                                                                if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref()).await {
+                                                                if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref(), None).await {
                                                                     error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
                                                                 }
                                                                 continue;
