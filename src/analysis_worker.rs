@@ -636,6 +636,7 @@ async fn process_analysis_item(
                                 db.get_article_details_by_id(article.id).await
                             {
                                 similar_articles_with_details.push(json!({
+                                    // Basic fields
                                     "id": article.id,
                                     "json_url": json_url,
                                     "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
@@ -643,16 +644,47 @@ async fn process_analysis_item(
                                     "category": article.category,
                                     "published_date": article.published_date,
                                     "quality_score": article.quality_score,
-                                    "similarity_score": article.score
+                                    "similarity_score": article.score,
+
+                                    // Vector quality fields
+                                    "vector_score": article.vector_score,
+                                    "vector_active_dimensions": article.vector_active_dimensions,
+                                    "vector_magnitude": article.vector_magnitude,
+
+                                    // Entity similarity fields
+                                    "entity_overlap_count": article.entity_overlap_count,
+                                    "primary_overlap_count": article.primary_overlap_count,
+                                    "person_overlap": article.person_overlap,
+                                    "org_overlap": article.org_overlap,
+                                    "location_overlap": article.location_overlap,
+                                    "event_overlap": article.event_overlap,
+                                    "temporal_proximity": article.temporal_proximity,
+
+                                    // Formula explanation
+                                    "similarity_formula": article.similarity_formula
                                 }));
                             } else {
                                 // Include basic info if details can't be fetched
                                 similar_articles_with_details.push(json!({
+                                    // Basic fields
                                     "id": article.id,
                                     "category": article.category,
                                     "published_date": article.published_date,
                                     "quality_score": article.quality_score,
-                                    "similarity_score": article.score
+                                    "similarity_score": article.score,
+
+                                    // Include any available additional fields
+                                    "vector_score": article.vector_score,
+                                    "vector_active_dimensions": article.vector_active_dimensions,
+                                    "vector_magnitude": article.vector_magnitude,
+                                    "entity_overlap_count": article.entity_overlap_count,
+                                    "primary_overlap_count": article.primary_overlap_count,
+                                    "person_overlap": article.person_overlap,
+                                    "org_overlap": article.org_overlap,
+                                    "location_overlap": article.location_overlap,
+                                    "event_overlap": article.event_overlap,
+                                    "temporal_proximity": article.temporal_proximity,
+                                    "similarity_formula": article.similarity_formula
                                 }));
                             }
                         }
@@ -907,6 +939,7 @@ async fn process_analysis_item(
                                         db.get_article_details_by_id(article.id).await
                                     {
                                         similar_articles_with_details.push(json!({
+                                            // Basic fields
                                             "id": article.id,
                                             "json_url": json_url,
                                             "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
@@ -914,16 +947,47 @@ async fn process_analysis_item(
                                             "category": article.category,
                                             "published_date": article.published_date,
                                             "quality_score": article.quality_score,
-                                            "similarity_score": article.score
+                                            "similarity_score": article.score,
+
+                                            // Vector quality fields
+                                            "vector_score": article.vector_score,
+                                            "vector_active_dimensions": article.vector_active_dimensions,
+                                            "vector_magnitude": article.vector_magnitude,
+
+                                            // Entity similarity fields
+                                            "entity_overlap_count": article.entity_overlap_count,
+                                            "primary_overlap_count": article.primary_overlap_count,
+                                            "person_overlap": article.person_overlap,
+                                            "org_overlap": article.org_overlap,
+                                            "location_overlap": article.location_overlap,
+                                            "event_overlap": article.event_overlap,
+                                            "temporal_proximity": article.temporal_proximity,
+
+                                            // Formula explanation
+                                            "similarity_formula": article.similarity_formula
                                         }));
                                     } else {
                                         // Include basic info if details can't be fetched
                                         similar_articles_with_details.push(json!({
+                                            // Basic fields
                                             "id": article.id,
                                             "category": article.category,
                                             "published_date": article.published_date,
                                             "quality_score": article.quality_score,
-                                            "similarity_score": article.score
+                                            "similarity_score": article.score,
+
+                                            // Include any available additional fields
+                                            "vector_score": article.vector_score,
+                                            "vector_active_dimensions": article.vector_active_dimensions,
+                                            "vector_magnitude": article.vector_magnitude,
+                                            "entity_overlap_count": article.entity_overlap_count,
+                                            "primary_overlap_count": article.primary_overlap_count,
+                                            "person_overlap": article.person_overlap,
+                                            "org_overlap": article.org_overlap,
+                                            "location_overlap": article.location_overlap,
+                                            "event_overlap": article.event_overlap,
+                                            "temporal_proximity": article.temporal_proximity,
+                                            "similarity_formula": article.similarity_formula
                                         }));
                                     }
                                 }

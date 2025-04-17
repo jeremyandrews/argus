@@ -75,35 +75,40 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Entity-Based Article Matching Implementation
+### Current Focus: Enhanced Article Matching Transparency
 
-We're implementing a dual-query approach for enhanced article matching that combines:
+We've implemented a dual-query approach for enhanced article matching that combines:
 
 - Vector similarity (60% weight)
 - Entity overlap (30% weight) 
 - Temporal proximity (10% weight)
 
+Recently completed:
+- ✅ Enhanced `ArticleMatch` struct to expose detailed similarity metrics:
+  - Added vector quality metrics (vector_score, vector_active_dimensions, vector_magnitude)
+  - Added entity overlap metrics (entity_overlap_count, primary_overlap_count)
+  - Added entity type-specific metrics (person_overlap, org_overlap, location_overlap, event_overlap)
+  - Added temporal_proximity to show date-based similarity
+  - Added similarity_formula field to explain the calculation methodology
+- ✅ Updated all JSON outputs to include the new fields in similar articles sections
+- ✅ Ensured backward compatibility with all existing functionality
+- ✅ Verified implementation with `cargo check --bin argus` (no warnings)
+
 Current implementation status:
 - ✅ Added `get_articles_by_entities` method in db.rs to centralize database queries
 - ✅ Implemented `get_similar_articles_with_entities` in vector.rs 
 - ✅ Designed and implemented dual-query approach that combines vector and entity-based search results
-- ✅ Fixed compilation errors in vector.rs:
-  1. Resolved type annotation issues with explicit type declarations
-  2. Fixed Qdrant client's VectorsOptions type conflicts using proper namespace qualification and reference patterns
-
-Recent progress:
-- Moved the SQL query for entity-based article matching to db.rs
-- Set up the weighted scoring system for combining vector and entity similarities
-- Implemented the dual-query approach in vector.rs
-- Fixed compilation errors by properly handling namespace conflicts in Qdrant client types
+- ✅ Enhanced transparency of similarity scoring with detailed metrics
+- ✅ Added formula explanation showing the weighted contributions
 
 Next steps:
-- Complete testing of the dual-query approach
+- Monitor effectiveness of similarity metrics in helping users understand related articles
+- Analyze patterns in similarity metrics to optimize matching
+- Consider UI enhancements to visualize similarity relationships
 - Refine filtering to reduce irrelevant matches
-- Integrate entity data properly into Qdrant payloads
 - Implement better filtering by entity in vector searches
 
-This enhancement directly builds upon the current "similar articles" functionality, making it more accurate and reliable without requiring a separate clustering system.
+This enhancement builds upon the current "similar articles" functionality, making it more transparent and helping diagnose quality issues in related content matching.
 
 ## Active Work Areas
 

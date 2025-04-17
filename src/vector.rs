@@ -563,6 +563,21 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
                         category,
                         quality_score,
                         score: scored_point.score,
+
+                        // New fields with default values
+                        vector_score: Some(scored_point.score), // Vector score is the same as score for pure vector matches
+                        vector_active_dimensions: None,
+                        vector_magnitude: None,
+                        entity_overlap_count: None,
+                        primary_overlap_count: None,
+                        person_overlap: None,
+                        org_overlap: None,
+                        location_overlap: None,
+                        event_overlap: None,
+                        temporal_proximity: None,
+                        similarity_formula: Some(
+                            "100% vector similarity (no entity data available)".to_string(),
+                        ),
                     }
                 })
                 .collect();
@@ -591,11 +606,29 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
 
 #[derive(Debug)]
 pub struct ArticleMatch {
+    // Basic article identification and metadata
     pub id: i64,
     pub published_date: String,
     pub category: String,
     pub quality_score: i8,
-    pub score: f32, // similarity score from Qdrant
+    pub score: f32, // final combined similarity score
+
+    // Vector similarity metrics
+    pub vector_score: Option<f32>, // Raw vector similarity score
+    pub vector_active_dimensions: Option<usize>, // Number of active dimensions in vector
+    pub vector_magnitude: Option<f32>, // Vector magnitude
+
+    // Entity similarity metrics
+    pub entity_overlap_count: Option<usize>, // Total number of overlapping entities
+    pub primary_overlap_count: Option<usize>, // Number of primary entities that overlap
+    pub person_overlap: Option<f32>,         // Person similarity score (0-1)
+    pub org_overlap: Option<f32>,            // Organization similarity score (0-1)
+    pub location_overlap: Option<f32>,       // Location similarity score (0-1)
+    pub event_overlap: Option<f32>,          // Event similarity score (0-1)
+    pub temporal_proximity: Option<f32>,     // Temporal proximity score (0-1)
+
+    // Formula explanation
+    pub similarity_formula: Option<String>, // Explanation of how the score was calculated
 }
 
 /// Enhanced article match with both vector and entity similarity
@@ -724,10 +757,13 @@ pub async fn get_similar_articles_with_entities(
             enhanced_matches.push(enhanced);
         } else {
             // Without source entities, just use the vector score
+            // Create a new entity metrics with defaults
+            let empty_metrics = crate::entity::EntitySimilarityMetrics::new();
+
             let enhanced = EnhancedArticleMatch {
                 article_id: id,
                 vector_score: article.score,
-                entity_similarity: crate::entity::EntitySimilarityMetrics::new(),
+                entity_similarity: empty_metrics,
                 final_score: article.score, // Just use vector score
                 category: article.category,
                 published_date: article.published_date,
@@ -757,12 +793,36 @@ pub async fn get_similar_articles_with_entities(
                 m.article_id, m.vector_score, m.entity_similarity.combined_score, m.final_score, m.entity_similarity.primary_overlap_count
             );
 
+            // Create the formula string
+            let formula = format!(
+                "60% vector similarity ({:.2}) + 40% entity similarity ({:.2}), where entity similarity combines person (30%), organization (20%), location (15%), event (15%), and temporal (20%) factors",
+                m.vector_score,
+                m.entity_similarity.combined_score
+            );
+
             ArticleMatch {
                 id: m.article_id,
                 published_date: m.published_date,
                 category: m.category,
                 quality_score: m.quality_score,
                 score: m.final_score, // Use the combined score
+
+                // Add vector metrics
+                vector_score: Some(m.vector_score),
+                vector_active_dimensions: None, // Not tracked for enhanced matches
+                vector_magnitude: None, // Not tracked for enhanced matches
+
+                // Add entity metrics
+                entity_overlap_count: Some(m.entity_similarity.entity_overlap_count),
+                primary_overlap_count: Some(m.entity_similarity.primary_overlap_count),
+                person_overlap: Some(m.entity_similarity.person_overlap),
+                org_overlap: Some(m.entity_similarity.organization_overlap),
+                location_overlap: Some(m.entity_similarity.location_overlap),
+                event_overlap: Some(m.entity_similarity.event_overlap),
+                temporal_proximity: Some(m.entity_similarity.temporal_proximity),
+
+                // Add formula explanation
+                similarity_formula: Some(formula),
             }
         })
         .collect();
@@ -807,6 +867,20 @@ async fn get_articles_by_entities(entity_ids: &[i64], limit: u64) -> Result<Vec<
                     category: category.unwrap_or_default(),
                     quality_score,
                     score: entity_score, // Preliminary score, will be refined later
+
+                    // Add entity metrics fields
+                    vector_score: None, // Will be calculated later
+                    vector_active_dimensions: None,
+                    vector_magnitude: None,
+                    entity_overlap_count: Some(total_count as usize),
+                    primary_overlap_count: Some(primary_count as usize),
+                    person_overlap: None, // Detailed metrics not available at this stage
+                    org_overlap: None,
+                    location_overlap: None,
+                    event_overlap: None,
+                    temporal_proximity: None,
+                    similarity_formula: Some(format!("Entity-based score: 70% primary entities ({} of {}) + 30% total entities ({} of {})",
+                        primary_count as usize, entity_ids.len(), total_count as usize, entity_ids.len())),
                 }
             },
         )

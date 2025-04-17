@@ -40,6 +40,11 @@
 - Type compatibility with Qdrant client types requires careful attention due to potential mismatches:
   - Watch for namespace conflicts between `qdrant_client::qdrant::vectors::VectorsOptions` and `qdrant_client::qdrant::vectors_output::VectorsOptions`
   - When pattern matching against references to enums from different modules, use fully qualified paths with the `&EnumType::Variant(ref v)` pattern
+- For transparency, similarity metrics should be exposed in JSON output, including:
+  - Vector quality metrics (score, active dimensions, magnitude)
+  - Entity-specific overlap scores (by entity type: person, org, location, event)
+  - Formula explanation showing the weighted contribution of each component
+- Similarity formula should be clearly documented in both code and JSON output to help diagnose matching issues
 
 ## Application Conventions
 - iOS app relies on push notifications with payload size limits

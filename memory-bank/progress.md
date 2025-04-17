@@ -62,6 +62,11 @@ Argus is currently in active development with major components implemented and f
 - ✅ **Entity Repository**: Added `get_articles_by_entities` method in db.rs for centralized entity queries 
 - ✅ **Dual-Query Approach**: Implemented combined vector and entity-based search strategy with proper error handling
 - ✅ **Compilation Issues**: Fixed type annotation and Qdrant client compatibility issues in vector.rs
+- ✅ **Similarity Transparency**: Enhanced article matching with detailed similarity metrics exposure
+  - Added vector quality fields (vector_score, active_dimensions, magnitude)
+  - Added entity-specific metrics (overlap counts, type-specific similarity scores)
+  - Added similarity formula explanations in the JSON output
+  - Verified implementation with `cargo check --bin argus` (no warnings)
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity
