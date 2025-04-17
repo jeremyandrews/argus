@@ -106,11 +106,8 @@ pub async fn generate_llm_response(
                 if let Some(json_type) = &params.json_format {
                     match json_type {
                         JsonSchemaType::EntityExtraction => {
-                            request.format =
-                                Some(FormatType::StructuredJson(JsonStructure::new::<
-                                    EntityExtractionResponse,
-                                >(
-                                )));
+                            // Use simpler Json format instead of StructuredJson to avoid potential compatibility issues
+                            request.format = Some(FormatType::Json);
                         }
                         JsonSchemaType::ThreatLocation => {
                             request.format =
@@ -135,10 +132,21 @@ pub async fn generate_llm_response(
                     .num_ctx(CONTEXT_WINDOW);
                 request.options = Some(options);
 
+                // Log detailed request information
                 debug!(
                     target: TARGET_LLM_REQUEST,
                     "[{} {} {} {}]: Ollama processing LLM prompt: {}.",
                     worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, prompt
+                );
+
+                debug!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {} {}]: Ollama request details: model={}, format={:?}, options={:?}",
+                    worker_detail.name, worker_detail.id, worker_detail.model,
+                    worker_detail.connection_info,
+                    request.model_name,
+                    request.format,
+                    request.options
                 );
 
                 match timeout(Duration::from_secs(120), ollama.generate(request)).await {
@@ -152,10 +160,19 @@ pub async fn generate_llm_response(
                         break;
                     }
                     Ok(Err(e)) => {
+                        // Log the standard error message
                         warn!(
                             target: TARGET_LLM_REQUEST,
                             "[{} {} {} {}]: error generating Ollama response: {}.",
                             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, e
+                        );
+
+                        // Log more detailed error information in debug format
+                        warn!(
+                            target: TARGET_LLM_REQUEST,
+                            "[{} {} {} {}]: Detailed Ollama error: {:?}",
+                            worker_detail.name, worker_detail.id, worker_detail.model,
+                            worker_detail.connection_info, e
                         );
                     }
                     Err(_) => {
