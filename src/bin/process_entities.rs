@@ -103,6 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model: model.clone(),
         temperature,
         require_json: None,
+        json_format: None,
     };
 
     let worker_detail = WorkerDetail {
