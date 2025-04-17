@@ -57,6 +57,16 @@ Argus is currently in active development with major components implemented and f
 
 ## In Progress
 
+### Entity Extraction and Storage
+- ✅ **Entity Extraction Fix**: Fixed entity extraction to properly use JSON mode with LLMs
+- ✅ **Analysis Worker Integration**: Replaced direct LLM calls with proper extract_entities function 
+- ✅ **Error Handling**: Added better error handling and logging for entity extraction
+- ✅ **Reprocessing Utility**: Created process_entities.rs utility for existing articles
+- ✅ **Testing Utility**: Added test_entity_extraction.rs for verifying functionality
+- ✅ **Documentation**: Added documentation to new utilities and updated memory bank
+- 🔄 **Extraction Quality**: Monitoring and adjusting entity extraction prompts
+- 🔄 **Entity Normalization**: Enhancing normalization for better cross-article matching
+
 ### Enhanced Clustering with Entity-Based Matching
 - ✅ **Multi-Factor Similarity**: Implemented algorithms that combine vector similarity with entity relationships
 - ✅ **Entity Repository**: Added `get_articles_by_entities` method in db.rs for centralized entity queries 
@@ -156,7 +166,8 @@ Argus is currently in active development with major components implemented and f
 
 ### Next Targets
 - 🎯 Complete integration of entity-based clustering
-- 🎯 Performance optimization for higher throughput
+- 🎯 Optimize entity extraction quality and performance
+- 🎯 Implement entity-based search functionality
 - 🎯 Enhanced error handling and system resilience
 - 🎯 Expanded testing infrastructure
 - 🎯 Deployment automation improvements

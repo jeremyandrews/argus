@@ -1,3 +1,29 @@
+//! # Entity Extraction Test Utility
+//!
+//! This utility tests the entity extraction functionality on a sample article.
+//!
+//! ## Usage
+//!
+//! ```
+//! cargo run --bin test_entity_extraction
+//! ```
+//!
+//! ## Configuration
+//!
+//! The utility uses the following environment variables:
+//! - `ENTITY_MODEL`: The LLM model to use (default: "llama3")
+//! - `ENTITY_TEMPERATURE`: Temperature setting for entity extraction (default: 0.0)
+//! - `ENTITY_LLM_TYPE`: Type of LLM to use ("ollama" or "openai", default: "ollama")
+//! - `OLLAMA_HOST`: Ollama host URL (default: "http://localhost:11434")
+//! - `OPENAI_API_KEY`: OpenAI API key (required if ENTITY_LLM_TYPE is "openai")
+//!
+//! ## Purpose
+//!
+//! This utility is used to verify that entity extraction is working correctly by processing
+//! a sample article and displaying the extracted entities. It helps diagnose issues with the
+//! entity extraction pipeline and confirms that the LLM is properly configured to return
+//! structured entity data in JSON format.
+
 use argus::entity::extraction::extract_entities;
 use argus::{LLMClient, LLMParams, WorkerDetail};
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};

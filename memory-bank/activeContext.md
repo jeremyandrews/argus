@@ -76,7 +76,32 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Enhanced Article Matching Transparency
+### Current Focus: Entity Extraction Integration
+
+We've fixed and enhanced the entity extraction system to properly populate entity tables, which are essential for entity-based article matching.
+
+Recently identified and fixed:
+- ✅ Fixed entity extraction in analysis_worker.rs to properly use JSON mode with the LLM
+- ✅ Replaced direct LLM calls with proper calls to the extract_entities function
+- ✅ Added better error handling and logging for entity extraction
+- ✅ Created process_entities.rs utility to reprocess existing articles for entity data
+- ✅ Created test_entity_extraction.rs utility to verify entity extraction functionality
+
+Current implementation status:
+- ✅ Entity extraction now correctly extracts entities from article text
+- ✅ Entity data is properly stored in the database tables
+- ✅ Entity-based article matching and clustering now has the data it needs
+- ✅ Both new and existing articles can have their entities extracted
+- ✅ Detailed logging provides visibility into the extraction process
+
+Next steps:
+- Monitor entity extraction quality and adjust prompts as needed
+- Analyze entity distribution patterns to optimize matching algorithms
+- Enhance entity normalization for better cross-article matching
+- Consider UI enhancements to visualize entity relationships
+- Explore entity-based search functionality
+
+### Previous Focus: Enhanced Article Matching Transparency
 
 We've implemented a dual-query approach for enhanced article matching that combines:
 
@@ -95,19 +120,12 @@ Recently completed:
 - ✅ Ensured backward compatibility with all existing functionality
 - ✅ Verified implementation with `cargo check --bin argus` (no warnings)
 
-Current implementation status:
+Implementation status:
 - ✅ Added `get_articles_by_entities` method in db.rs to centralize database queries
 - ✅ Implemented `get_similar_articles_with_entities` in vector.rs 
 - ✅ Designed and implemented dual-query approach that combines vector and entity-based search results
 - ✅ Enhanced transparency of similarity scoring with detailed metrics
 - ✅ Added formula explanation showing the weighted contributions
-
-Next steps:
-- Monitor effectiveness of similarity metrics in helping users understand related articles
-- Analyze patterns in similarity metrics to optimize matching
-- Consider UI enhancements to visualize similarity relationships
-- Refine filtering to reduce irrelevant matches
-- Implement better filtering by entity in vector searches
 
 This enhancement builds upon the current "similar articles" functionality, making it more transparent and helping diagnose quality issues in related content matching.
 

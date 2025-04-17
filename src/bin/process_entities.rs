@@ -1,3 +1,36 @@
+//! # Entity Processing Utility
+//!
+//! This utility processes existing articles in the database to extract and store named entities.
+//!
+//! ## Usage
+//!
+//! ```
+//! # Process 100 articles starting from ID 0 (default)
+//! cargo run --bin process_entities
+//!
+//! # Process a specific number of articles
+//! cargo run --bin process_entities 200
+//!
+//! # Process articles starting from a specific ID
+//! cargo run --bin process_entities 100 500
+//! ```
+//!
+//! ## Configuration
+//!
+//! The utility uses the following environment variables:
+//! - `ENTITY_MODEL`: The LLM model to use (default: "llama3")
+//! - `ENTITY_TEMPERATURE`: Temperature setting for entity extraction (default: 0.0)
+//! - `ENTITY_LLM_TYPE`: Type of LLM to use ("ollama" or "openai", default: "ollama")
+//! - `OLLAMA_HOST`: Ollama host URL (default: "http://localhost:11434")
+//! - `OPENAI_API_KEY`: OpenAI API key (required if ENTITY_LLM_TYPE is "openai")
+//!
+//! ## Purpose
+//!
+//! This utility is used to populate entity data for articles that were processed before
+//! entity extraction was implemented or when entity extraction was not working correctly.
+//! It extracts named entities (people, organizations, locations, etc.) from articles and
+//! stores them in the database for entity-based article matching and clustering.
+
 use argus::db::Database;
 use argus::entity::extraction::extract_entities;
 use argus::{LLMClient, LLMParams, WorkerDetail};
