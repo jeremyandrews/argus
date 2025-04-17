@@ -37,11 +37,23 @@ use tracing_subscriber::FmtSubscriber;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up logging
+    // Set up logging - use debug level to see more detailed information
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
+        .with_max_level(match std::env::var("RUST_LOG") {
+            Ok(level) => match level.to_lowercase().as_str() {
+                "trace" => Level::TRACE,
+                "debug" => Level::DEBUG,
+                "info" => Level::INFO,
+                "warn" => Level::WARN,
+                "error" => Level::ERROR,
+                _ => Level::DEBUG, // Default to DEBUG if RUST_LOG is set but invalid
+            },
+            Err(_) => Level::DEBUG, // Default to DEBUG if RUST_LOG is not set
+        })
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
+
+    info!("Entity extraction test started with debug logging enabled");
 
     // Test article text
     let article_text = r#"

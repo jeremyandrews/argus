@@ -34,6 +34,9 @@ pub async fn extract_entities(
         }
     };
 
+    // Log the raw response for debugging
+    info!(target: TARGET_ENTITY, "Raw LLM response for entity extraction: {}", response);
+
     // Reset JSON mode
     llm_params.require_json = None;
 
@@ -41,7 +44,11 @@ pub async fn extract_entities(
     let parsed = match parse_entity_response(&response) {
         Ok(parsed) => parsed,
         Err(e) => {
-            error!(target: TARGET_ENTITY, "Failed to parse entity response: {}", e);
+            error!(
+                target: TARGET_ENTITY,
+                "Failed to parse entity response: {}. Raw response: {}",
+                e, response
+            );
             return Err(anyhow::anyhow!("Entity extraction failed: {}", e));
         }
     };
@@ -57,7 +64,27 @@ pub async fn extract_entities(
 
 /// Parse and normalize entity extraction response
 fn parse_entity_response(json_str: &str) -> Result<ExtractedEntities> {
-    let json: Value = serde_json::from_str(json_str)?;
+    // First try to parse the JSON
+    let json: Value = match serde_json::from_str(json_str) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            error!(
+                target: TARGET_ENTITY,
+                "Failed to parse JSON: {}. Raw content: {}",
+                e, &json_str[..std::cmp::min(500, json_str.len())] // Show up to 500 chars to avoid giant logs
+            );
+            return Err(anyhow::anyhow!("Invalid JSON response: {}", e));
+        }
+    };
+
+    // Log the top-level structure for debugging
+    info!(
+        target: TARGET_ENTITY,
+        "Top-level JSON structure: {}",
+        json.as_object()
+            .map(|obj| obj.keys().map(|k| k.to_string()).collect::<Vec<_>>().join(", "))
+            .unwrap_or_else(|| "Not an object".to_string())
+    );
 
     // Create new entity collection
     let mut extracted = ExtractedEntities::new();
@@ -74,16 +101,46 @@ fn parse_entity_response(json_str: &str) -> Result<ExtractedEntities> {
     }
 
     // Extract entities
-    match json.get("entities").and_then(Value::as_array) {
-        Some(entities) => {
-            for entity_value in entities {
-                if let Some(entity) = parse_entity_object(entity_value) {
-                    extracted.add_entity(entity);
+    match json.get("entities") {
+        Some(entities_value) => match entities_value.as_array() {
+            Some(entities) => {
+                for entity_value in entities {
+                    if let Some(entity) = parse_entity_object(entity_value) {
+                        extracted.add_entity(entity);
+                    }
                 }
             }
-        }
+            None => {
+                let type_str = if entities_value.is_object() {
+                    "object"
+                } else if entities_value.is_string() {
+                    "string"
+                } else if entities_value.is_number() {
+                    "number"
+                } else if entities_value.is_boolean() {
+                    "boolean"
+                } else if entities_value.is_null() {
+                    "null"
+                } else {
+                    "unknown"
+                };
+
+                error!(
+                    target: TARGET_ENTITY,
+                    "The 'entities' field is not an array. Actual type: {}, Value: {}",
+                    type_str, entities_value
+                );
+                return Err(anyhow::anyhow!("The 'entities' field is not an array"));
+            }
+        },
         None => {
-            error!(target: TARGET_ENTITY, "No entities array found in response");
+            error!(
+                target: TARGET_ENTITY,
+                "No 'entities' field found in response. Top-level fields: {}",
+                json.as_object()
+                    .map(|obj| obj.keys().map(|k| k.to_string()).collect::<Vec<_>>().join(", "))
+                    .unwrap_or_else(|| "None".to_string())
+            );
             return Err(anyhow::anyhow!("No entities array in extraction response"));
         }
     }
