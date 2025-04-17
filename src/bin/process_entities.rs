@@ -152,7 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Parse the JSON to extract article text and pub date
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&analysis_json) {
-            let article_text = json["article_body"].as_str().unwrap_or("");
+            let article_text = json["summary"].as_str().unwrap_or("");
             let pub_date = json["pub_date"].as_str();
 
             info!(
