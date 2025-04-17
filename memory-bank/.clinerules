@@ -28,8 +28,20 @@
 - Quality scoring uses a three-tier system (1-3) for quick assessment
 - Insights go beyond article content to provide deeper context
 
+## LLM JSON Response Handling
+- The system uses a structured approach to handle different JSON response formats from LLMs
+- The `JsonSchemaType` enum defines supported schema types (EntityExtraction, ThreatLocation, Generic)
+- Each schema type has a corresponding response structure defined in llm.rs
+- When requesting structured JSON, always specify the appropriate schema type in `json_format` parameter
+- Different tasks require different JSON schemas - never hardcode one schema for all tasks
+- The LLM client uses these schemas to properly instruct the LLM about expected response format
+- Error logs should include raw LLM responses to diagnose JSON parsing issues
+- Always validate the top-level structure of JSON responses before attempting to access nested fields
+- JSON schema types should be documented when adding new functions that use structured LLM output
+
 ## Entity-Based Article Matching
 - Entity extraction uses structured LLM prompts to identify people, organizations, locations, and events
+- Entity extraction requires the EntityExtraction schema type for proper JSON handling
 - Multi-factor similarity uses weighted combination of vector similarity (60%), entity overlap (30%), and temporal proximity (10%)
 - Entity storage follows a normalized database schema with separate tables for entities and article-entity relationships
 - Similarity functions should be consolidated not duplicated - avoid maintaining parallel implementations

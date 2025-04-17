@@ -81,6 +81,10 @@ We're implementing a comprehensive entity-based system to improve article cluste
 We've fixed and enhanced the entity extraction system to properly populate entity tables, which are essential for entity-based article matching.
 
 Recently identified and fixed:
+- ✅ Fixed a JSON schema mismatch issue in the LLM client that was causing entity extraction to fail
+- ✅ Implemented a new `JsonSchemaType` enum to properly handle different JSON response formats
+- ✅ Added proper schema definition for entity extraction responses
+- ✅ Enhanced the LLM parameter system to specify which JSON schema to use
 - ✅ Fixed entity extraction in analysis_worker.rs to properly use JSON mode with the LLM
 - ✅ Replaced direct LLM calls with proper calls to the extract_entities function
 - ✅ Added better error handling and logging for entity extraction
@@ -89,6 +93,7 @@ Recently identified and fixed:
 
 Current implementation status:
 - ✅ Entity extraction now correctly extracts entities from article text
+- ✅ The LLM client correctly handles different JSON schema types based on the task
 - ✅ Entity data is properly stored in the database tables
 - ✅ Entity-based article matching and clustering now has the data it needs
 - ✅ Both new and existing articles can have their entities extracted

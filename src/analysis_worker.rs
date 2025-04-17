@@ -44,6 +44,7 @@ pub async fn analysis_loop(
         model: model.to_string(),
         temperature,
         require_json: None,
+        json_format: None,
     };
 
     let mut mode = Mode::Analysis;
@@ -132,6 +133,7 @@ pub async fn analysis_loop(
                             model: fallback_config.model.clone(),
                             temperature,
                             require_json: None,
+                            json_format: None,
                         };
 
                         // Wait for the new model to be operational
@@ -152,6 +154,7 @@ pub async fn analysis_loop(
                                 model: model.to_string(),
                                 temperature,
                                 require_json: None,
+                                json_format: None,
                             };
                             // Give time for the original model to restore.
                             let _ =
@@ -179,6 +182,7 @@ pub async fn analysis_loop(
                                 model: model.to_string(),
                                 temperature,
                                 require_json: None,
+                                json_format: None,
                             };
 
                             worker_detail.model = model.to_string();
@@ -231,6 +235,7 @@ pub async fn analysis_loop(
                         model: model.to_string(),
                         temperature,
                         require_json: None,
+                        json_format: None,
                     };
 
                     // Wait for the original model to be operational

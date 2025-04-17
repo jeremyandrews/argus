@@ -33,12 +33,26 @@ pub enum LLMClient {
     OpenAI(OpenAIClient<OpenAIConfig>),
 }
 
+/// Enum defining available JSON schema types for structured LLM responses
+#[derive(Clone, Debug)]
+pub enum JsonSchemaType {
+    /// For entity extraction: returns entities array
+    EntityExtraction,
+
+    /// For threat location: returns impacted_regions array
+    ThreatLocation,
+
+    /// Generic JSON response without schema enforcement
+    Generic,
+}
+
 #[derive(Clone)]
 pub struct LLMParams {
     pub llm_client: LLMClient,
     pub model: String,
     pub temperature: f32,
-    pub require_json: Option<bool>, // Optional field to specify JSON requirement
+    pub require_json: Option<bool>, // Kept for backward compatibility
+    pub json_format: Option<JsonSchemaType>, // New field for specifying JSON schema type
 }
 
 // New: Struct to hold fallback configuration for Analysis Workers

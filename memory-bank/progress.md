@@ -58,7 +58,10 @@ Argus is currently in active development with major components implemented and f
 ## In Progress
 
 ### Entity Extraction and Storage
+- ✅ **JSON Schema System**: Implemented JsonSchemaType enum to handle different LLM response formats
+- ✅ **Schema Definitions**: Added proper schema definitions for entity extraction responses
 - ✅ **Entity Extraction Fix**: Fixed entity extraction to properly use JSON mode with LLMs
+- ✅ **LLM Parameter Enhancement**: Extended LLMParams to specify which JSON schema to use
 - ✅ **Analysis Worker Integration**: Replaced direct LLM calls with proper extract_entities function 
 - ✅ **Error Handling**: Added better error handling and logging for entity extraction
 - ✅ **Reprocessing Utility**: Created process_entities.rs utility for existing articles

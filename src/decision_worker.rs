@@ -41,6 +41,7 @@ fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
         model: params.model.to_string(),
         temperature: params.temperature,
         require_json: None,
+        json_format: None,
     }
 }
 
@@ -365,7 +366,7 @@ async fn determine_threat_location(
     // Extract LLM parameters
     let llm_params = extract_llm_params(params);
     let mut json_llm_params = llm_params.clone();
-    json_llm_params.require_json = Some(true);
+    json_llm_params.json_format = Some(crate::JsonSchemaType::ThreatLocation);
 
     if let Some(response) =
         generate_llm_response(&threat_locations_prompt, &json_llm_params, worker_detail).await

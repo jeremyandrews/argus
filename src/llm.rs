@@ -12,10 +12,11 @@ use tracing::{debug, error, info, warn};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::TARGET_LLM_REQUEST;
-use crate::{LLMClient, LLMParams, WorkerDetail};
+use crate::{JsonSchemaType, LLMClient, LLMParams, WorkerDetail};
 
 const CONTEXT_WINDOW: u32 = 8192;
 
+// Response schema for threat location analysis
 #[derive(Serialize, Deserialize, Debug, JsonSchema)]
 pub struct ThreatLocationResponse {
     pub impacted_regions: Vec<ImpactedRegion>,
@@ -26,6 +27,25 @@ pub struct ImpactedRegion {
     pub continent: Option<String>,
     pub country: Option<String>,
     pub region: Option<String>,
+}
+
+// Response schema for entity extraction
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct EntityExtractionResponse {
+    pub event_date: Option<String>,
+    pub entities: Vec<EntityItem>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema)]
+pub struct EntityItem {
+    pub name: String,
+    pub normalized_name: String,
+    #[serde(rename = "type")]
+    pub entity_type: String,
+    pub importance: String,
+    // Additional fields might be present but aren't required by the schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 fn estimate_token_count(text: &str) -> u32 {
@@ -82,7 +102,29 @@ pub async fn generate_llm_response(
             LLMClient::Ollama(ref ollama) => {
                 let mut request = GenerationRequest::new(params.model.clone(), prompt.to_string());
 
-                if params.require_json.unwrap_or(false) {
+                // Apply JSON formatting if specified
+                if let Some(json_type) = &params.json_format {
+                    match json_type {
+                        JsonSchemaType::EntityExtraction => {
+                            request.format =
+                                Some(FormatType::StructuredJson(JsonStructure::new::<
+                                    EntityExtractionResponse,
+                                >(
+                                )));
+                        }
+                        JsonSchemaType::ThreatLocation => {
+                            request.format =
+                                Some(FormatType::StructuredJson(JsonStructure::new::<
+                                    ThreatLocationResponse,
+                                >(
+                                )));
+                        }
+                        JsonSchemaType::Generic => {
+                            request.format = Some(FormatType::Json);
+                        }
+                    }
+                } else if params.require_json.unwrap_or(false) {
+                    // Legacy support for require_json
                     request.format = Some(FormatType::StructuredJson(JsonStructure::new::<
                         ThreatLocationResponse,
                     >()));

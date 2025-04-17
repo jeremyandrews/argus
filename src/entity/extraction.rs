@@ -20,8 +20,8 @@ pub async fn extract_entities(
     // Set up extraction prompt
     let entity_prompt = prompts::entity_extraction_prompt(article_text, pub_date);
 
-    // Enable JSON output mode
-    llm_params.require_json = Some(true);
+    // Enable structured JSON output mode with entity extraction schema
+    llm_params.json_format = Some(crate::JsonSchemaType::EntityExtraction);
 
     // Get LLM response
     let response = match generate_llm_response(&entity_prompt, llm_params, worker_detail).await {
@@ -37,8 +37,8 @@ pub async fn extract_entities(
     // Log the raw response for debugging
     info!(target: TARGET_ENTITY, "Raw LLM response for entity extraction: {}", response);
 
-    // Reset JSON mode
-    llm_params.require_json = None;
+    // Reset JSON format mode
+    llm_params.json_format = None;
 
     // Parse the response
     let parsed = match parse_entity_response(&response) {
