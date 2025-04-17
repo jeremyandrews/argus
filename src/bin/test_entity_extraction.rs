@@ -14,7 +14,8 @@
 //! - `ENTITY_MODEL`: The LLM model to use (default: "llama3")
 //! - `ENTITY_TEMPERATURE`: Temperature setting for entity extraction (default: 0.0)
 //! - `ENTITY_LLM_TYPE`: Type of LLM to use ("ollama" or "openai", default: "ollama")
-//! - `OLLAMA_HOST`: Ollama host URL (default: "http://localhost:11434")
+//! - `OLLAMA_HOST`: Ollama host name (default: "localhost")
+//! - `OLLAMA_PORT`: Ollama port number (default: 11434)
 //! - `OPENAI_API_KEY`: OpenAI API key (required if ENTITY_LLM_TYPE is "openai")
 //!
 //! ## Purpose
@@ -75,29 +76,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             LLMClient::OpenAI(OpenAIClient::with_config(config))
         }
         _ => {
-            // Default to Ollama
-            let host_url =
-                env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+            // Get host and port from environment variables
+            let host = env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
+            let port: u16 = env::var("OLLAMA_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(11434);
 
-            // Parse host and port from URL
-            let url_parts: Vec<&str> = host_url.split("://").collect();
-            let host_port = if url_parts.len() > 1 {
-                url_parts[1]
-            } else {
-                url_parts[0]
-            };
-
-            let host_port_parts: Vec<&str> = host_port.split(':').collect();
-            let host_name = host_port_parts[0].to_string();
-
-            let port: u16 = if host_port_parts.len() > 1 {
-                host_port_parts[1].parse().unwrap_or(11434)
-            } else {
-                11434 // Default Ollama port
-            };
-
-            info!("Connecting to Ollama at {}:{}", host_name, port);
-            LLMClient::Ollama(Ollama::new(&host_name, port))
+            info!("Connecting to Ollama at {}:{}", host, port);
+            LLMClient::Ollama(Ollama::new(host, port))
         }
     };
 
