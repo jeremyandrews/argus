@@ -598,18 +598,350 @@ pub struct ArticleMatch {
     pub score: f32, // similarity score from Qdrant
 }
 
-/// Find similar articles with entity support (no filtering for now)
-/// This is a temporary implementation that just calls the regular get_similar_articles
+/// Enhanced article match with both vector and entity similarity
+#[derive(Debug)]
+struct EnhancedArticleMatch {
+    article_id: i64,
+    vector_score: f32,
+    entity_similarity: crate::entity::EntitySimilarityMetrics,
+    final_score: f32,
+    category: String,
+    published_date: String,
+    quality_score: i8,
+}
+
+/// Find similar articles using a dual-query approach that combines vector similarity with entity matching
 pub async fn get_similar_articles_with_entities(
     embedding: &Vec<f32>,
     limit: u64,
-    _entity_ids: Option<&[i64]>, // Ignore entity_ids for now to make things compile
-    _event_date: Option<&str>,   // Ignore event_date for now to make things compile
+    entity_ids: Option<&[i64]>,
+    event_date: Option<&str>,
 ) -> Result<Vec<ArticleMatch>> {
-    info!(target: TARGET_VECTOR, "Entity-aware search (temporarily disabled): falling back to regular vector search");
+    info!(target: TARGET_VECTOR, "Starting enhanced entity-aware article search with dual-query approach");
 
-    // For now, just call the regular get_similar_articles without entity filtering
-    get_similar_articles(embedding, limit).await
+    let mut all_matches = std::collections::HashMap::new();
+
+    // 1. Vector-based query using current implementation
+    info!(target: TARGET_VECTOR, "Performing vector similarity search...");
+    let vector_matches = get_similar_articles(embedding, limit * 2).await?; // Get more results for better coverage
+
+    // Add vector matches to our result set
+    for article in vector_matches {
+        all_matches.insert(article.id, article);
+    }
+
+    // 2. Entity-based query (if we have entity IDs)
+    if let Some(ids) = entity_ids {
+        if !ids.is_empty() {
+            info!(target: TARGET_VECTOR, "Performing entity-based search with {} entity IDs...", ids.len());
+            let entity_matches = get_articles_by_entities(ids, limit * 2).await?;
+
+            // For entity matches, calculate vector similarity if not already included
+            for mut article in entity_matches {
+                if !all_matches.contains_key(&article.id) {
+                    // Calculate vector similarity for this entity match
+                    match calculate_vector_similarity(embedding, article.id).await {
+                        Ok(vector_score) => {
+                            article.score = vector_score; // Update with actual vector score
+                            all_matches.insert(article.id, article);
+                        }
+                        Err(e) => {
+                            error!(target: TARGET_VECTOR, "Failed to calculate vector similarity for article {}: {:?}", article.id, e);
+                            // Still include the article even if we couldn't get vector similarity
+                            article.score = 0.0;
+                            all_matches.insert(article.id, article);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if all_matches.is_empty() {
+        info!(target: TARGET_VECTOR, "No matches found through either vector or entity-based search");
+        return Ok(vec![]);
+    }
+
+    info!(target: TARGET_VECTOR, "Found {} total unique articles from both queries", all_matches.len());
+
+    // 3. Now enhance all matches with entity similarity scores
+    let mut enhanced_matches = Vec::new();
+    for (id, article) in all_matches {
+        // Get entity data for this article
+        let article_entities = match get_article_entities(id).await {
+            Ok(Some(entities)) => entities,
+            Ok(None) => {
+                // Still include articles without entities
+                let enhanced = EnhancedArticleMatch {
+                    article_id: id,
+                    vector_score: article.score,
+                    entity_similarity: crate::entity::EntitySimilarityMetrics::new(),
+                    final_score: article.score, // Just use vector score
+                    category: article.category,
+                    published_date: article.published_date,
+                    quality_score: article.quality_score,
+                };
+                enhanced_matches.push(enhanced);
+                continue;
+            }
+            Err(e) => {
+                error!(target: TARGET_VECTOR, "Failed to get entities for article {}: {:?}", id, e);
+                continue;
+            }
+        };
+
+        // If we have both our source entities and this article's entities, calculate similarity
+        if let Some(ids) = entity_ids {
+            // Create a source entities object from the IDs
+            let source_entities = match build_entities_from_ids(ids).await {
+                Ok(entities) => entities,
+                Err(e) => {
+                    error!(target: TARGET_VECTOR, "Failed to build source entities: {:?}", e);
+                    crate::entity::ExtractedEntities::new() // Empty fallback
+                }
+            };
+
+            // Calculate entity similarity between articles
+            let entity_sim = crate::entity::matching::calculate_entity_similarity(
+                &source_entities,
+                &article_entities,
+                event_date,
+                Some(&article.published_date),
+            );
+
+            // Create enhanced match with combined score
+            let enhanced = EnhancedArticleMatch {
+                article_id: id,
+                vector_score: article.score,
+                entity_similarity: entity_sim.clone(),
+                // Combined score: 60% vector + 40% entity (as specified in activeContext.md)
+                final_score: 0.6 * article.score + 0.4 * entity_sim.combined_score,
+                category: article.category,
+                published_date: article.published_date,
+                quality_score: article.quality_score,
+            };
+
+            enhanced_matches.push(enhanced);
+        } else {
+            // Without source entities, just use the vector score
+            let enhanced = EnhancedArticleMatch {
+                article_id: id,
+                vector_score: article.score,
+                entity_similarity: crate::entity::EntitySimilarityMetrics::new(),
+                final_score: article.score, // Just use vector score
+                category: article.category,
+                published_date: article.published_date,
+                quality_score: article.quality_score,
+            };
+            enhanced_matches.push(enhanced);
+        }
+    }
+
+    // 4. Sort by final_score and apply threshold
+    enhanced_matches.sort_by(|a, b| {
+        b.final_score
+            .partial_cmp(&a.final_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    info!(target: TARGET_VECTOR, "Enhanced matches before filtering: {}", enhanced_matches.len());
+
+    // Apply minimum combined threshold (0.75)
+    let final_matches: Vec<ArticleMatch> = enhanced_matches
+        .into_iter()
+        .filter(|m| m.final_score >= 0.75)
+        .take(limit as usize)
+        .map(|m| {
+            info!(target: TARGET_VECTOR,
+                "Match article_id={}, vector_score={:.4}, entity_score={:.4}, final_score={:.4}, primary_overlap={}",
+                m.article_id, m.vector_score, m.entity_similarity.combined_score, m.final_score, m.entity_similarity.primary_overlap_count
+            );
+
+            ArticleMatch {
+                id: m.article_id,
+                published_date: m.published_date,
+                category: m.category,
+                quality_score: m.quality_score,
+                score: m.final_score, // Use the combined score
+            }
+        })
+        .collect();
+
+    info!(target: TARGET_VECTOR, "Final matched article count after filtering: {}", final_matches.len());
+
+    Ok(final_matches)
+}
+
+/// Get articles that share significant entities with the given entity IDs
+async fn get_articles_by_entities(entity_ids: &[i64], limit: u64) -> Result<Vec<ArticleMatch>> {
+    let db = crate::db::Database::instance().await;
+
+    // Use the database function we added to get articles by entities
+    let entity_matches = db
+        .get_articles_by_entities(entity_ids, limit)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get articles by entities: {}", e))?;
+
+    // Convert to ArticleMatch objects
+    let matches: Vec<ArticleMatch> = entity_matches
+        .into_iter()
+        .map(
+            |(id, published_date, category, quality_score, primary_count, total_count)| {
+                let quality_score = quality_score.unwrap_or(0) as i8;
+
+                // Calculate a preliminary score based on entity overlap
+                let primary_count = primary_count as f32;
+                let total_count = total_count as f32;
+
+                // Score formula: prioritize PRIMARY entities but also consider total overlap
+                let entity_score = if total_count > 0.0 {
+                    (0.7 * (primary_count / entity_ids.len() as f32))
+                        + (0.3 * (total_count / entity_ids.len() as f32))
+                } else {
+                    0.0
+                };
+
+                ArticleMatch {
+                    id,
+                    published_date: published_date.unwrap_or_default(),
+                    category: category.unwrap_or_default(),
+                    quality_score,
+                    score: entity_score, // Preliminary score, will be refined later
+                }
+            },
+        )
+        .collect();
+
+    info!(target: TARGET_VECTOR, "Found {} articles by entity matching", matches.len());
+    Ok(matches)
+}
+
+/// Calculate vector similarity between an embedding and a specific article
+async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
+    let client = Qdrant::from_url(
+        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .build()?;
+
+    // Get the article's vector from Qdrant
+    let response = client
+        .get_points(qdrant_client::qdrant::GetPoints {
+            collection_name: "articles".to_string(),
+            ids: vec![PointId {
+                point_id_options: Some(PointIdOptions::Num(article_id as u64)),
+            }],
+            with_payload: Some(WithPayloadSelector::from(false)),
+            with_vectors: Some(WithVectorsSelector::from(true)),
+            ..Default::default()
+        })
+        .await?;
+
+    // Extract the vector from the response
+    if let Some(point) = response.result.first() {
+        if let Some(vectors) = &point.vectors {
+            if let Some(opts) = &vectors.vectors_options {
+                // Extract the vector data using fully qualified type path
+                let vector_data = match opts {
+                    &qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(ref v) => {
+                        &v.data
+                    }
+                    _ => {
+                        error!(target: TARGET_VECTOR, "Unexpected vector format for article {}", article_id);
+                        return Ok(0.0);
+                    }
+                };
+
+                // Calculate cosine similarity
+                let dot_product: f32 = embedding
+                    .iter()
+                    .zip(vector_data.iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+
+                let mag1: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let mag2: f32 = vector_data.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+                let similarity = if mag1 > 0.0 && mag2 > 0.0 {
+                    dot_product / (mag1 * mag2)
+                } else {
+                    0.0
+                };
+
+                return Ok(similarity);
+            }
+        }
+    }
+
+    // If we couldn't get the vector or calculate similarity
+    error!(
+        target: TARGET_VECTOR,
+        "Failed to calculate vector similarity for article {}", article_id
+    );
+    Ok(0.0) // Default to no similarity
+}
+
+/// Get all entities for a specific article
+async fn get_article_entities(article_id: i64) -> Result<Option<crate::entity::ExtractedEntities>> {
+    let db = crate::db::Database::instance().await;
+
+    // Get article's date information
+    let (_pub_date, event_date) = db.get_article_details_with_dates(article_id).await?;
+
+    // Create an extracted entities object
+    let mut extracted = crate::entity::ExtractedEntities::new();
+
+    // Set event date if available
+    if let Some(date) = event_date {
+        extracted = extracted.with_event_date(&date);
+    }
+
+    // Get all entities linked to this article
+    let entities = db.get_article_entities(article_id).await?;
+
+    // Convert database rows to Entity objects
+    for (entity_id, name, entity_type_str, importance_str) in entities {
+        let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
+        let importance = crate::entity::ImportanceLevel::from(importance_str.as_str());
+
+        // Create entity and add to collection
+        let entity =
+            crate::entity::Entity::new(&name, &name.to_lowercase(), entity_type, importance)
+                .with_id(entity_id);
+
+        extracted.add_entity(entity);
+    }
+
+    if extracted.entities.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(extracted))
+}
+
+/// Build an ExtractedEntities object from entity IDs
+async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::ExtractedEntities> {
+    let db = crate::db::Database::instance().await;
+    let mut extracted = crate::entity::ExtractedEntities::new();
+
+    for &id in entity_ids {
+        if let Ok(Some((name, entity_type_str, _parent_id))) = db.get_entity_details(id).await {
+            let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
+
+            // Create entity with PRIMARY importance (these are our source entities)
+            let entity = crate::entity::Entity::new(
+                &name,
+                &name.to_lowercase(),
+                entity_type,
+                crate::entity::ImportanceLevel::Primary,
+            )
+            .with_id(id);
+
+            extracted.add_entity(entity);
+        }
+    }
+
+    Ok(extracted)
 }
 
 async fn _create_collection() -> Result<()> {

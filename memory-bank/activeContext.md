@@ -75,22 +75,33 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Code Refactoring
-We've decided to replace the original `get_similar_articles` function with the enhanced version that uses multi-factor matching. This will avoid maintaining duplicate code paths and simplify the codebase. The enhanced version provides more accurate article matching by considering:
+### Current Focus: Entity-Based Article Matching Implementation
+
+We're implementing a dual-query approach for enhanced article matching that combines:
 
 - Vector similarity (60% weight)
 - Entity overlap (30% weight) 
 - Temporal proximity (10% weight)
 
-Recent fixes:
-- Fixed compiler errors in db.rs, decision_worker.rs, and rss.rs related to the new entity features
-- Marked unused parameters in vector.rs to address compiler warnings
-- Added event_date parameter to all add_article function calls
+Current implementation status:
+- ✅ Added `get_articles_by_entities` method in db.rs to centralize database queries
+- ✅ Implemented `get_similar_articles_with_entities` in vector.rs 
+- ✅ Designed and implemented dual-query approach that combines vector and entity-based search results
+- ✅ Fixed compilation errors in vector.rs:
+  1. Resolved type annotation issues with explicit type declarations
+  2. Fixed Qdrant client's VectorsOptions type conflicts using proper namespace qualification and reference patterns
+
+Recent progress:
+- Moved the SQL query for entity-based article matching to db.rs
+- Set up the weighted scoring system for combining vector and entity similarities
+- Implemented the dual-query approach in vector.rs
+- Fixed compilation errors by properly handling namespace conflicts in Qdrant client types
 
 Next steps:
-- Complete the refactoring of `get_similar_articles` to use the entity-based matching
-- Integrate entity data into Qdrant payloads
-- Implement filtering by entity in vector searches
+- Complete testing of the dual-query approach
+- Refine filtering to reduce irrelevant matches
+- Integrate entity data properly into Qdrant payloads
+- Implement better filtering by entity in vector searches
 
 This enhancement directly builds upon the current "similar articles" functionality, making it more accurate and reliable without requiring a separate clustering system.
 
@@ -154,6 +165,12 @@ Based on codebase analysis, likely next steps include:
 ### Slack Integration
 - **Message Formatting**: Standardized formatting for different content types
 - **Channel Management**: Appropriate routing of different content categories
+- **Interaction Handling**: Potential for interactive elements in Slack messages
+
+### LLM Services
+- **API Access**: Proper API key management for OpenAI and other providers
+- **Ollama Configuration**: Setup and maintenance of local Ollama instances
+- **Provider Failover**: Seamless switching between providers when needed
 - **Interaction Handling**: Potential for interactive elements in Slack messages
 
 ### LLM Services

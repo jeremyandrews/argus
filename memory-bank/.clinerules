@@ -34,6 +34,12 @@
 - Entity storage follows a normalized database schema with separate tables for entities and article-entity relationships
 - Similarity functions should be consolidated not duplicated - avoid maintaining parallel implementations
 - Entity importance is classified as PRIMARY, SECONDARY, or MENTIONED to prioritize matching weight
+- Database-related entity operations should be kept in db.rs for consistency with architecture
+- Entity matching has two critical paths: vector similarity and entity-based matching
+- The dual-query approach ensures we don't miss valid matches from either approach
+- Type compatibility with Qdrant client types requires careful attention due to potential mismatches:
+  - Watch for namespace conflicts between `qdrant_client::qdrant::vectors::VectorsOptions` and `qdrant_client::qdrant::vectors_output::VectorsOptions`
+  - When pattern matching against references to enums from different modules, use fully qualified paths with the `&EnumType::Variant(ref v)` pattern
 
 ## Application Conventions
 - iOS app relies on push notifications with payload size limits

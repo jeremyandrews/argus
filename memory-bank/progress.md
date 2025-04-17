@@ -58,9 +58,11 @@ Argus is currently in active development with major components implemented and f
 ## In Progress
 
 ### Enhanced Clustering with Entity-Based Matching
-- 🔄 **Multi-Factor Similarity**: Finalizing algorithms that combine vector similarity with entity relationships
+- ✅ **Multi-Factor Similarity**: Implemented algorithms that combine vector similarity with entity relationships
+- ✅ **Entity Repository**: Added `get_articles_by_entities` method in db.rs for centralized entity queries 
+- ✅ **Dual-Query Approach**: Implemented combined vector and entity-based search strategy with proper error handling
+- ✅ **Compilation Issues**: Fixed type annotation and Qdrant client compatibility issues in vector.rs
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
-- 🔄 **Code Refactoring**: Consolidating similarity functions to eliminate duplication and maintain clean architecture
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity
 
@@ -141,7 +143,8 @@ Argus is currently in active development with major components implemented and f
 - ✓ Entity extraction and storage
 
 ### In Progress
-- 🔄 Multi-feature similarity matching for improved clustering
+- ✅ Dual-query article similarity with entity and vector matching
+- ✅ Fixing compilation issues in entity matching implementation 
 - 🔄 Qdrant integration for entity-based vector search
 - 🔄 Refined article relationship detection
 
