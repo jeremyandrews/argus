@@ -55,3 +55,10 @@ chrono = "0.4"
 name = "rss_fetcher"
 path = "src/bin/rss_fetcher.rs"
 
+[[bin]]
+name = "process_entities"
+path = "src/bin/process_entities.rs"
+
+[[bin]]
+name = "test_entity_extraction"
+path = "src/bin/test_entity_extraction.rs"

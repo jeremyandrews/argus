@@ -8,6 +8,7 @@ use tracing::{debug, error, info, warn};
 use crate::app::util::send_to_app;
 use crate::db::Database;
 use crate::decision_worker::FeedItem;
+use crate::entity::extraction::extract_entities;
 use crate::llm::generate_llm_response;
 use crate::prompts;
 use crate::slack::send_to_slack;
@@ -748,27 +749,47 @@ async fn process_analysis_item(
 
                     // Extract entities from article text for entity-based matching
                     let entity_extraction_start = Instant::now();
-                    let entity_prompt =
-                        prompts::entity_extraction_prompt(&article_text, pub_date.as_deref());
 
-                    if let Some(entity_json) =
-                        generate_llm_response(&entity_prompt, &llm_params, worker_detail).await
+                    // Use the proper entity extraction function with JSON mode
+                    match extract_entities(
+                        &article_text,
+                        pub_date.as_deref(),
+                        &mut llm_params.clone(),
+                        worker_detail,
+                    )
+                    .await
                     {
-                        info!(
-                            "Extracted entities in {:?}, processing extraction",
-                            entity_extraction_start.elapsed()
-                        );
+                        Ok(extracted_entities) => {
+                            info!(
+                                "Extracted {} entities in {:?}",
+                                extracted_entities.entities.len(),
+                                entity_extraction_start.elapsed()
+                            );
 
-                        if let Err(e) = db.process_entity_extraction(article_id, &entity_json).await
-                        {
+                            // Convert to JSON for database storage
+                            let entities_json = serde_json::to_string(&extracted_entities)
+                                .unwrap_or_else(|_| "{}".to_string());
+
+                            if let Err(e) = db
+                                .process_entity_extraction(article_id, &entities_json)
+                                .await
+                            {
+                                error!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "Failed to process entity extraction: {:?}", e
+                                );
+                            } else {
+                                debug!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "Successfully processed entity extraction for article with {} entities",
+                                    extracted_entities.entities.len()
+                                );
+                            }
+                        }
+                        Err(e) => {
                             error!(
                                 target: TARGET_LLM_REQUEST,
-                                "Failed to process entity extraction: {:?}", e
-                            );
-                        } else {
-                            debug!(
-                                target: TARGET_LLM_REQUEST,
-                                "Successfully processed entity extraction for article"
+                                "Failed to extract entities: {:?}", e
                             );
                         }
                     }
@@ -1020,36 +1041,48 @@ async fn process_analysis_item(
                                 response_json["similar_articles"] =
                                     json!(similar_articles_with_details);
                             }
-                            // Entity extraction
+                            // Entity extraction using proper function with JSON mode
                             let entity_extraction_start = Instant::now();
-                            let entity_prompt = prompts::entity_extraction_prompt(
+
+                            match extract_entities(
                                 &article_text,
                                 pub_date.as_deref(),
-                            );
-
-                            if let Some(entity_json) = generate_llm_response(
-                                &entity_prompt,
                                 &mut llm_params_clone,
                                 worker_detail,
                             )
                             .await
                             {
-                                info!(
-                                    "Extracted entities in {:?}, processing extraction",
-                                    entity_extraction_start.elapsed()
-                                );
+                                Ok(extracted_entities) => {
+                                    info!(
+                                        "Extracted {} entities in {:?}",
+                                        extracted_entities.entities.len(),
+                                        entity_extraction_start.elapsed()
+                                    );
 
-                                if let Err(e) =
-                                    db.process_entity_extraction(article_id, &entity_json).await
-                                {
+                                    // Convert to JSON for database storage
+                                    let entities_json = serde_json::to_string(&extracted_entities)
+                                        .unwrap_or_else(|_| "{}".to_string());
+
+                                    if let Err(e) = db
+                                        .process_entity_extraction(article_id, &entities_json)
+                                        .await
+                                    {
+                                        error!(
+                                            target: TARGET_LLM_REQUEST,
+                                            "Failed to process entity extraction: {:?}", e
+                                        );
+                                    } else {
+                                        debug!(
+                                            target: TARGET_LLM_REQUEST,
+                                            "Successfully processed entity extraction for article with {} entities",
+                                            extracted_entities.entities.len()
+                                        );
+                                    }
+                                }
+                                Err(e) => {
                                     error!(
                                         target: TARGET_LLM_REQUEST,
-                                        "Failed to process entity extraction: {:?}", e
-                                    );
-                                } else {
-                                    debug!(
-                                        target: TARGET_LLM_REQUEST,
-                                        "Successfully processed entity extraction for article"
+                                        "Failed to extract entities: {:?}", e
                                     );
                                 }
                             }
