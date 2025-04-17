@@ -22,6 +22,7 @@ Based on code review, recent development appears focused on:
 4. **iOS App Integration**: Building out API endpoints and push notification capabilities
 5. **Quality Metrics**: Generating source quality and argument quality scores
 6. **Life Safety Alerts**: Implementing geographical impact detection for safety-critical information
+7. **Enhanced LLM Error Logging**: Improved connection identification in error logs to pinpoint failing LLM instances
 
 ## Current Enhancement Project: Entity-Based Article Clustering
 

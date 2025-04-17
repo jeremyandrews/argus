@@ -53,8 +53,7 @@ pub struct WorkerDetail {
     pub name: String,
     pub id: i16,
     pub model: String,
-    // @TODO: Ollama or OpenAI
-    //pub client: String,
+    pub connection_info: String, // Contains host:port for Ollama or API endpoint for OpenAI
 }
 
 #[derive(Serialize)]

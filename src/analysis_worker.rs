@@ -49,10 +49,36 @@ pub async fn analysis_loop(
     let mut fallback_start_time: Option<Instant> = None;
     let mut last_activity: Instant = Instant::now();
 
+    // Extract connection info from the LLM client
+    let connection_info = match llm_client {
+        LLMClient::Ollama(_) => {
+            // Since Ollama doesn't expose host/port directly, extract from env var
+            match &std::env::var("ANALYSIS_OLLAMA_CONFIGS") {
+                Ok(configs) => {
+                    // Find the config for this worker ID
+                    let all_configs: Vec<&str> = configs.split(';').collect();
+                    if (worker_id as usize) < all_configs.len() {
+                        let parts: Vec<&str> = all_configs[worker_id as usize].split('|').collect();
+                        if parts.len() >= 2 {
+                            format!("{}:{}", parts[0], parts[1])
+                        } else {
+                            format!("ollama-analysis-{}", worker_id)
+                        }
+                    } else {
+                        format!("ollama-analysis-{}", worker_id)
+                    }
+                }
+                Err(_) => format!("ollama-analysis-{}", worker_id),
+            }
+        }
+        LLMClient::OpenAI(_) => "OpenAI API".to_string(),
+    };
+
     let mut worker_detail = WorkerDetail {
         name: "analysis worker".to_string(),
         id: worker_id,
         model: model.to_string(),
+        connection_info,
     };
 
     // If analysis_worker will switch to a decision_worker, we need this.

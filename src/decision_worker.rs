@@ -56,10 +56,36 @@ pub async fn decision_loop(
     let db = Database::instance().await;
     let mut rng = StdRng::seed_from_u64(rand::random());
 
+    // Extract connection info from the LLM client
+    let connection_info = match llm_client {
+        LLMClient::Ollama(_) => {
+            // Since Ollama doesn't expose host/port directly, extract from the config env var
+            match &std::env::var("DECISION_OLLAMA_CONFIGS") {
+                Ok(configs) => {
+                    // Find the config for this worker ID
+                    let all_configs: Vec<&str> = configs.split(';').collect();
+                    if (worker_id as usize) < all_configs.len() {
+                        let parts: Vec<&str> = all_configs[worker_id as usize].split('|').collect();
+                        if parts.len() >= 2 {
+                            format!("{}:{}", parts[0], parts[1])
+                        } else {
+                            format!("ollama-{}", worker_id)
+                        }
+                    } else {
+                        format!("ollama-{}", worker_id)
+                    }
+                }
+                Err(_) => format!("ollama-{}", worker_id),
+            }
+        }
+        LLMClient::OpenAI(_) => "OpenAI API".to_string(),
+    };
+
     let worker_detail = WorkerDetail {
         name: "decision worker".to_string(),
         id: worker_id,
         model: model.to_string(),
+        connection_info,
     };
 
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: starting decision_loop using {:?}.", worker_detail.name, worker_detail.id, worker_detail.model, llm_client);

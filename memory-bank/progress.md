@@ -146,6 +146,7 @@ Argus is currently in active development with major components implemented and f
 - ✓ Basic vector similarity search
 - ✓ Entity database schema implementation
 - ✓ Entity extraction and storage
+- ✓ Enhanced LLM error logging with connection information
 
 ### In Progress
 - ✅ Dual-query article similarity with entity and vector matching

@@ -56,8 +56,8 @@ pub async fn generate_llm_response(
 
     debug!(
         target: TARGET_LLM_REQUEST,
-        "[{} {} {}]: processing LLM prompt: {}.",
-        worker_detail.name, worker_detail.id, worker_detail.model, prompt
+        "[{} {} {} {}]: processing LLM prompt: {}.",
+        worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, prompt
     );
 
     // Estimate token count
@@ -66,14 +66,14 @@ pub async fn generate_llm_response(
     if estimated_tokens <= CONTEXT_WINDOW {
         debug!(
             target: TARGET_LLM_REQUEST,
-            "[{} {} {}]: Estimated token count ({}) should fit within context window ({}).",
-            worker_detail.name, worker_detail.id, worker_detail.model, estimated_tokens, CONTEXT_WINDOW
+            "[{} {} {} {}]: Estimated token count ({}) should fit within context window ({}).",
+            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, estimated_tokens, CONTEXT_WINDOW
         );
     } else {
         warn!(
             target: TARGET_LLM_REQUEST,
-            "[{} {} {}]: Estimated token count ({}) may exceed context window ({}). Response may be incomplete.",
-            worker_detail.name, worker_detail.id, worker_detail.model, estimated_tokens, CONTEXT_WINDOW
+            "[{} {} {} {}]: Estimated token count ({}) may exceed context window ({}). Response may be incomplete.",
+            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, estimated_tokens, CONTEXT_WINDOW
         );
     }
 
@@ -95,8 +95,8 @@ pub async fn generate_llm_response(
 
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "[{} {} {}]: Ollama processing LLM prompt: {}.",
-                    worker_detail.name, worker_detail.id, worker_detail.model, prompt
+                    "[{} {} {} {}]: Ollama processing LLM prompt: {}.",
+                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, prompt
                 );
 
                 match timeout(Duration::from_secs(120), ollama.generate(request)).await {
@@ -104,23 +104,23 @@ pub async fn generate_llm_response(
                         response_text = response.response;
                         debug!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {}]: Ollama response: {}.",
-                            worker_detail.name, worker_detail.id, worker_detail.model, response_text
+                            "[{} {} {} {}]: Ollama response: {}.",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, response_text
                         );
                         break;
                     }
                     Ok(Err(e)) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {}]: error generating Ollama response: {}.",
-                            worker_detail.name, worker_detail.id, worker_detail.model, e
+                            "[{} {} {} {}]: error generating Ollama response: {}.",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, e
                         );
                     }
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {}]: Ollama request timed out.",
-                            worker_detail.name, worker_detail.id, worker_detail.model
+                            "[{} {} {} {}]: Ollama request timed out.",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }
                 }
@@ -135,8 +135,8 @@ pub async fn generate_llm_response(
 
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "[{} {} {}]: OpenAI processing LLM prompt: {}.",
-                    worker_detail.name, worker_detail.id, worker_detail.model, prompt
+                    "[{} {} {} {}]: OpenAI processing LLM prompt: {}.",
+                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, prompt
                 );
 
                 match timeout(
@@ -150,8 +150,8 @@ pub async fn generate_llm_response(
                             response_text = choice.text.clone();
                             debug!(
                                 target: TARGET_LLM_REQUEST,
-                                "[{} {} {}]: OpenAI response: {}.",
-                                worker_detail.name, worker_detail.id, worker_detail.model, response_text
+                                "[{} {} {} {}]: OpenAI response: {}.",
+                                worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, response_text
                             );
                             break;
                         }
@@ -159,15 +159,15 @@ pub async fn generate_llm_response(
                     Ok(Err(e)) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {}]: error generating OpenAI response: {}.",
-                            worker_detail.name, worker_detail.id, worker_detail.model, e
+                            "[{} {} {} {}]: error generating OpenAI response: {}.",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, e
                         );
                     }
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {}]: OpenAI request timed out.",
-                            worker_detail.name, worker_detail.id, worker_detail.model
+                            "[{} {} {} {}]: OpenAI request timed out.",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }
                 }
@@ -177,16 +177,16 @@ pub async fn generate_llm_response(
         if retry_count < max_retries - 1 {
             info!(
                 target: TARGET_LLM_REQUEST,
-                "[{} {} {}]: sleeping {} seconds.",
-                worker_detail.name, worker_detail.id, worker_detail.model, backoff
+                "[{} {} {} {}]: sleeping {} seconds.",
+                worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, backoff
             );
             sleep(Duration::from_secs(backoff)).await;
             backoff *= 2; // Exponential backoff
         } else {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "[{} {} {}]: failed to generate response after {} retries.",
-                worker_detail.name, worker_detail.id, worker_detail.model, max_retries
+                "[{} {} {} {}]: failed to generate response after {} retries.",
+                worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, max_retries
             );
         }
     }
@@ -194,15 +194,15 @@ pub async fn generate_llm_response(
     if response_text.is_empty() {
         error!(
             target: TARGET_LLM_REQUEST,
-            "[{} {} {}]: no response after all retries.",
-            worker_detail.name, worker_detail.id, worker_detail.model
+            "[{} {} {} {}]: no response after all retries.",
+            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
         );
         None
     } else {
         debug!(
             target: TARGET_LLM_REQUEST,
-            "[{} {} {}]: successfully generated response.",
-            worker_detail.name, worker_detail.id, worker_detail.model
+            "[{} {} {} {}]: successfully generated response.",
+            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
         );
         Some(response_text)
     }
