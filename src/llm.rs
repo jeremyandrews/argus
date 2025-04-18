@@ -106,12 +106,8 @@ pub async fn generate_llm_response(
                 if let Some(json_type) = &params.json_format {
                     match json_type {
                         JsonSchemaType::EntityExtraction => {
-                            // Use structured JSON format with proper schema for entity extraction
-                            request.format =
-                                Some(FormatType::StructuredJson(JsonStructure::new::<
-                                    EntityExtractionResponse,
-                                >(
-                                )));
+                            // Use simpler Json format for entity extraction
+                            request.format = Some(FormatType::Json);
                         }
                         JsonSchemaType::ThreatLocation => {
                             request.format =
