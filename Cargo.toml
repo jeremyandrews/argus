@@ -62,3 +62,7 @@ path = "src/bin/process_entities.rs"
 [[bin]]
 name = "test_entity_extraction"
 path = "src/bin/test_entity_extraction.rs"
+
+[[bin]]
+name = "test_ollama_endpoints"
+path = "src/bin/test_ollama_endpoints.rs"
