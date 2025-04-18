@@ -3,23 +3,47 @@ use argus::{process_analysis_ollama_configs, process_ollama_configs};
 use ollama_rs::Ollama;
 use std::{collections::HashMap, env, time::Duration};
 use tokio::time::timeout;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
 const ANALYSIS_OLLAMA_CONFIGS_ENV: &str = "ANALYSIS_OLLAMA_CONFIGS";
 const CONNECTION_TIMEOUT_SECS: u64 = 10;
 
+use std::fmt;
+
+/// Detailed error information
+#[derive(Debug)]
+struct ErrorDetails {
+    message: String,    // Human-readable error message
+    error_type: String, // Type of error (connection, timeout, API, etc.)
+    url: String,        // URL that was requested
+}
+
+// Implement Display for ErrorDetails so it can be printed in format strings
+impl fmt::Display for ErrorDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} [Type: {}, URL: {}]",
+            self.message, self.error_type, self.url
+        )
+    }
+}
+
 /// Struct to hold endpoint status
 #[derive(Debug)]
 enum EndpointStatus {
-    Up(Vec<String>), // Available models
-    Down(String),    // Error message
+    Up(Vec<String>),    // Available models
+    Down(ErrorDetails), // Detailed error information
 }
 
 /// Test specific Ollama endpoint and check available models
 async fn test_endpoint(host: &str, port: u16) -> EndpointStatus {
-    info!("Testing Ollama endpoint at {}:{}", host, port);
+    let base_url = format!("http://{}:{}", host, port);
+    let api_url = format!("{}/api/tags", base_url);
+
+    info!("Testing Ollama endpoint at {}", base_url);
 
     // Create Ollama client - this returns a client directly, not a Result
     let ollama = Ollama::new(host.to_string(), port);
@@ -33,11 +57,40 @@ async fn test_endpoint(host: &str, port: u16) -> EndpointStatus {
     {
         Ok(Ok(models)) => {
             let available_models: Vec<String> = models.iter().map(|m| m.name.clone()).collect();
-
             EndpointStatus::Up(available_models)
         }
-        Ok(Err(e)) => EndpointStatus::Down(format!("API error: {}", e)),
-        Err(_) => EndpointStatus::Down("Connection timed out".to_string()),
+        Ok(Err(e)) => {
+            // Log the detailed error for debugging
+            error!("Error connecting to Ollama at {}: {}", api_url, e);
+
+            // Determine error type from the error message
+            let error_type = if e.to_string().contains("timeout") {
+                "Timeout".to_string()
+            } else if e.to_string().contains("connection refused") {
+                "Connection Refused".to_string()
+            } else if e.to_string().contains("connection reset") {
+                "Connection Reset".to_string()
+            } else if e.to_string().contains("JSON") || e.to_string().contains("json") {
+                "JSON Parsing Error".to_string()
+            } else {
+                "API Error".to_string()
+            };
+
+            EndpointStatus::Down(ErrorDetails {
+                message: format!("{}", e),
+                error_type,
+                url: api_url,
+            })
+        }
+        Err(_) => {
+            error!("Connection timed out while testing Ollama at {}", api_url);
+
+            EndpointStatus::Down(ErrorDetails {
+                message: "Connection timed out".to_string(),
+                error_type: "Timeout".to_string(),
+                url: api_url,
+            })
+        }
     }
 }
 
@@ -131,7 +184,8 @@ fn print_decision_report(
             }
             Some(EndpointStatus::Down(error)) => {
                 println!("❌ {}:{} - DOWN", host, port);
-                println!("  ⚠️ Error: {}", error);
+                println!("  ⚠️ Error: {} [{}]", error.message, error.error_type);
+                println!("  ℹ️ URL: {}", error.url);
 
                 // Track missing model
                 missing_models
@@ -210,7 +264,8 @@ fn print_analysis_report(
             }
             Some(EndpointStatus::Down(error)) => {
                 println!("❌ {}:{} - DOWN", host, port);
-                println!("  ⚠️ Error: {}", error);
+                println!("  ⚠️ Error: {} [{}]", error.message, error.error_type);
+                println!("  ℹ️ URL: {}", error.url);
 
                 // Track missing model
                 missing_models
@@ -248,7 +303,8 @@ fn print_analysis_report(
                 }
                 Some(EndpointStatus::Down(error)) => {
                     println!("  ❌ FALLBACK {}:{} - DOWN", fallback_host, fallback_port);
-                    println!("    ⚠️ Error: {}", error);
+                    println!("    ⚠️ Error: {} [{}]", error.message, error.error_type);
+                    println!("    ℹ️ URL: {}", error.url);
 
                     // Track missing model
                     missing_models
@@ -295,65 +351,73 @@ fn print_summary(
     println!("\nOVERALL SUMMARY");
     println!("--------------");
 
-    // Gather missing models across all endpoints
-    let mut all_missing_models: HashMap<String, Vec<String>> = HashMap::new();
+    // Track models with different statuses
+    let mut confirmed_missing_models: HashMap<String, Vec<String>> = HashMap::new();
+    let mut unknown_status_models: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Check Decision endpoints for missing models
+    // Check Decision endpoints for model status
     for (host, port, model) in decision_configs {
         let endpoint_key = format!("{}:{}", host, port);
-        if let Some(EndpointStatus::Up(available_models)) = decision_results.get(&endpoint_key) {
-            if !available_models.contains(model) {
-                all_missing_models
+        match decision_results.get(&endpoint_key) {
+            Some(EndpointStatus::Up(available_models)) => {
+                if !available_models.contains(model) {
+                    // Model confirmed missing from an UP endpoint
+                    confirmed_missing_models
+                        .entry(model.clone())
+                        .or_insert_with(Vec::new)
+                        .push(endpoint_key.clone());
+                }
+            }
+            Some(EndpointStatus::Down(_)) | None => {
+                // Endpoint down or not tested - status unknown
+                unknown_status_models
                     .entry(model.clone())
                     .or_insert_with(Vec::new)
                     .push(endpoint_key.clone());
             }
-        } else {
-            // Endpoint down or not tested
-            all_missing_models
-                .entry(model.clone())
-                .or_insert_with(Vec::new)
-                .push(endpoint_key.clone());
         }
     }
 
-    // Check Analysis endpoints for missing models
+    // Check Analysis endpoints for model status
     for (host, port, model, fallback) in analysis_configs {
         let endpoint_key = format!("{}:{}", host, port);
 
         // Check main endpoint
-        if let Some(EndpointStatus::Up(available_models)) = analysis_results.get(&endpoint_key) {
-            if !available_models.contains(model) {
-                all_missing_models
+        match analysis_results.get(&endpoint_key) {
+            Some(EndpointStatus::Up(available_models)) => {
+                if !available_models.contains(model) {
+                    confirmed_missing_models
+                        .entry(model.clone())
+                        .or_insert_with(Vec::new)
+                        .push(endpoint_key.clone());
+                }
+            }
+            Some(EndpointStatus::Down(_)) | None => {
+                unknown_status_models
                     .entry(model.clone())
                     .or_insert_with(Vec::new)
                     .push(endpoint_key.clone());
             }
-        } else {
-            // Endpoint down or not tested
-            all_missing_models
-                .entry(model.clone())
-                .or_insert_with(Vec::new)
-                .push(endpoint_key.clone());
         }
 
         // Check fallback endpoint if present
         if let Some((fallback_host, fallback_port, fallback_model)) = fallback {
             let fallback_key = format!("{}:{} (fallback)", fallback_host, fallback_port);
-            if let Some(EndpointStatus::Up(available_models)) = analysis_results.get(&fallback_key)
-            {
-                if !available_models.contains(fallback_model) {
-                    all_missing_models
+            match analysis_results.get(&fallback_key) {
+                Some(EndpointStatus::Up(available_models)) => {
+                    if !available_models.contains(fallback_model) {
+                        confirmed_missing_models
+                            .entry(fallback_model.clone())
+                            .or_insert_with(Vec::new)
+                            .push(fallback_key.clone());
+                    }
+                }
+                Some(EndpointStatus::Down(_)) | None => {
+                    unknown_status_models
                         .entry(fallback_model.clone())
                         .or_insert_with(Vec::new)
                         .push(fallback_key.clone());
                 }
-            } else {
-                // Fallback endpoint down or not tested
-                all_missing_models
-                    .entry(fallback_model.clone())
-                    .or_insert_with(Vec::new)
-                    .push(fallback_key.clone());
             }
         }
     }
@@ -389,15 +453,44 @@ fn print_summary(
         }
     );
 
-    // Print missing models
-    if all_missing_models.is_empty() {
+    // Print model status information
+    if confirmed_missing_models.is_empty() && unknown_status_models.is_empty() {
         println!("\n🎉 All configured models are available on their respective endpoints!");
-    } else {
-        println!("\nMissing models:");
-        for (model, endpoints) in &all_missing_models {
-            println!("- {} missing from {} endpoints:", model, endpoints.len());
+        return;
+    }
+
+    println!("\nModel Status:");
+
+    // Report confirmed missing models
+    for (model, endpoints) in &confirmed_missing_models {
+        println!("- {} status:", model);
+
+        if !endpoints.is_empty() {
+            println!("  ❌ MISSING from {} UP endpoints:", endpoints.len());
             for endpoint in endpoints {
-                println!("  - {}", endpoint);
+                println!("    - {}", endpoint);
+            }
+        }
+
+        // Also check if this model has unknown status on some endpoints
+        if let Some(unknown_endpoints) = unknown_status_models.get(model) {
+            println!(
+                "  ❓ UNKNOWN status on {} DOWN endpoints:",
+                unknown_endpoints.len()
+            );
+            for endpoint in unknown_endpoints {
+                println!("    - {}", endpoint);
+            }
+        }
+    }
+
+    // Report models that are only unknown (not in the confirmed_missing list)
+    for (model, endpoints) in &unknown_status_models {
+        if !confirmed_missing_models.contains_key(model) {
+            println!("- {} status:", model);
+            println!("  ❓ UNKNOWN status on {} DOWN endpoints:", endpoints.len());
+            for endpoint in endpoints {
+                println!("    - {}", endpoint);
             }
         }
     }
