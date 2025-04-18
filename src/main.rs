@@ -62,24 +62,13 @@ async fn main() -> Result<()> {
     let mut analysis_workers: Vec<AnalysisWorkerConfig> = Vec::new();
     let mut analysis_count: i16 = 0;
 
-    // Existing helper functions remain unchanged
-    fn process_ollama_configs(
+    // Process Ollama and OpenAI configs using shared functions
+    fn process_ollama_configs_for_workers(
         configs: &str,
         workers: &mut Vec<(i16, LLMClient, String)>,
         count: &mut i16,
     ) {
-        for config in configs.split(';').filter(|c| !c.is_empty()) {
-            let parts: Vec<&str> = config.split('|').collect();
-            if parts.len() != 3 {
-                error!("Invalid Ollama configuration format: {}", config);
-                continue;
-            }
-            let host = parts[0].to_string();
-            let port: u16 = parts[1].parse().unwrap_or_else(|_| {
-                error!("Invalid port in configuration: {}", parts[1]);
-                11434 // Default port
-            });
-            let model = parts[2].to_string();
+        for (host, port, model) in argus::process_ollama_configs(configs) {
             info!(
                 "Configuring Ollama worker {} to connect to model '{}' at {}:{}",
                 *count, model, host, port
@@ -113,80 +102,44 @@ async fn main() -> Result<()> {
         }
     }
 
-    // New: Function to process Analysis Ollama configurations with optional fallback
-    fn process_analysis_ollama_configs(
+    // Process Analysis config using shared functions
+    fn process_analysis_ollama_configs_for_workers(
         configs: &str,
         workers: &mut Vec<AnalysisWorkerConfig>,
         count: &mut i16,
     ) {
-        for config in configs.split(';').filter(|c| !c.is_empty()) {
-            // Split main and fallback configurations
-            let parts: Vec<&str> = config.split("||").collect();
-            if parts.is_empty() {
-                error!("Invalid Analysis Ollama configuration format: {}", config);
-                continue;
-            }
+        for (host, port, model, fallback) in argus::process_analysis_ollama_configs(configs) {
+            // Create main LLM client
+            let main_llm_client = LLMClient::Ollama(Ollama::new(host.clone(), port));
 
-            // Process main configuration
-            let main_parts: Vec<&str> = parts[0].split('|').collect();
-            if main_parts.len() != 3 {
-                error!(
-                    "Invalid main Ollama configuration format for Analysis worker: {}",
-                    parts[0]
-                );
-                continue;
-            }
-            let main_host = main_parts[0].to_string();
-            let main_port: u16 = main_parts[1].parse().unwrap_or_else(|_| {
-                error!("Invalid port in main configuration: {}", main_parts[1]);
-                11434 // Default port
-            });
-            let main_model = main_parts[2].to_string();
-            let main_llm_client = LLMClient::Ollama(Ollama::new(main_host, main_port));
-
-            // Process fallback configuration if present
-            let fallback = if parts.len() > 1 {
-                let fallback_parts: Vec<&str> = parts[1].split('|').collect();
-                if fallback_parts.len() != 3 {
-                    error!(
-                        "Invalid fallback Ollama configuration format for Analysis worker: {}",
-                        parts[1]
-                    );
-                    None
-                } else {
-                    let fallback_host = fallback_parts[0].to_string();
-                    let fallback_port: u16 = fallback_parts[1].parse().unwrap_or_else(|_| {
-                        error!(
-                            "Invalid port in fallback configuration: {}",
-                            fallback_parts[1]
-                        );
-                        11434 // Default port
-                    });
-                    let fallback_model = fallback_parts[2].to_string();
-                    Some(FallbackConfig {
-                        llm_client: LLMClient::Ollama(Ollama::new(fallback_host, fallback_port)),
+            // Create fallback config if present
+            let fallback_config =
+                fallback.map(
+                    |(fallback_host, fallback_port, fallback_model)| FallbackConfig {
+                        llm_client: LLMClient::Ollama(Ollama::new(
+                            fallback_host.clone(),
+                            fallback_port,
+                        )),
                         model: fallback_model,
-                    })
-                }
-            } else {
-                None
-            };
+                    },
+                );
 
             info!(
-                "Configuring Analysis worker {} to connect to model '{}' at host:{}",
-                *count, main_model, main_parts[0]
+                "Configuring Analysis worker {} to connect to model '{}' at {}:{}",
+                *count, model, host, port
             );
+
             workers.push(AnalysisWorkerConfig {
                 id: *count,
                 llm_client: main_llm_client,
-                model: main_model,
-                fallback,
+                model,
+                fallback: fallback_config,
             });
             *count += 1;
         }
     }
 
-    // New: Function to process Analysis OpenAI configurations with optional fallback
+    // Process Analysis OpenAI configurations
     fn process_analysis_openai_configs(
         configs: &str,
         workers: &mut Vec<AnalysisWorkerConfig>,
@@ -254,7 +207,7 @@ async fn main() -> Result<()> {
     // Existing process_*_configs functions are unchanged
 
     // Process DECISION configurations
-    process_ollama_configs(
+    process_ollama_configs_for_workers(
         &decision_ollama_configs,
         &mut decision_workers,
         &mut decision_count,
@@ -272,7 +225,7 @@ async fn main() -> Result<()> {
     );
 
     // Load ANALYSIS configurations with possible fallback
-    process_analysis_ollama_configs(
+    process_analysis_ollama_configs_for_workers(
         &analysis_ollama_configs,
         &mut analysis_workers,
         &mut analysis_count,
@@ -290,10 +243,8 @@ async fn main() -> Result<()> {
     );
 
     // Determine number of decision workers to launch
-    let decision_worker_count = decision_ollama_configs
-        .split(';')
-        .filter(|c| !c.is_empty())
-        .count()
+    // Use the shared parse functions to determine the count
+    let decision_worker_count = argus::process_ollama_configs(&decision_ollama_configs).len()
         + decision_openai_configs
             .split(';')
             .filter(|c| !c.is_empty())
