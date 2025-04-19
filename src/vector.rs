@@ -809,12 +809,36 @@ pub async fn get_similar_articles_with_entities(
 
         // If we have both our source entities and this article's entities, calculate similarity
         if let Some(ids) = entity_ids {
-            // Create a source entities object from the IDs
+            // Create a source entities object from the IDs, passing the source article ID
             let source_entities = match build_entities_from_ids(ids).await {
-                Ok(entities) => entities,
+                Ok(entities) => {
+                    if entities.entities.is_empty() && source_article_id.is_some() {
+                        // If we got no entities but have a source article ID, try to get them directly
+                        match get_article_entities(source_article_id.unwrap()).await {
+                            Ok(Some(direct_entities)) => {
+                                info!(target: TARGET_VECTOR, "Retrieved entities directly from source article {}", source_article_id.unwrap());
+                                direct_entities
+                            }
+                            _ => entities,
+                        }
+                    } else {
+                        entities
+                    }
+                }
                 Err(e) => {
                     error!(target: TARGET_VECTOR, "Failed to build source entities: {:?}", e);
-                    crate::entity::ExtractedEntities::new() // Empty fallback
+                    // Try direct retrieval as fallback if we have source article ID
+                    if let Some(id) = source_article_id {
+                        match get_article_entities(id).await {
+                            Ok(Some(entities)) => {
+                                info!(target: TARGET_VECTOR, "Retrieved entities directly after build failure for article {}", id);
+                                entities
+                            }
+                            _ => crate::entity::ExtractedEntities::new(), // Empty fallback
+                        }
+                    } else {
+                        crate::entity::ExtractedEntities::new() // Empty fallback
+                    }
                 }
             };
 
@@ -1129,6 +1153,93 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
 
     info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs: {:?}", entity_ids.len(), entity_ids);
 
+    // If there are entity IDs, try to determine the article ID they're from
+    // by checking the article_entities table
+    if !entity_ids.is_empty() {
+        let article_id_result = sqlx::query_scalar::<_, i64>(
+            "SELECT article_id FROM article_entities WHERE entity_id = ? LIMIT 1",
+        )
+        .bind(entity_ids[0]) // Just use the first entity ID to find the article
+        .fetch_optional(db.pool())
+        .await;
+
+        if let Ok(Some(article_id)) = article_id_result {
+            // Found source article - get all entities with proper relationships
+            info!(target: TARGET_VECTOR, "Found source article ID {} for entity ID {}", article_id, entity_ids[0]);
+
+            match db.get_article_entities(article_id).await {
+                Ok(article_entities) => {
+                    // Filter to include only entities in our entity_ids list
+                    for (entity_id, name, entity_type_str, importance_str) in article_entities {
+                        if entity_ids.contains(&entity_id) {
+                            let entity_type =
+                                crate::entity::EntityType::from(entity_type_str.as_str());
+                            let importance =
+                                crate::entity::ImportanceLevel::from(importance_str.as_str());
+
+                            let entity = crate::entity::Entity::new(
+                                &name,
+                                &name.to_lowercase(),
+                                entity_type,
+                                importance, // Use actual importance from database
+                            )
+                            .with_id(entity_id);
+
+                            info!(target: TARGET_VECTOR, "Added entity with proper relationship: id={}, name='{}', type={}, importance={}", 
+                                entity_id, name, entity_type_str, importance_str);
+                            extracted.add_entity(entity);
+                        }
+                    }
+
+                    // If we didn't match all entities, fall back to basic lookup for the rest
+                    if extracted.entities.len() < entity_ids.len() {
+                        let found_ids: std::collections::HashSet<i64> =
+                            extracted.entities.iter().filter_map(|e| e.id).collect();
+
+                        let missing_ids: Vec<i64> = entity_ids
+                            .iter()
+                            .filter(|&&id| !found_ids.contains(&id))
+                            .copied()
+                            .collect();
+
+                        info!(target: TARGET_VECTOR, "Missing {} entities, falling back to basic lookup for IDs: {:?}", 
+                              missing_ids.len(), missing_ids);
+
+                        // Fall back to basic lookup for missing entities
+                        for &id in &missing_ids {
+                            if let Ok(Some((name, entity_type_str, _parent_id))) =
+                                db.get_entity_details(id).await
+                            {
+                                let entity_type =
+                                    crate::entity::EntityType::from(entity_type_str.as_str());
+
+                                let entity = crate::entity::Entity::new(
+                                    &name,
+                                    &name.to_lowercase(),
+                                    entity_type,
+                                    crate::entity::ImportanceLevel::Primary, // Default to PRIMARY for fallback
+                                )
+                                .with_id(id);
+
+                                info!(target: TARGET_VECTOR, "Added fallback entity: id={}, name='{}', type={}", 
+                                      id, name, entity_type_str);
+                                extracted.add_entity(entity);
+                            }
+                        }
+                    }
+
+                    info!(target: TARGET_VECTOR, "Built {} entities using article relationship data", extracted.entities.len());
+                    return Ok(extracted);
+                }
+                Err(e) => {
+                    warn!(target: TARGET_VECTOR, "Failed to get article entities for article {}: {}", article_id, e);
+                    // Fall through to basic lookup below
+                }
+            }
+        }
+    }
+
+    // Fall back to basic entity lookup if we couldn't find relationship data
     for &id in entity_ids {
         if let Ok(Some((name, entity_type_str, _parent_id))) = db.get_entity_details(id).await {
             let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
@@ -1150,7 +1261,7 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
         }
     }
 
-    info!(target: TARGET_VECTOR, "Built {} source entities from {} entity IDs", 
+    info!(target: TARGET_VECTOR, "Built {} source entities from {} entity IDs using basic lookup", 
           extracted.entities.len(), entity_ids.len());
 
     Ok(extracted)
