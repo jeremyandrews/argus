@@ -42,14 +42,24 @@ use tokio::time::Instant;
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
-/// Strip protocol prefix (http:// or https://) from a host string
-fn strip_protocol(host: &str) -> String {
-    let stripped = host
-        .trim_start_matches("http://")
-        .trim_start_matches("https://")
-        .to_string();
-    info!("Original host: '{}', Stripped host: '{}'", host, stripped);
-    stripped
+/// Process analysis worker configuration and return client and model
+fn process_analysis_worker_config(configs: &str) -> Option<(LLMClient, String)> {
+    let analysis_configs = argus::process_analysis_ollama_configs(configs);
+
+    if analysis_configs.is_empty() {
+        error!("No valid configurations found in ANALYSIS_OLLAMA_CONFIGS");
+        return None;
+    }
+
+    let (host, port, model, _) = &analysis_configs[0];
+
+    info!("Using analysis worker configuration with model: {}", model);
+    info!("Connecting to Ollama at {}:{}", host, port);
+
+    Some((
+        LLMClient::Ollama(Ollama::new(host.clone(), *port)),
+        model.clone(),
+    ))
 }
 
 #[tokio::main]
@@ -77,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::instance().await;
 
     // Set up LLM parameters
+    let mut model = env::var("ENTITY_MODEL").unwrap_or_else(|_| "llama3".to_string());
     let temperature = env::var("ENTITY_TEMPERATURE")
         .ok()
         .and_then(|s| s.parse::<f32>().ok())
@@ -98,40 +109,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let analysis_ollama_configs = env::var("ANALYSIS_OLLAMA_CONFIGS")
                 .expect("ANALYSIS_OLLAMA_CONFIGS environment variable must be set");
 
-            let analysis_configs = argus::process_analysis_ollama_configs(&analysis_ollama_configs);
+            let (client, config_model) = process_analysis_worker_config(&analysis_ollama_configs)
+                .expect("Failed to process analysis worker configuration");
 
-            if analysis_configs.is_empty() {
-                error!("No valid configurations found in ANALYSIS_OLLAMA_CONFIGS");
-                return Err("No valid Ollama configurations found".into());
+            // Update model if we're using default and config provides one
+            if model == "llama3" {
+                info!("Using model {} from analysis configuration", config_model);
+                model = config_model;
             }
 
-            let (host, port, model, _) = &analysis_configs[0];
-
-            info!("Using analysis worker configuration with model: {}", model);
-            info!("Connecting to Ollama at {}:{}", host, port);
-
-            // Strip protocol if present to avoid RelativeUrlWithoutBase error
-            let host_without_protocol = strip_protocol(host);
-
-            LLMClient::Ollama(Ollama::new(host_without_protocol, *port))
-        }
-    };
-
-    // Get the model from ENTITY_MODEL env var or from the analysis config
-    let model = match env::var("ENTITY_LLM_TYPE")
-        .unwrap_or_else(|_| "ollama".to_string())
-        .as_str()
-    {
-        "openai" => env::var("ENTITY_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string()),
-        _ => {
-            // If ENTITY_MODEL is set, use it, otherwise use the model from the config
-            env::var("ENTITY_MODEL").unwrap_or_else(|_| {
-                let analysis_ollama_configs =
-                    env::var("ANALYSIS_OLLAMA_CONFIGS").expect("ANALYSIS_OLLAMA_CONFIGS not set");
-                let analysis_configs =
-                    argus::process_analysis_ollama_configs(&analysis_ollama_configs);
-                analysis_configs[0].2.clone()
-            })
+            client
         }
     };
 
