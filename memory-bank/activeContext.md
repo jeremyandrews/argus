@@ -108,13 +108,33 @@ Next steps:
 - Consider UI enhancements to visualize entity relationships
 - Explore entity-based search functionality
 
+### Current Focus: Fixed Similarity Scoring Inconsistency
+
+We've identified and fixed an inconsistency in the article similarity scoring system that was causing articles with no entity overlap to sometimes appear in "similar articles" results.
+
+The issue:
+- We implemented a dual-query approach for enhanced article matching that combines:
+  - Vector similarity (60% weight)
+  - Entity overlap (30% weight) 
+  - Temporal proximity (10% weight)
+- However, there was an inconsistency in the code:
+  - For articles with entity data, we correctly applied the formula: `0.6 * vector_score + 0.4 * entity_similarity`
+  - But for articles without entity data, we were using 100% of the vector score, bypassing our weighting system
+  - This allowed articles with zero entity overlap to appear in results if their vector similarity was high enough (≥0.75)
+
+Recently completed fixes:
+- ✅ Modified the case for articles without entity data to use `final_score = 0.6 * article.score`
+- ✅ Updated the similarity formula description from "100% vector similarity" to "60% vector similarity"
+- ✅ Ensured consistent weighting throughout all similarity calculation paths
+- ✅ Tested implementation to verify articles must now have some entity overlap to appear in results
+
+Impact of this change:
+- Articles without entity overlap can score a maximum of 0.6 (60% of perfect vector similarity)
+- Since the threshold is 0.75, articles must have some entity overlap to appear in results
+- The system now enforces the requirement that similar articles should share at least one entity
+- Users will see more relevant, semantically connected content in similar articles sections
+
 ### Previous Focus: Enhanced Article Matching Transparency
-
-We've implemented a dual-query approach for enhanced article matching that combines:
-
-- Vector similarity (60% weight)
-- Entity overlap (30% weight) 
-- Temporal proximity (10% weight)
 
 Recently completed:
 - ✅ Enhanced `ArticleMatch` struct to expose detailed similarity metrics:
@@ -126,15 +146,11 @@ Recently completed:
 - ✅ Updated all JSON outputs to include the new fields in similar articles sections
 - ✅ Ensured backward compatibility with all existing functionality
 - ✅ Verified implementation with `cargo check --bin argus` (no warnings)
-
-Implementation status:
 - ✅ Added `get_articles_by_entities` method in db.rs to centralize database queries
 - ✅ Implemented `get_similar_articles_with_entities` in vector.rs 
 - ✅ Designed and implemented dual-query approach that combines vector and entity-based search results
 - ✅ Enhanced transparency of similarity scoring with detailed metrics
 - ✅ Added formula explanation showing the weighted contributions
-
-This enhancement builds upon the current "similar articles" functionality, making it more transparent and helping diagnose quality issues in related content matching.
 
 ## Active Work Areas
 

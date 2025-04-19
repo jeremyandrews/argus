@@ -76,6 +76,12 @@
   - Entity-specific overlap scores (by entity type: person, org, location, event)
   - Formula explanation showing the weighted contribution of each component
 - Similarity formula should be clearly documented in both code and JSON output to help diagnose matching issues
+- Consistent weighting is critical for proper similarity calculation:
+  - Always apply the same weighting scheme (60% vector, 40% entity) across all code paths
+  - When entity data is missing, still use 60% of the vector score, not 100%
+  - This ensures articles without entity overlap cannot exceed a score of 0.6, falling below our 0.75 threshold
+  - Similarity descriptions in output should accurately reflect the actual calculation being performed
+  - Maintain the minimum threshold (currently 0.75) above what's possible with vector similarity alone (0.6) to require entity overlap
 
 ## Application Conventions
 - iOS app relies on push notifications with payload size limits

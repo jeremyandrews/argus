@@ -82,6 +82,11 @@ Argus is currently in active development with major components implemented and f
   - Added entity-specific metrics (overlap counts, type-specific similarity scores)
   - Added similarity formula explanations in the JSON output
   - Verified implementation with `cargo check --bin argus` (no warnings)
+- ✅ **Similarity Scoring Consistency**: Fixed inconsistency in similarity scoring that allowed articles with no entity overlap to appear in results
+  - Modified scoring to apply consistent 60% weighting to vector similarity when no entity data exists
+  - Updated similarity formula descriptions to accurately reflect the actual calculation
+  - Ensured articles need to share at least some entity overlap to reach the minimum threshold (0.75)
+  - Verified the fix ensures more semantically relevant "similar articles" results
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity
