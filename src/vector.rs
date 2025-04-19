@@ -830,10 +830,29 @@ pub async fn get_similar_articles_with_entities(
 
     info!(target: TARGET_VECTOR, "Enhanced matches before filtering: {}", enhanced_matches.len());
 
+    // Log all candidate matches before filtering
+    for m in &enhanced_matches {
+        info!(target: TARGET_VECTOR,
+            "PRE-FILTER: article_id={}, vector_score={:.4}, entity_score={:.4}, final_score={:.4}, entity_overlap={}, primary_overlap={}",
+            m.article_id, m.vector_score, m.entity_similarity.combined_score, m.final_score,
+            m.entity_similarity.entity_overlap_count, m.entity_similarity.primary_overlap_count
+        );
+    }
+
     // Apply minimum combined threshold (0.75)
     let final_matches: Vec<ArticleMatch> = enhanced_matches
         .into_iter()
-        .filter(|m| m.final_score >= 0.75)
+        .filter(|m| {
+            let passes = m.final_score >= 0.75;
+            if !passes {
+                info!(target: TARGET_VECTOR,
+                    "FILTERED OUT: article_id={}, final_score={:.4} (below 0.75), vector={:.4}, entity={:.4}, overlap={}",
+                    m.article_id, m.final_score, m.vector_score, m.entity_similarity.combined_score,
+                    m.entity_similarity.entity_overlap_count
+                );
+            }
+            passes
+        })
         .take(limit as usize)
         .map(|m| {
             info!(target: TARGET_VECTOR,
@@ -876,6 +895,27 @@ pub async fn get_similar_articles_with_entities(
         .collect();
 
     info!(target: TARGET_VECTOR, "Final matched article count after filtering: {}", final_matches.len());
+
+    // Add result verification logs to confirm all matches have entity overlap
+    let with_entity_overlap = final_matches
+        .iter()
+        .filter(|m| m.entity_overlap_count.unwrap_or(0) > 0)
+        .count();
+
+    info!(target: TARGET_VECTOR,
+        "FILTER RESULTS: Total matches: {}, With entity overlap: {}, No entity overlap: {}",
+        final_matches.len(),
+        with_entity_overlap,
+        final_matches.len() - with_entity_overlap
+    );
+
+    if final_matches.len() - with_entity_overlap > 0 {
+        // This should never happen with our fix, so log it as an error if it does
+        error!(target: TARGET_VECTOR,
+            "ERROR: Found {} articles without entity overlap that passed the filter threshold!",
+            final_matches.len() - with_entity_overlap
+        );
+    }
 
     Ok(final_matches)
 }
