@@ -66,6 +66,8 @@ Argus is currently in active development with major components implemented and f
 - ✅ **Error Handling**: Added better error handling and logging for entity extraction
 - ✅ **Reprocessing Utility**: Created process_entities.rs utility for existing articles
 - ✅ **Testing Utility**: Added test_entity_extraction.rs for verifying functionality
+- ✅ **Serialization Fix**: Fixed field name mismatch between LLM output and database processing
+- ✅ **Ollama Connectivity Fix**: Fixed URL handling for Ollama endpoints in utility programs
 - ✅ **Documentation**: Added documentation to new utilities and updated memory bank
 - 🔄 **Extraction Quality**: Monitoring and adjusting entity extraction prompts
 - 🔄 **Entity Normalization**: Enhancing normalization for better cross-article matching
@@ -160,12 +162,14 @@ Argus is currently in active development with major components implemented and f
 - ✓ Entity database schema implementation
 - ✓ Entity extraction and storage
 - ✓ Enhanced LLM error logging with connection information
+- ✓ Dual-query article similarity with entity and vector matching
+- ✓ Fixed entity extraction failures in utility programs
 
 ### In Progress
-- ✅ Dual-query article similarity with entity and vector matching
-- ✅ Fixing compilation issues in entity matching implementation 
 - 🔄 Qdrant integration for entity-based vector search
 - 🔄 Refined article relationship detection
+- 🔄 Article clustering based on entity relationships
+- 🔄 Domain-specific entity extraction refinement
 
 ### Next Targets
 - 🎯 Complete integration of entity-based clustering

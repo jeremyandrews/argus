@@ -76,28 +76,30 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Entity Extraction Integration
+### Current Focus: Entity Extraction Integration and Bug Fixes
 
-We've fixed and enhanced the entity extraction system to properly populate entity tables, which are essential for entity-based article matching.
+We've fixed critical issues with the entity extraction system to ensure proper population of entity tables, which are essential for entity-based article matching.
 
-Recently identified and fixed:
-- ✅ Fixed a JSON schema mismatch issue in the LLM client that was causing entity extraction to fail
-- ✅ Implemented a new `JsonSchemaType` enum to properly handle different JSON response formats
-- ✅ Added proper schema definition for entity extraction responses
-- ✅ Enhanced the LLM parameter system to specify which JSON schema to use
-- ✅ Fixed entity extraction in analysis_worker.rs to properly use JSON mode with the LLM
-- ✅ Replaced direct LLM calls with proper calls to the extract_entities function
-- ✅ Added better error handling and logging for entity extraction
-- ✅ Created process_entities.rs utility to reprocess existing articles for entity data
-- ✅ Created test_entity_extraction.rs utility to verify entity extraction functionality
+Recently identified and fixed issues:
+- ✅ Fixed entity extraction failure in process_entities.rs, test_entity_extraction.rs, and test_ollama_endpoints.rs
+- ✅ Identified and fixed two distinct problems:
+  1. **JSON Field Name Mismatch**: The LLM returns entities with a `type` field, but when serialized through Rust structs it became `entity_type`. Updated db.rs to look for `entity_type` instead of `type` in the process_entity_extraction function.
+  2. **Ollama Client Connection Issues**: Fixed improper URL handling in utility programs that was causing `RelativeUrlWithoutBase` errors when connecting to Ollama endpoints.
+- ✅ Ensured consistent patterns across all code that connects to Ollama endpoints by following the same approach used in main.rs
+- ✅ Added improved debugging information for protocol issues
+- ✅ Successfully tested fixes to verify entity extraction now works correctly
+
+Key learnings from this process:
+- Field name transformations during serialization/deserialization need careful tracking
+- Consistent patterns for external service connections are critical
+- Environment variable handling needs to be consistent across all binaries
+- Protocol stripping/handling should be centralized in utility functions
 
 Current implementation status:
-- ✅ Entity extraction now correctly extracts entities from article text
-- ✅ The LLM client correctly handles different JSON schema types based on the task
+- ✅ Entity extraction now correctly extracts and stores entities from article text
+- ✅ Both the main Argus process and utility programs can connect to Ollama endpoints consistently
 - ✅ Entity data is properly stored in the database tables
 - ✅ Entity-based article matching and clustering now has the data it needs
-- ✅ Both new and existing articles can have their entities extracted
-- ✅ Detailed logging provides visibility into the extraction process
 
 Next steps:
 - Monitor entity extraction quality and adjust prompts as needed
@@ -194,12 +196,6 @@ Based on codebase analysis, likely next steps include:
 ### Slack Integration
 - **Message Formatting**: Standardized formatting for different content types
 - **Channel Management**: Appropriate routing of different content categories
-- **Interaction Handling**: Potential for interactive elements in Slack messages
-
-### LLM Services
-- **API Access**: Proper API key management for OpenAI and other providers
-- **Ollama Configuration**: Setup and maintenance of local Ollama instances
-- **Provider Failover**: Seamless switching between providers when needed
 - **Interaction Handling**: Potential for interactive elements in Slack messages
 
 ### LLM Services

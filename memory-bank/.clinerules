@@ -38,6 +38,25 @@
 - Error logs should include raw LLM responses to diagnose JSON parsing issues
 - Always validate the top-level structure of JSON responses before attempting to access nested fields
 - JSON schema types should be documented when adding new functions that use structured LLM output
+- Field names change during serialization/deserialization:
+  - LLM responses use a field named `type` for entity types
+  - When serialized to a Rust struct, this becomes `entity_type`
+  - When serialized back to JSON, it remains `entity_type`
+  - Code that processes this JSON should look for `entity_type` not `type`
+  - Monitor JSON serialization paths closely to track field name transformations
+
+## Ollama Client Configuration
+- When creating Ollama clients, follow the same pattern used in main.rs
+- Do not attempt to strip protocols from URLs yourself; pass them directly to Ollama constructor:
+  - CORRECT: `Ollama::new(host.clone(), port)`
+  - INCORRECT: `Ollama::new(host.trim_start_matches("http://"), port)`
+- Environment variables should be handled consistently across all binaries
+- For utility programs, prefer to use the same env variables as the main program:
+  - Use `ANALYSIS_OLLAMA_CONFIGS` and `DECISION_OLLAMA_CONFIGS` instead of custom variables
+  - This ensures consistent configuration across all components
+- All code that connects to external services should use a consistent pattern
+- LLM client initialization should be centralized or follow a clear template
+- Use the `process_ollama_configs` and `process_analysis_ollama_configs` functions from lib.rs to parse environment variables
 
 ## Entity-Based Article Matching
 - Entity extraction uses structured LLM prompts to identify people, organizations, locations, and events
