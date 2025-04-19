@@ -982,6 +982,7 @@ async fn process_analysis_item(
                                 10,
                                 entity_ids.as_deref(),
                                 event_date.as_deref(),
+                                Some(article_id),
                             )
                             .await
                             {

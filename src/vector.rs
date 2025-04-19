@@ -697,8 +697,44 @@ pub async fn get_similar_articles_with_entities(
     limit: u64,
     entity_ids: Option<&[i64]>,
     event_date: Option<&str>,
+    source_article_id: Option<i64>, // For tracking the source article
 ) -> Result<Vec<ArticleMatch>> {
+    if let Some(id) = source_article_id {
+        info!(target: TARGET_VECTOR, "Starting similarity search for source article ID: {}", id);
+    }
+
     info!(target: TARGET_VECTOR, "Starting enhanced entity-aware article search with dual-query approach");
+
+    // Log entity IDs detail
+    if let Some(ids) = entity_ids {
+        info!(target: TARGET_VECTOR, "Using {} entity IDs for similar article search: {:?}", 
+              ids.len(), ids);
+
+        // Check if these entities exist in the database
+        if let Some(id) = source_article_id {
+            let db = crate::db::Database::instance().await;
+            match sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM article_entities WHERE article_id = ?",
+            )
+            .bind(id)
+            .fetch_one(db.pool())
+            .await
+            {
+                Ok(count) => {
+                    info!(target: TARGET_VECTOR, "Article {} has {} entities in the database", id, count);
+                    if count == 0 && ids.len() > 0 {
+                        warn!(target: TARGET_VECTOR, "Database shows 0 entities for article {} but received {} entity IDs", 
+                             id, ids.len());
+                    }
+                }
+                Err(e) => {
+                    error!(target: TARGET_VECTOR, "Failed to check entity count for article {}: {}", id, e);
+                }
+            }
+        }
+    } else {
+        info!(target: TARGET_VECTOR, "No entity IDs provided for similar article search");
+    }
 
     let mut all_matches = std::collections::HashMap::new();
 
