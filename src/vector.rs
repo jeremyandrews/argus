@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokenizers::Tokenizer;
 use tokio::fs;
 use tokio::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 // Static globals
 static MODEL: OnceCell<Arc<BertModel>> = OnceCell::new();
@@ -926,7 +926,8 @@ async fn get_articles_by_entities(entity_ids: &[i64], limit: u64) -> Result<Vec<
 
     // Calculate date threshold for recent articles
     let date_threshold = calculate_similarity_date_threshold();
-    info!(target: TARGET_VECTOR, "Using date threshold for entity-based search: {}", date_threshold);
+    info!(target: TARGET_VECTOR, "Using date threshold for entity-based search: {} (calculated from {} days ago)", 
+          date_threshold, SIMILARITY_TIME_WINDOW_DAYS);
 
     // Use the database function we added to get articles by entities with date filter
     let entity_matches = db
@@ -1090,6 +1091,8 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
     let db = crate::db::Database::instance().await;
     let mut extracted = crate::entity::ExtractedEntities::new();
 
+    info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs: {:?}", entity_ids.len(), entity_ids);
+
     for &id in entity_ids {
         if let Ok(Some((name, entity_type_str, _parent_id))) = db.get_entity_details(id).await {
             let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
@@ -1103,9 +1106,16 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
             )
             .with_id(id);
 
+            info!(target: TARGET_VECTOR, "Added source entity: id={}, name='{}', type={}", 
+                  id, name, entity_type_str);
             extracted.add_entity(entity);
+        } else {
+            warn!(target: TARGET_VECTOR, "Failed to get details for entity ID {}", id);
         }
     }
+
+    info!(target: TARGET_VECTOR, "Built {} source entities from {} entity IDs", 
+          extracted.entities.len(), entity_ids.len());
 
     Ok(extracted)
 }

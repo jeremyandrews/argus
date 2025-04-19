@@ -108,11 +108,11 @@ Next steps:
 - Consider UI enhancements to visualize entity relationships
 - Explore entity-based search functionality
 
-### Current Focus: Fixed Similarity Scoring Inconsistency
+### Current Focus: Fixing Inconsistent Entity-Based Article Matching
 
-We've identified and fixed an inconsistency in the article similarity scoring system that was causing articles with no entity overlap to sometimes appear in "similar articles" results.
+We've resolved multiple issues with the article similarity scoring system that were causing articles with no entity overlap to sometimes appear in "similar articles" results:
 
-The issue:
+**First fix: Similarity weighting inconsistency**
 - We implemented a dual-query approach for enhanced article matching that combines:
   - Vector similarity (60% weight)
   - Entity overlap (30% weight) 
@@ -122,17 +122,25 @@ The issue:
   - But for articles without entity data, we were using 100% of the vector score, bypassing our weighting system
   - This allowed articles with zero entity overlap to appear in results if their vector similarity was high enough (≥0.75)
 
-Recently completed fixes:
-- ✅ Modified the case for articles without entity data to use `final_score = 0.6 * article.score`
-- ✅ Updated the similarity formula description from "100% vector similarity" to "60% vector similarity"
-- ✅ Ensured consistent weighting throughout all similarity calculation paths
-- ✅ Tested implementation to verify articles must now have some entity overlap to appear in results
+**Second fix: Missing consistent weighting in other code paths**
+- After fixing the first issue, we discovered a second inconsistency in the `get_similar_articles_with_entities` function:
+  - When articles without entities were found through vector-based searching, we correctly applied the 60% weighting in some code paths
+  - But another code path for the same condition was using 100% of the vector score
+  - This inconsistency allowed articles with no entity overlap to still appear in results
 
-Impact of this change:
-- Articles without entity overlap can score a maximum of 0.6 (60% of perfect vector similarity)
+Recently completed fixes:
+- ✅ Modified all code paths that handle articles without entity data to use `final_score = 0.6 * article.score`
+- ✅ Updated all similarity formula descriptions to consistently say "60% vector similarity"
+- ✅ Added detailed diagnostic logging throughout the entity extraction and matching process
+- ✅ Added verification logging that confirms all final matches have entity overlap
+- ✅ Added detailed pre-filter and post-filter logging to show exactly which articles are being filtered out and why
+
+Impact of these changes:
+- Articles without entity overlap will score a maximum of 0.6 (60% of perfect vector similarity)
 - Since the threshold is 0.75, articles must have some entity overlap to appear in results
-- The system now enforces the requirement that similar articles should share at least one entity
+- The system now properly enforces the requirement that similar articles should share at least one entity
 - Users will see more relevant, semantically connected content in similar articles sections
+- Developers have much better visibility into the matching process through enhanced logging
 
 ### Previous Focus: Enhanced Article Matching Transparency
 

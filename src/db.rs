@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 use urlnorm::UrlNormalizer;
 
@@ -1432,6 +1432,10 @@ impl Database {
         date_threshold: &str,
     ) -> Result<Vec<(i64, Option<String>, Option<String>, Option<i64>, i64, i64)>, sqlx::Error>
     {
+        // Log the search criteria
+        info!(target: TARGET_DB, "Looking for articles with entities: {:?}, date threshold: {}, limit: {}", 
+              entity_ids, date_threshold, limit);
+
         // Convert entity_ids to a JSON array string for SQLite's json_each function
         let entity_ids_json = serde_json::to_string(entity_ids).map_err(|e| {
             sqlx::Error::Protocol(format!("JSON serialization error: {}", e).into())
@@ -1439,8 +1443,7 @@ impl Database {
 
         // Query for articles that share entities, prioritizing those with PRIMARY importance
         // and filtering by date threshold
-        let rows = sqlx::query(
-            r#"
+        let query = r#"
             SELECT a.id, a.pub_date as published_date, a.category, a.quality_score,
                    COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
                    COUNT(ae.entity_id) as total_count
@@ -1451,13 +1454,33 @@ impl Database {
             GROUP BY a.id
             ORDER BY primary_count DESC, total_count DESC
             LIMIT ?
-            "#,
+            "#;
+
+        info!(target: TARGET_DB, "Entity search query: {}", query);
+
+        // Log some sample pub_dates from the database
+        let sample_dates: Vec<String> = match sqlx::query_scalar(
+            "SELECT pub_date FROM articles WHERE pub_date IS NOT NULL LIMIT 5",
         )
-        .bind(&entity_ids_json)
-        .bind(date_threshold)
-        .bind(limit as i64)
         .fetch_all(&self.pool)
-        .await?;
+        .await
+        {
+            Ok(dates) => dates,
+            Err(e) => {
+                warn!(target: TARGET_DB, "Failed to fetch sample article dates: {}", e);
+                vec![]
+            }
+        };
+        info!(target: TARGET_DB, "Sample article dates for comparison: {:?}", sample_dates);
+
+        let rows = sqlx::query(query)
+            .bind(&entity_ids_json)
+            .bind(date_threshold)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+
+        info!(target: TARGET_DB, "Entity search returned {} results for entities: {:?}", rows.len(), entity_ids);
 
         // Convert rows to tuples
         let results = rows

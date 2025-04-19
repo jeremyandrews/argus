@@ -87,6 +87,11 @@ Argus is currently in active development with major components implemented and f
   - Updated similarity formula descriptions to accurately reflect the actual calculation
   - Ensured articles need to share at least some entity overlap to reach the minimum threshold (0.75)
   - Verified the fix ensures more semantically relevant "similar articles" results
+- ✅ **Enhanced Diagnostic Logging**: Added comprehensive logging throughout the entity matching process
+  - Added detailed logging of entity extraction, entity retrieval, and entity matching steps
+  - Added pre-filter and post-filter logging to show exactly which articles are being filtered out and why
+  - Added verification of entity overlap in final results with error reporting if an article without entity overlap passes filtering
+  - Improved transparency for debugging the entity-based article matching system
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

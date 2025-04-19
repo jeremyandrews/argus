@@ -106,6 +106,11 @@ async fn update_article_event_date(db: &Database, article_id: i64, event_date: &
 
 /// Get all entities for an article
 pub async fn get_article_entities(db: &Database, article_id: i64) -> Result<ExtractedEntities> {
+    info!(
+        target: TARGET_ENTITY,
+        "Retrieving entities for article {}", article_id
+    );
+
     // Get the article's event_date
     let article_date = db
         .get_article_details_with_dates(article_id)
@@ -117,7 +122,11 @@ pub async fn get_article_entities(db: &Database, article_id: i64) -> Result<Extr
 
     // Set event date if available
     if let (_, Some(event_date)) = article_date {
-        extracted.event_date = Some(event_date);
+        extracted.event_date = Some(event_date.clone());
+        info!(
+            target: TARGET_ENTITY,
+            "Found event_date '{}' for article {}", event_date, article_id
+        );
     }
 
     // Get all entities linked to this article
@@ -126,10 +135,21 @@ pub async fn get_article_entities(db: &Database, article_id: i64) -> Result<Extr
         .await
         .context("Failed to get article entities")?;
 
+    info!(
+        target: TARGET_ENTITY,
+        "Database returned {} entities for article {}", entities.len(), article_id
+    );
+
     // Convert database rows to Entity objects
     for (entity_id, name, entity_type_str, importance_str) in entities {
         let entity_type = EntityType::from(entity_type_str.as_str());
         let importance = ImportanceLevel::from(importance_str.as_str());
+
+        debug!(
+            target: TARGET_ENTITY,
+            "Adding entity: id={}, name='{}', type={}, importance={}",
+            entity_id, name, entity_type_str, importance_str
+        );
 
         // Create entity without metadata first
         let entity =
@@ -139,9 +159,20 @@ pub async fn get_article_entities(db: &Database, article_id: i64) -> Result<Extr
         extracted.add_entity(entity);
     }
 
+    let entity_types_count = extracted.entities.iter().fold(
+        std::collections::HashMap::<EntityType, usize>::new(),
+        |mut acc, e| {
+            *acc.entry(e.entity_type).or_insert(0) += 1;
+            acc
+        },
+    );
+
     info!(
         target: TARGET_ENTITY,
-        "Retrieved {} entities for article {}", extracted.entities.len(), article_id
+        "Retrieved {} entities for article {} - Types: {:?}",
+        extracted.entities.len(),
+        article_id,
+        entity_types_count
     );
 
     Ok(extracted)
