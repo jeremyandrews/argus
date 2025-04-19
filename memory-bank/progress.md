@@ -92,6 +92,12 @@ Argus is currently in active development with major components implemented and f
   - Added pre-filter and post-filter logging to show exactly which articles are being filtered out and why
   - Added verification of entity overlap in final results with error reporting if an article without entity overlap passes filtering
   - Improved transparency for debugging the entity-based article matching system
+- ✅ **Entity Retrieval Fix**: Fixed critical issue in the source entity retrieval process
+  - Enhanced `get_similar_articles_with_entities` function to track source article ID
+  - Added database verification to compare entity counts in different systems
+  - Fixed incomplete function calls in analysis_worker.rs to ensure all parameters are passed
+  - Added warning generation when entity IDs are missing or inconsistent
+  - Implemented comprehensive source entity tracing through the matching pipeline
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

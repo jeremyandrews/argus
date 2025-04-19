@@ -108,7 +108,39 @@ Next steps:
 - Consider UI enhancements to visualize entity relationships
 - Explore entity-based search functionality
 
-### Current Focus: Fixing Inconsistent Entity-Based Article Matching
+### Current Focus: Fixing Entity Retrieval in Similar Article Matching
+
+We've identified and fixed a critical issue in the entity-based similar article matching system that was causing some articles without entity overlap to still appear in results:
+
+**Root Cause: Missing Entity Source Information**
+- We discovered a data flow issue in the similar article search process:
+  - The entity extraction process was working correctly (successfully extracting entities)
+  - The database was storing entities properly
+  - But when retrieving similar articles, the entity IDs weren't being associated with the source article
+  - This led to log entries showing: `Building source entities from 0 entity IDs: []`
+  - Without source entities to compare against, the system couldn't verify entity overlap
+
+**Implementation Issues**
+- We found two specific problems in the code:
+  1. **Missing source article ID parameter**: The `get_similar_articles_with_entities` function needed a way to identify the source article
+  2. **Incomplete function calls**: When this function was called in `analysis_worker.rs`, it wasn't supplying all the needed parameters
+
+Recently completed fixes:
+- ✅ Enhanced `get_similar_articles_with_entities` function to track the source article ID
+- ✅ Added article ID verification to compare entities passed to the function against database records
+- ✅ Fixed the function calls in `analysis_worker.rs` to pass the source article ID parameter
+- ✅ Added comprehensive diagnostic logging showing entity retrieval details
+- ✅ Implemented database verification that compares entity counts between different sources
+- ✅ Added warnings for mismatches when entities exist in the database but aren't correctly passed to search
+
+Impact of these changes:
+- The system now correctly identifies the source article for entity comparison
+- All similar article results now properly include entity overlap
+- Detailed diagnostic information helps pinpoint any entity retrieval issues
+- Clear warnings appear when entity IDs don't match what's expected
+- The similar article relevance is significantly improved with proper entity matching
+
+### Previous Focus: Fixing Inconsistent Entity-Based Article Matching
 
 We've resolved multiple issues with the article similarity scoring system that were causing articles with no entity overlap to sometimes appear in "similar articles" results:
 
@@ -128,7 +160,7 @@ We've resolved multiple issues with the article similarity scoring system that w
   - But another code path for the same condition was using 100% of the vector score
   - This inconsistency allowed articles with no entity overlap to still appear in results
 
-Recently completed fixes:
+Previously completed fixes:
 - ✅ Modified all code paths that handle articles without entity data to use `final_score = 0.6 * article.score`
 - ✅ Updated all similarity formula descriptions to consistently say "60% vector similarity"
 - ✅ Added detailed diagnostic logging throughout the entity extraction and matching process

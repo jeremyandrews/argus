@@ -661,7 +661,75 @@ async fn process_analysis_item(
                         embedding.len(),
                         vector_start.elapsed()
                     );
-                    if let Ok(similar_articles) = get_similar_articles(&embedding, 10).await {
+
+                    // FIRST: Extract entities BEFORE similarity search
+                    let entity_extraction_start = Instant::now();
+                    let mut entity_ids: Option<Vec<i64>> = None;
+
+                    match extract_entities(
+                        &article_text,
+                        pub_date.as_deref(),
+                        &mut llm_params.clone(),
+                        worker_detail,
+                    )
+                    .await
+                    {
+                        Ok(extracted_entities) => {
+                            info!(
+                                "Extracted {} entities in {:?}",
+                                extracted_entities.entities.len(),
+                                entity_extraction_start.elapsed()
+                            );
+
+                            // Convert to JSON for database storage
+                            let entities_json = serde_json::to_string(&extracted_entities)
+                                .unwrap_or_else(|_| "{}".to_string());
+
+                            // Store entities and get the IDs
+                            match db
+                                .process_entity_extraction(article_id, &entities_json)
+                                .await
+                            {
+                                Ok(ids) => {
+                                    info!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "Successfully processed entity extraction for article {} with {} entities",
+                                        article_id, ids.len()
+                                    );
+                                    entity_ids = Some(ids);
+                                }
+                                Err(e) => {
+                                    error!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "Failed to process entity extraction: {:?}", e
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                target: TARGET_LLM_REQUEST,
+                                "Failed to extract entities: {:?}", e
+                            );
+                        }
+                    }
+
+                    // Get event date
+                    let (_, event_date) = db
+                        .get_article_details_with_dates(article_id)
+                        .await
+                        .unwrap_or((None, None));
+
+                    // Try to get similar articles with both vector and entity matching
+                    if let Ok(similar_articles) = get_similar_articles_with_entities(
+                        &embedding,
+                        10,
+                        entity_ids.as_deref(),
+                        event_date.as_deref(),
+                        Some(article_id),
+                    )
+                    .await
+                    {
                         let mut similar_articles_with_details = Vec::new();
                         for article in similar_articles {
                             if let Ok(Some((json_url, title, tiny_summary))) =
@@ -721,20 +789,32 @@ async fn process_analysis_item(
                             }
                         }
                         response_json["similar_articles"] = json!(similar_articles_with_details);
+                    } else if let Ok(similar_articles) = get_similar_articles(&embedding, 10).await
+                    {
+                        // Fallback to regular vector similarity if entity-aware search fails
+                        let mut similar_articles_with_details = Vec::new();
+                        for article in similar_articles {
+                            if let Ok(Some((json_url, title, tiny_summary))) =
+                                db.get_article_details_by_id(article.id).await
+                            {
+                                similar_articles_with_details.push(json!({
+                                    // Basic fields
+                                    "id": article.id,
+                                    "json_url": json_url,
+                                    "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
+                                    "tiny_summary": tiny_summary,
+                                    "category": article.category,
+                                    "published_date": article.published_date,
+                                    "quality_score": article.quality_score,
+                                    "similarity_score": article.score,
+                                    "similarity_formula": "Vector similarity only (fallback)"
+                                }));
+                            }
+                        }
+                        response_json["similar_articles"] = json!(similar_articles_with_details);
                     }
-                    // Get entity IDs for embedding storage
-                    let entity_ids: Option<Vec<i64>> = db
-                        .get_article_entities(article_id)
-                        .await
-                        .ok()
-                        .map(|entities| entities.into_iter().map(|(id, _, _, _)| id).collect());
 
-                    // Get event date
-                    let (_, event_date) = db
-                        .get_article_details_with_dates(article_id)
-                        .await
-                        .unwrap_or((None, None));
-
+                    // Store embedding with entity IDs
                     if let Err(e) = store_embedding(
                         article_id,
                         &embedding,
@@ -750,53 +830,6 @@ async fn process_analysis_item(
                             target: TARGET_LLM_REQUEST,
                             "Failed to store vector embedding: {:?}", e
                         );
-                    }
-
-                    // Extract entities from article text for entity-based matching
-                    let entity_extraction_start = Instant::now();
-
-                    // Use the proper entity extraction function with JSON mode
-                    match extract_entities(
-                        &article_text,
-                        pub_date.as_deref(),
-                        &mut llm_params.clone(),
-                        worker_detail,
-                    )
-                    .await
-                    {
-                        Ok(extracted_entities) => {
-                            info!(
-                                "Extracted {} entities in {:?}",
-                                extracted_entities.entities.len(),
-                                entity_extraction_start.elapsed()
-                            );
-
-                            // Convert to JSON for database storage
-                            let entities_json = serde_json::to_string(&extracted_entities)
-                                .unwrap_or_else(|_| "{}".to_string());
-
-                            if let Err(e) = db
-                                .process_entity_extraction(article_id, &entities_json)
-                                .await
-                            {
-                                error!(
-                                    target: TARGET_LLM_REQUEST,
-                                    "Failed to process entity extraction: {:?}", e
-                                );
-                            } else {
-                                debug!(
-                                    target: TARGET_LLM_REQUEST,
-                                    "Successfully processed entity extraction for article with {} entities",
-                                    extracted_entities.entities.len()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                target: TARGET_LLM_REQUEST,
-                                "Failed to extract entities: {:?}", e
-                            );
-                        }
                     }
                 }
 
@@ -962,14 +995,58 @@ async fn process_analysis_item(
                                 embedding.len(),
                                 vector_start.elapsed()
                             );
-                            // Get entity IDs from article if available
-                            let entity_ids: Option<Vec<i64>> = db
-                                .get_article_entities(article_id)
-                                .await
-                                .ok()
-                                .map(|entities| {
-                                    entities.into_iter().map(|(id, _, _, _)| id).collect()
-                                });
+
+                            // FIRST: Entity extraction (moved from below to happen before similarity search)
+                            let entity_extraction_start = Instant::now();
+                            let mut entity_ids: Option<Vec<i64>> = None;
+
+                            match extract_entities(
+                                &article_text,
+                                pub_date.as_deref(),
+                                &mut llm_params_clone,
+                                worker_detail,
+                            )
+                            .await
+                            {
+                                Ok(extracted_entities) => {
+                                    info!(
+                                        "Extracted {} entities in {:?}",
+                                        extracted_entities.entities.len(),
+                                        entity_extraction_start.elapsed()
+                                    );
+
+                                    // Convert to JSON for database storage
+                                    let entities_json = serde_json::to_string(&extracted_entities)
+                                        .unwrap_or_else(|_| "{}".to_string());
+
+                                    // Store entities and get the ids
+                                    match db
+                                        .process_entity_extraction(article_id, &entities_json)
+                                        .await
+                                    {
+                                        Ok(ids) => {
+                                            info!(
+                                                target: TARGET_LLM_REQUEST,
+                                                "Successfully processed entity extraction for article {} with {} entities",
+                                                article_id, ids.len()
+                                            );
+                                            entity_ids = Some(ids);
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                target: TARGET_LLM_REQUEST,
+                                                "Failed to process entity extraction: {:?}", e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "Failed to extract entities: {:?}", e
+                                    );
+                                }
+                            }
 
                             // Get event date from article
                             let (_, event_date) = db
@@ -977,6 +1054,7 @@ async fn process_analysis_item(
                                 .await
                                 .unwrap_or((None, None));
 
+                            // SECOND: Now perform similarity search with the extracted entity IDs
                             if let Ok(similar_articles) = get_similar_articles_with_entities(
                                 &embedding,
                                 10,
@@ -1046,51 +1124,6 @@ async fn process_analysis_item(
                                 }
                                 response_json["similar_articles"] =
                                     json!(similar_articles_with_details);
-                            }
-                            // Entity extraction using proper function with JSON mode
-                            let entity_extraction_start = Instant::now();
-
-                            match extract_entities(
-                                &article_text,
-                                pub_date.as_deref(),
-                                &mut llm_params_clone,
-                                worker_detail,
-                            )
-                            .await
-                            {
-                                Ok(extracted_entities) => {
-                                    info!(
-                                        "Extracted {} entities in {:?}",
-                                        extracted_entities.entities.len(),
-                                        entity_extraction_start.elapsed()
-                                    );
-
-                                    // Convert to JSON for database storage
-                                    let entities_json = serde_json::to_string(&extracted_entities)
-                                        .unwrap_or_else(|_| "{}".to_string());
-
-                                    if let Err(e) = db
-                                        .process_entity_extraction(article_id, &entities_json)
-                                        .await
-                                    {
-                                        error!(
-                                            target: TARGET_LLM_REQUEST,
-                                            "Failed to process entity extraction: {:?}", e
-                                        );
-                                    } else {
-                                        debug!(
-                                            target: TARGET_LLM_REQUEST,
-                                            "Successfully processed entity extraction for article with {} entities",
-                                            extracted_entities.entities.len()
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    error!(
-                                        target: TARGET_LLM_REQUEST,
-                                        "Failed to extract entities: {:?}", e
-                                    );
-                                }
                             }
 
                             if let Err(e) = store_embedding(
