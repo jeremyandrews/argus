@@ -1440,7 +1440,7 @@ impl Database {
                 let name = entity["name"]
                     .as_str()
                     .ok_or_else(|| sqlx::Error::Protocol("Missing entity name".into()))?;
-                let entity_type = entity["type"]
+                let entity_type = entity["entity_type"]
                     .as_str()
                     .ok_or_else(|| sqlx::Error::Protocol("Missing entity type".into()))?;
                 // Create a separate variable for the lowercase name to extend its lifetime
