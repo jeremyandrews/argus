@@ -757,7 +757,7 @@ pub async fn get_similar_articles_with_entities(
                     article_id: id,
                     vector_score: article.score,
                     entity_similarity: crate::entity::EntitySimilarityMetrics::new(),
-                    final_score: article.score, // Just use vector score
+                    final_score: 0.6 * article.score, // Apply consistent 60% weighting
                     category: article.category,
                     published_date: article.published_date,
                     quality_score: article.quality_score,
