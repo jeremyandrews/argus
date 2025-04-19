@@ -18,11 +18,12 @@
 //! ## Configuration
 //!
 //! The utility uses the following environment variables:
-//! - `ENTITY_MODEL`: The LLM model to use (default: "llama3")
+//! - `ENTITY_OLLAMA_CONFIGS`: Ollama configuration in format "host|port|model" (preferred)
+//! - `ENTITY_MODEL`: The LLM model to use (default: "llama3", used if not in ENTITY_OLLAMA_CONFIGS)
 //! - `ENTITY_TEMPERATURE`: Temperature setting for entity extraction (default: 0.0)
 //! - `ENTITY_LLM_TYPE`: Type of LLM to use ("ollama" or "openai", default: "ollama")
-//! - `OLLAMA_HOST`: Ollama host name (default: "localhost")
-//! - `OLLAMA_PORT`: Ollama port number (default: 11434)
+//! - `OLLAMA_HOST`: Ollama host name (legacy, default: "localhost")
+//! - `OLLAMA_PORT`: Ollama port number (legacy, default: 11434)
 //! - `OPENAI_API_KEY`: OpenAI API key (required if ENTITY_LLM_TYPE is "openai")
 //!
 //! ## Purpose
@@ -86,15 +87,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             LLMClient::OpenAI(OpenAIClient::with_config(config))
         }
         _ => {
-            // Get host and port from environment variables
-            let host = env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
-            let port: u16 = env::var("OLLAMA_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(11434);
+            // Try using the standard Ollama configuration format first
+            let entity_ollama_configs = env::var("ENTITY_OLLAMA_CONFIGS").unwrap_or_default();
 
-            info!("Connecting to Ollama at {}:{}", host, port);
-            LLMClient::Ollama(Ollama::new(host, port))
+            // Use the shared config parser from lib.rs
+            let ollama_configs = argus::process_ollama_configs(&entity_ollama_configs);
+
+            if let Some((host, port, parsed_model)) = ollama_configs.first() {
+                // If model is default, use the parsed one from config
+                if model == "llama3" {
+                    info!("Using model {} from ENTITY_OLLAMA_CONFIGS", parsed_model);
+                }
+
+                info!("Connecting to Ollama at {}:{}", host, port);
+                LLMClient::Ollama(Ollama::new(host.clone(), *port))
+            } else {
+                // Fall back to legacy environment variables
+                let host = env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
+                let port: u16 = env::var("OLLAMA_PORT")
+                    .ok()
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(11434);
+
+                info!(
+                    "Connecting to Ollama at {}:{} (using legacy config)",
+                    host, port
+                );
+
+                // Strip protocol if present to avoid RelativeUrlWithoutBase error
+                let host_without_protocol = host
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://");
+
+                LLMClient::Ollama(Ollama::new(host_without_protocol, port))
+            }
         }
     };
 

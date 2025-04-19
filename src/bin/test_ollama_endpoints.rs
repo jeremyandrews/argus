@@ -46,7 +46,11 @@ async fn test_endpoint(host: &str, port: u16) -> EndpointStatus {
     info!("Testing Ollama endpoint at {}", base_url);
 
     // Create Ollama client - this returns a client directly, not a Result
-    let ollama = Ollama::new(host.to_string(), port);
+    // Strip protocol prefixes to avoid RelativeUrlWithoutBase error
+    let host_without_protocol = host
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    let ollama = Ollama::new(host_without_protocol.to_string(), port);
 
     // Attempt to list available models
     match timeout(

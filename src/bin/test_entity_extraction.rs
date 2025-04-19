@@ -96,7 +96,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or(11434);
 
             info!("Connecting to Ollama at {}:{}", host, port);
-            LLMClient::Ollama(Ollama::new(host, port))
+            // Strip protocol prefixes to avoid RelativeUrlWithoutBase error
+            let host_without_protocol = host
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
+            LLMClient::Ollama(Ollama::new(host_without_protocol, port))
         }
     };
 
