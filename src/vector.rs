@@ -33,6 +33,19 @@ const TOKENIZER_URL: &str =
     "https://huggingface.co/intfloat/e5-large-v2/resolve/main/tokenizer.json";
 const TARGET_VECTOR: &str = "vector";
 const QDRANT_URL_ENV: &str = "QDRANT_URL";
+// Number of days to look back for similar articles
+const SIMILARITY_TIME_WINDOW_DAYS: i64 = 14;
+
+/// Calculates the date threshold for similarity searches
+///
+/// # Returns
+/// - RFC3339 formatted date string for the threshold (N days ago)
+fn calculate_similarity_date_threshold() -> String {
+    chrono::Utc::now()
+        .checked_sub_signed(chrono::Duration::days(SIMILARITY_TIME_WINDOW_DAYS))
+        .unwrap_or_else(|| chrono::Utc::now())
+        .to_rfc3339()
+}
 
 /**
 * Created Qdrant schema:
@@ -484,7 +497,7 @@ pub async fn store_embedding(
 }
 
 pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Vec<ArticleMatch>> {
-    info!(target: TARGET_VECTOR, "search_similar_articles: embedding length = {}", embedding.len());
+    info!(target: TARGET_VECTOR, "search_similar_articles: embedding length = {}, using similarity time window of {} days", embedding.len(), SIMILARITY_TIME_WINDOW_DAYS);
 
     let client = Qdrant::from_url(
         &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
@@ -492,13 +505,48 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
     .timeout(std::time::Duration::from_secs(60))
     .build()?;
 
-    // Create the search request
+    // Calculate date threshold for recent articles
+    let date_threshold = calculate_similarity_date_threshold();
+    info!(target: TARGET_VECTOR, "Using date threshold for similarity search: {}", date_threshold);
+
+    // Parse the threshold date
+    let parsed_date = chrono::DateTime::parse_from_rfc3339(&date_threshold).unwrap();
+    let timestamp_seconds = parsed_date.timestamp();
+
+    // Create the search request with date filter
     let search_points = SearchPoints {
         collection_name: "articles".to_string(),
         vector: embedding.clone(),
         limit,
         with_payload: Some(WithPayloadSelector::from(true)),
         with_vectors: Some(WithVectorsSelector::from(false)),
+        filter: Some(qdrant_client::qdrant::Filter {
+            must: vec![qdrant_client::qdrant::Condition {
+                condition_one_of: Some(qdrant_client::qdrant::condition::ConditionOneOf::Field(
+                    qdrant_client::qdrant::FieldCondition {
+                        key: "published_date".to_string(),
+                        r#match: None,
+                        range: None,
+                        datetime_range: Some(qdrant_client::qdrant::DatetimeRange {
+                            gt: Some(qdrant_client::qdrant::Timestamp {
+                                seconds: timestamp_seconds,
+                                nanos: 0,
+                            }),
+                            lt: None,
+                            gte: None,
+                            lte: None,
+                        }),
+                        geo_bounding_box: None,
+                        geo_radius: None,
+                        values_count: None,
+                        geo_polygon: None,
+                    },
+                )),
+            }],
+            should: vec![],
+            must_not: vec![],
+            min_should: None,
+        }),
         params: Some(SearchParams {
             hnsw_ef: Some(128),
             exact: Some(true),
@@ -836,9 +884,13 @@ pub async fn get_similar_articles_with_entities(
 async fn get_articles_by_entities(entity_ids: &[i64], limit: u64) -> Result<Vec<ArticleMatch>> {
     let db = crate::db::Database::instance().await;
 
-    // Use the database function we added to get articles by entities
+    // Calculate date threshold for recent articles
+    let date_threshold = calculate_similarity_date_threshold();
+    info!(target: TARGET_VECTOR, "Using date threshold for entity-based search: {}", date_threshold);
+
+    // Use the database function we added to get articles by entities with date filter
     let entity_matches = db
-        .get_articles_by_entities(entity_ids, limit)
+        .get_articles_by_entities_with_date(entity_ids, limit, &date_threshold)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get articles by entities: {}", e))?;
 

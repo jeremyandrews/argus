@@ -1423,6 +1423,60 @@ impl Database {
         Ok(results)
     }
 
+    /// Get articles that share significant entities with the given entity IDs
+    /// and are newer than the given date threshold
+    pub async fn get_articles_by_entities_with_date(
+        &self,
+        entity_ids: &[i64],
+        limit: u64,
+        date_threshold: &str,
+    ) -> Result<Vec<(i64, Option<String>, Option<String>, Option<i64>, i64, i64)>, sqlx::Error>
+    {
+        // Convert entity_ids to a JSON array string for SQLite's json_each function
+        let entity_ids_json = serde_json::to_string(entity_ids).map_err(|e| {
+            sqlx::Error::Protocol(format!("JSON serialization error: {}", e).into())
+        })?;
+
+        // Query for articles that share entities, prioritizing those with PRIMARY importance
+        // and filtering by date threshold
+        let rows = sqlx::query(
+            r#"
+            SELECT a.id, a.pub_date as published_date, a.category, a.quality_score,
+                   COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
+                   COUNT(ae.entity_id) as total_count
+            FROM articles a
+            JOIN article_entities ae ON a.id = ae.article_id
+            WHERE ae.entity_id IN (SELECT value FROM json_each(?))
+            AND a.pub_date > ?
+            GROUP BY a.id
+            ORDER BY primary_count DESC, total_count DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(&entity_ids_json)
+        .bind(date_threshold)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Convert rows to tuples
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get("id"),
+                    row.get("published_date"),
+                    row.get("category"),
+                    row.get("quality_score"),
+                    row.get::<i64, _>("primary_count"),
+                    row.get::<i64, _>("total_count"),
+                )
+            })
+            .collect();
+
+        Ok(results)
+    }
+
     /// Process entity extraction JSON from LLM and add entities to an article
     pub async fn process_entity_extraction(
         &self,
