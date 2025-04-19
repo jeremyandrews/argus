@@ -21,6 +21,43 @@ use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUE
 // Import necessary items from decision_worker
 use crate::decision_worker::ProcessItemParams;
 
+/// Converts an ArticleMatch and article details into a standardized JSON representation
+fn build_similar_article_json(
+    article: &crate::vector::ArticleMatch,
+    json_url: Option<String>,
+    title: Option<String>,
+    tiny_summary: Option<String>,
+) -> serde_json::Value {
+    json!({
+        // Basic fields
+        "id": article.id,
+        "json_url": json_url.unwrap_or_else(|| "Unknown URL".to_string()),
+        "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
+        "tiny_summary": tiny_summary.unwrap_or_default(),
+        "category": article.category.clone(),
+        "published_date": article.published_date.clone(),
+        "quality_score": article.quality_score,
+        "similarity_score": article.score,
+
+        // Vector quality fields - Explicitly unwrap Option types with defaults
+        "vector_score": article.vector_score.unwrap_or(0.0),
+        "vector_active_dimensions": article.vector_active_dimensions.unwrap_or(0),
+        "vector_magnitude": article.vector_magnitude.unwrap_or(0.0),
+
+        // Entity similarity fields - Explicitly unwrap Option types with defaults
+        "entity_overlap_count": article.entity_overlap_count.unwrap_or(0),
+        "primary_overlap_count": article.primary_overlap_count.unwrap_or(0),
+        "person_overlap": article.person_overlap.unwrap_or(0.0),
+        "org_overlap": article.org_overlap.unwrap_or(0.0),
+        "location_overlap": article.location_overlap.unwrap_or(0.0),
+        "event_overlap": article.event_overlap.unwrap_or(0.0),
+        "temporal_proximity": article.temporal_proximity.unwrap_or(0.0),
+
+        // Formula explanation
+        "similarity_formula": article.similarity_formula.as_ref().map_or_else(|| "Unknown".to_string(), |s| s.clone())
+    })
+}
+
 /// Enum to represent the current mode of the Analysis Worker
 enum Mode {
     Analysis,
@@ -735,57 +772,16 @@ async fn process_analysis_item(
                             if let Ok(Some((json_url, title, tiny_summary))) =
                                 db.get_article_details_by_id(article.id).await
                             {
-                                similar_articles_with_details.push(json!({
-                                    // Basic fields
-                                    "id": article.id,
-                                    "json_url": json_url,
-                                    "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
-                                    "tiny_summary": tiny_summary,
-                                    "category": article.category,
-                                    "published_date": article.published_date,
-                                    "quality_score": article.quality_score,
-                                    "similarity_score": article.score,
-
-                                    // Vector quality fields
-                                    "vector_score": article.vector_score,
-                                    "vector_active_dimensions": article.vector_active_dimensions,
-                                    "vector_magnitude": article.vector_magnitude,
-
-                                    // Entity similarity fields
-                                    "entity_overlap_count": article.entity_overlap_count,
-                                    "primary_overlap_count": article.primary_overlap_count,
-                                    "person_overlap": article.person_overlap,
-                                    "org_overlap": article.org_overlap,
-                                    "location_overlap": article.location_overlap,
-                                    "event_overlap": article.event_overlap,
-                                    "temporal_proximity": article.temporal_proximity,
-
-                                    // Formula explanation
-                                    "similarity_formula": article.similarity_formula
-                                }));
+                                similar_articles_with_details.push(build_similar_article_json(
+                                    &article,
+                                    Some(json_url),
+                                    title,
+                                    Some(tiny_summary),
+                                ));
                             } else {
                                 // Include basic info if details can't be fetched
-                                similar_articles_with_details.push(json!({
-                                    // Basic fields
-                                    "id": article.id,
-                                    "category": article.category,
-                                    "published_date": article.published_date,
-                                    "quality_score": article.quality_score,
-                                    "similarity_score": article.score,
-
-                                    // Include any available additional fields
-                                    "vector_score": article.vector_score,
-                                    "vector_active_dimensions": article.vector_active_dimensions,
-                                    "vector_magnitude": article.vector_magnitude,
-                                    "entity_overlap_count": article.entity_overlap_count,
-                                    "primary_overlap_count": article.primary_overlap_count,
-                                    "person_overlap": article.person_overlap,
-                                    "org_overlap": article.org_overlap,
-                                    "location_overlap": article.location_overlap,
-                                    "event_overlap": article.event_overlap,
-                                    "temporal_proximity": article.temporal_proximity,
-                                    "similarity_formula": article.similarity_formula
-                                }));
+                                similar_articles_with_details
+                                    .push(build_similar_article_json(&article, None, None, None));
                             }
                         }
                         response_json["similar_articles"] = json!(similar_articles_with_details);
@@ -797,18 +793,16 @@ async fn process_analysis_item(
                             if let Ok(Some((json_url, title, tiny_summary))) =
                                 db.get_article_details_by_id(article.id).await
                             {
-                                similar_articles_with_details.push(json!({
-                                    // Basic fields
-                                    "id": article.id,
-                                    "json_url": json_url,
-                                    "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
-                                    "tiny_summary": tiny_summary,
-                                    "category": article.category,
-                                    "published_date": article.published_date,
-                                    "quality_score": article.quality_score,
-                                    "similarity_score": article.score,
-                                    "similarity_formula": "Vector similarity only (fallback)"
-                                }));
+                                // Use our helper but then add the fallback formula
+                                let mut json_obj = build_similar_article_json(
+                                    &article,
+                                    Some(json_url),
+                                    title,
+                                    Some(tiny_summary),
+                                );
+                                json_obj["similarity_formula"] =
+                                    "Vector similarity only (fallback)".into();
+                                similar_articles_with_details.push(json_obj);
                             }
                         }
                         response_json["similar_articles"] = json!(similar_articles_with_details);
@@ -1069,57 +1063,19 @@ async fn process_analysis_item(
                                     if let Ok(Some((json_url, title, tiny_summary))) =
                                         db.get_article_details_by_id(article.id).await
                                     {
-                                        similar_articles_with_details.push(json!({
-                                            // Basic fields
-                                            "id": article.id,
-                                            "json_url": json_url,
-                                            "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
-                                            "tiny_summary": tiny_summary,
-                                            "category": article.category,
-                                            "published_date": article.published_date,
-                                            "quality_score": article.quality_score,
-                                            "similarity_score": article.score,
-
-                                            // Vector quality fields
-                                            "vector_score": article.vector_score,
-                                            "vector_active_dimensions": article.vector_active_dimensions,
-                                            "vector_magnitude": article.vector_magnitude,
-
-                                            // Entity similarity fields
-                                            "entity_overlap_count": article.entity_overlap_count,
-                                            "primary_overlap_count": article.primary_overlap_count,
-                                            "person_overlap": article.person_overlap,
-                                            "org_overlap": article.org_overlap,
-                                            "location_overlap": article.location_overlap,
-                                            "event_overlap": article.event_overlap,
-                                            "temporal_proximity": article.temporal_proximity,
-
-                                            // Formula explanation
-                                            "similarity_formula": article.similarity_formula
-                                        }));
+                                        similar_articles_with_details.push(
+                                            build_similar_article_json(
+                                                &article,
+                                                Some(json_url),
+                                                title,
+                                                Some(tiny_summary),
+                                            ),
+                                        );
                                     } else {
                                         // Include basic info if details can't be fetched
-                                        similar_articles_with_details.push(json!({
-                                            // Basic fields
-                                            "id": article.id,
-                                            "category": article.category,
-                                            "published_date": article.published_date,
-                                            "quality_score": article.quality_score,
-                                            "similarity_score": article.score,
-
-                                            // Include any available additional fields
-                                            "vector_score": article.vector_score,
-                                            "vector_active_dimensions": article.vector_active_dimensions,
-                                            "vector_magnitude": article.vector_magnitude,
-                                            "entity_overlap_count": article.entity_overlap_count,
-                                            "primary_overlap_count": article.primary_overlap_count,
-                                            "person_overlap": article.person_overlap,
-                                            "org_overlap": article.org_overlap,
-                                            "location_overlap": article.location_overlap,
-                                            "event_overlap": article.event_overlap,
-                                            "temporal_proximity": article.temporal_proximity,
-                                            "similarity_formula": article.similarity_formula
-                                        }));
+                                        similar_articles_with_details.push(
+                                            build_similar_article_json(&article, None, None, None),
+                                        );
                                     }
                                 }
                                 response_json["similar_articles"] =
