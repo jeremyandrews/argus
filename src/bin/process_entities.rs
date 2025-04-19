@@ -18,13 +18,10 @@
 //! ## Configuration
 //!
 //! The utility uses the following environment variables:
-//! - `DECISION_OLLAMA_CONFIGS`: Ollama configuration in format "host|port|model;..." (primary config source)
-//! - `ANALYSIS_OLLAMA_CONFIGS`: Alternative Ollama configuration (used if DECISION_OLLAMA_CONFIGS is not available)
-//! - `ENTITY_MODEL`: The LLM model to use (default: "llama3")
+//! - `ANALYSIS_OLLAMA_CONFIGS`: Ollama configuration in format "host|port|model;..." for analysis workers
+//! - `ENTITY_MODEL`: Override specific model to use (optional)
 //! - `ENTITY_TEMPERATURE`: Temperature setting for entity extraction (default: 0.0)
 //! - `ENTITY_LLM_TYPE`: Type of LLM to use ("ollama" or "openai", default: "ollama")
-//! - `OLLAMA_HOST`: Ollama host name (legacy fallback, default: "localhost")
-//! - `OLLAMA_PORT`: Ollama port number (legacy fallback, default: 11434)
 //! - `OPENAI_API_KEY`: OpenAI API key (required if ENTITY_LLM_TYPE is "openai")
 //!
 //! ## Purpose
@@ -44,6 +41,16 @@ use std::env;
 use tokio::time::Instant;
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
+
+/// Strip protocol prefix (http:// or https://) from a host string
+fn strip_protocol(host: &str) -> String {
+    let stripped = host
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .to_string();
+    info!("Original host: '{}', Stripped host: '{}'", host, stripped);
+    stripped
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,7 +77,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::instance().await;
 
     // Set up LLM parameters
-    let model = env::var("ENTITY_MODEL").unwrap_or_else(|_| "llama3".to_string());
     let temperature = env::var("ENTITY_TEMPERATURE")
         .ok()
         .and_then(|s| s.parse::<f32>().ok())
@@ -88,72 +94,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             LLMClient::OpenAI(OpenAIClient::with_config(config))
         }
         _ => {
-            // Use the existing DECISION_OLLAMA_CONFIGS and ANALYSIS_OLLAMA_CONFIGS
-            // to maintain consistency with main.rs
-            let decision_ollama_configs = env::var("DECISION_OLLAMA_CONFIGS").unwrap_or_default();
-            let analysis_ollama_configs = env::var("ANALYSIS_OLLAMA_CONFIGS").unwrap_or_default();
+            // Get the analysis worker configs
+            let analysis_ollama_configs = env::var("ANALYSIS_OLLAMA_CONFIGS")
+                .expect("ANALYSIS_OLLAMA_CONFIGS environment variable must be set");
 
-            // First try decision worker configs
-            let decision_configs = argus::process_ollama_configs(&decision_ollama_configs);
-            if let Some((host, port, parsed_model)) = decision_configs.first() {
-                // If model is default, use the parsed one from config
-                if model == "llama3" {
-                    info!("Using model {} from DECISION_OLLAMA_CONFIGS", parsed_model);
-                }
+            let analysis_configs = argus::process_analysis_ollama_configs(&analysis_ollama_configs);
 
-                info!(
-                    "Connecting to Ollama at {}:{} (from DECISION_OLLAMA_CONFIGS)",
-                    host, port
-                );
-                // Strip protocol if present to avoid RelativeUrlWithoutBase error
-                let host_without_protocol = host
-                    .trim_start_matches("http://")
-                    .trim_start_matches("https://");
-
-                LLMClient::Ollama(Ollama::new(host_without_protocol, *port))
+            if analysis_configs.is_empty() {
+                error!("No valid configurations found in ANALYSIS_OLLAMA_CONFIGS");
+                return Err("No valid Ollama configurations found".into());
             }
-            // Then try analysis worker configs
-            else {
+
+            let (host, port, model, _) = &analysis_configs[0];
+
+            info!("Using analysis worker configuration with model: {}", model);
+            info!("Connecting to Ollama at {}:{}", host, port);
+
+            // Strip protocol if present to avoid RelativeUrlWithoutBase error
+            let host_without_protocol = strip_protocol(host);
+
+            LLMClient::Ollama(Ollama::new(host_without_protocol, *port))
+        }
+    };
+
+    // Get the model from ENTITY_MODEL env var or from the analysis config
+    let model = match env::var("ENTITY_LLM_TYPE")
+        .unwrap_or_else(|_| "ollama".to_string())
+        .as_str()
+    {
+        "openai" => env::var("ENTITY_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string()),
+        _ => {
+            // If ENTITY_MODEL is set, use it, otherwise use the model from the config
+            env::var("ENTITY_MODEL").unwrap_or_else(|_| {
+                let analysis_ollama_configs =
+                    env::var("ANALYSIS_OLLAMA_CONFIGS").expect("ANALYSIS_OLLAMA_CONFIGS not set");
                 let analysis_configs =
                     argus::process_analysis_ollama_configs(&analysis_ollama_configs);
-                if let Some((host, port, parsed_model, _)) = analysis_configs.first() {
-                    // If model is default, use the parsed one from config
-                    if model == "llama3" {
-                        info!("Using model {} from ANALYSIS_OLLAMA_CONFIGS", parsed_model);
-                    }
-
-                    info!(
-                        "Connecting to Ollama at {}:{} (from ANALYSIS_OLLAMA_CONFIGS)",
-                        host, port
-                    );
-                    // Strip protocol if present to avoid RelativeUrlWithoutBase error
-                    let host_without_protocol = host
-                        .trim_start_matches("http://")
-                        .trim_start_matches("https://");
-
-                    LLMClient::Ollama(Ollama::new(host_without_protocol, *port))
-                }
-                // Fall back to legacy environment variables as last resort
-                else {
-                    let host = env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
-                    let port: u16 = env::var("OLLAMA_PORT")
-                        .ok()
-                        .and_then(|p| p.parse().ok())
-                        .unwrap_or(11434);
-
-                    info!(
-                        "Connecting to Ollama at {}:{} (using legacy config)",
-                        host, port
-                    );
-
-                    // Strip protocol if present to avoid RelativeUrlWithoutBase error
-                    let host_without_protocol = host
-                        .trim_start_matches("http://")
-                        .trim_start_matches("https://");
-
-                    LLMClient::Ollama(Ollama::new(host_without_protocol, port))
-                }
-            }
+                analysis_configs[0].2.clone()
+            })
         }
     };
 
