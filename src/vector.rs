@@ -624,7 +624,7 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
                         event_overlap: None,
                         temporal_proximity: None,
                         similarity_formula: Some(
-                            "100% vector similarity (no entity data available)".to_string(),
+                            "60% vector similarity (no entity data available)".to_string(),
                         ),
                     }
                 })
@@ -804,7 +804,7 @@ pub async fn get_similar_articles_with_entities(
 
             enhanced_matches.push(enhanced);
         } else {
-            // Without source entities, just use the vector score
+            // Without source entities, apply consistent 60% weighting to vector score
             // Create a new entity metrics with defaults
             let empty_metrics = crate::entity::EntitySimilarityMetrics::new();
 
@@ -812,7 +812,7 @@ pub async fn get_similar_articles_with_entities(
                 article_id: id,
                 vector_score: article.score,
                 entity_similarity: empty_metrics,
-                final_score: article.score, // Just use vector score
+                final_score: 0.6 * article.score, // Apply consistent 60% weighting
                 category: article.category,
                 published_date: article.published_date,
                 quality_score: article.quality_score,
