@@ -1441,6 +1441,30 @@ impl Database {
             sqlx::Error::Protocol(format!("JSON serialization error: {}", e).into())
         })?;
 
+        // First, try a query WITHOUT the date filter to see if we have ANY matching articles
+        let check_query = r#"
+            SELECT COUNT(*) 
+            FROM articles a
+            JOIN article_entities ae ON a.id = ae.article_id
+            WHERE ae.entity_id IN (SELECT value FROM json_each(?))
+            "#;
+
+        let total_matching: i64 = match sqlx::query_scalar(check_query)
+            .bind(&entity_ids_json)
+            .fetch_one(&self.pool)
+            .await
+        {
+            Ok(count) => {
+                info!(target: TARGET_DB, "Found {} total articles that share entities with: {:?} (without date filter)", 
+                    count, entity_ids);
+                count
+            }
+            Err(e) => {
+                error!(target: TARGET_DB, "Failed to check total matching articles: {}", e);
+                0
+            }
+        };
+
         // Query for articles that share entities, prioritizing those with PRIMARY importance
         // and filtering by date threshold
         let query = r#"
@@ -1480,7 +1504,51 @@ impl Database {
             .fetch_all(&self.pool)
             .await?;
 
-        info!(target: TARGET_DB, "Entity search returned {} results for entities: {:?}", rows.len(), entity_ids);
+        info!(target: TARGET_DB, "Entity search returned {} results for entities: {:?} (with date filter > {})", 
+            rows.len(), entity_ids, date_threshold);
+
+        // If we got no results with date filter but had matches without it, log this critical info
+        if rows.is_empty() && total_matching > 0 {
+            error!(target: TARGET_DB,
+                "CRITICAL: Date filter is eliminating all potential matches! Found {} matching articles but 0 after date filter", 
+                total_matching);
+
+            // Let's log a few of the matching articles that were filtered out
+            let sample_query = r#"
+                SELECT a.id, a.pub_date, a.category,
+                       COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
+                       COUNT(ae.entity_id) as total_count
+                FROM articles a
+                JOIN article_entities ae ON a.id = ae.article_id
+                WHERE ae.entity_id IN (SELECT value FROM json_each(?))
+                GROUP BY a.id
+                ORDER BY a.pub_date DESC
+                LIMIT 5
+                "#;
+
+            match sqlx::query(sample_query)
+                .bind(&entity_ids_json)
+                .fetch_all(&self.pool)
+                .await
+            {
+                Ok(samples) => {
+                    for row in samples {
+                        let id: i64 = row.get("id");
+                        let pub_date: Option<String> = row.get("pub_date");
+                        let category: Option<String> = row.get("category");
+                        let primary_count: i64 = row.get("primary_count");
+                        let total_count: i64 = row.get("total_count");
+
+                        info!(target: TARGET_DB,
+                            "Example match filtered by date: article_id={}, pub_date={}, category={}, primary_count={}, total_count={}",
+                            id, pub_date.unwrap_or_default(), category.unwrap_or_default(), primary_count, total_count);
+                    }
+                }
+                Err(e) => {
+                    error!(target: TARGET_DB, "Failed to get sample filtered matches: {}", e);
+                }
+            }
+        }
 
         // Convert rows to tuples
         let results = rows

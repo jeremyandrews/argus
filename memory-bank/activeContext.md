@@ -76,9 +76,9 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Fixing Entity Matching in iOS App
+### Current Focus: Enhanced Diagnostics for Entity Matching Issues
 
-We've identified and are working to fix a persistent issue with entity matching not showing up properly in the iOS app:
+We're implementing comprehensive diagnostics to identify why entity-based related articles aren't appearing properly in the iOS app:
 
 **Root Cause Analysis**
 - Entity extraction and storage are working correctly:
@@ -88,33 +88,49 @@ We've identified and are working to fix a persistent issue with entity matching 
   - Logs show: `Building source entities from 0 entity IDs: []`
   - No logs found for "entities for article", indicating `get_article_entities` isn't being called
 
-**Implementation Issues**
-- Our initial investigations revealed problems in the entity retrieval mechanism:
-  1. **Entity-Article Relationship Loss**: The `build_entities_from_ids` function was using `db.get_entity_details()` which only retrieves basic entity info without relationship data
-  2. **Importance Level Information Loss**: Entity importance levels (PRIMARY, SECONDARY, MENTIONED) weren't being preserved in the matching process
-  3. **Missing Source Article Context**: The source article ID wasn't being effectively utilized to retrieve proper entity relationships
-
-**Current Fix Implementation**
-- ✅ Enhanced `build_entities_from_ids` function to:
+**Previous Fix Attempts**
+- Enhanced `build_entities_from_ids` function to:
   - Try to determine source article ID from entity IDs via database lookup
   - Use `db.get_article_entities()` to get complete entity-article relationship data
   - Preserve proper importance levels from the database instead of assuming all are PRIMARY
   - Add better fallback mechanisms when direct lookup fails
-- ✅ Improved `get_similar_articles_with_entities` function to:
+- Improved `get_similar_articles_with_entities` function to:
   - Add direct entity retrieval from source article as a fallback
   - Include multiple recovery paths for entity data retrieval
   - Provide better logging for diagnostic purposes
 
-**Ongoing Issues**
-- 🔄 Despite these improvements, entity matching still isn't properly appearing in the iOS app
-- 🔄 Investigating additional issues in the data flow between entity matching and the iOS app interface
-- 🔄 Examining if there are problems with how JSON payloads are constructed for the app
+**Enhanced Diagnostic Implementation**
+- ✅ **Entity Matching Process** (in `matching.rs`):
+  - Added detailed logging for entity similarity calculations with entity-by-entity comparison tracking
+  - Added type-by-type breakdowns of entity comparisons (Person, Organization, Location, Event) 
+  - Added critical error detection for when overlapping entities produce zero scores
+  
+- ✅ **Entity Retrieval Process** (in `vector.rs`):
+  - Enhanced the `build_entities_from_ids` function with more detailed entity tracing
+  - Added importance level and entity type breakdowns for easier troubleshooting
+  - Added entity-by-entity logging with type and importance data
+  - Added critical error detection when we fail to retrieve entities despite having valid entity IDs
+  - Added tracking of entity-based versus vector-based matches
+  
+- ✅ **Database Entity Search** (in `db.rs`):
+  - Added a preliminary query to count matching articles without date filtering
+  - Added critical error reporting when date filtering eliminates all potential matches
+  - Added sample output of articles being filtered by date to identify format issues
+  - Enhanced logging of SQL execution with parameter values
+
+**Current Hypothesis**
+- The most likely issue is that date filtering in `get_articles_by_entities_with_date` is eliminating good matches
+- Possible causes:
+  1. Date format inconsistencies between stored dates and comparison dates
+  2. Overly restrictive date thresholds (currently 14 days)
+  3. Missing date values in articles with matching entities
 
 **Next Steps**
-- 🔄 Gather more recent logs to check the current state of entity retrieval
-- 🔄 Analyze how entity data flows from the matching system to the final JSON payload
-- 🔄 Investigate any API or serialization issues that might be affecting the iOS app
-- 🔄 Consider additional recovery strategies or data integrity checks
+- 🔄 Deploy enhanced diagnostics and collect comprehensive logs
+- 🔄 Analyze logs for "CRITICAL" warnings related to date filtering or entity retrieval
+- 🔄 Examine entity similarity calculations for unexpected zero scores
+- 🔄 Based on diagnostic results, implement targeted fixes for the identified issues
+- 🔄 Consider extending the date threshold or making it optional if that proves to be the issue
 
 ### Previous Focus: Fixing Inconsistent Entity-Based Article Matching
 

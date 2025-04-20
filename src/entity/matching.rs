@@ -3,7 +3,7 @@ use crate::entity::types::{
 };
 use chrono::NaiveDate;
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
 
 use super::TARGET_ENTITY;
 
@@ -14,10 +14,36 @@ pub fn calculate_entity_similarity(
     source_date: Option<&str>,
     target_date: Option<&str>,
 ) -> EntitySimilarityMetrics {
+    // Log detailed information about the entities we're comparing
+    info!(
+        target: TARGET_ENTITY,
+        "Calculating entity similarity between source ({} entities) and target ({} entities)",
+        source_entities.entities.len(), target_entities.entities.len()
+    );
+
     let mut metrics = EntitySimilarityMetrics::new();
 
     // 1. Calculate basic entity overlap
     metrics.entity_overlap_count = count_entity_overlap(source_entities, target_entities);
+
+    // Log entity type breakdown for source and target
+    info!(
+        target: TARGET_ENTITY,
+        "Source entity types: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+        source_entities.get_entities_by_type(EntityType::Person).len(),
+        source_entities.get_entities_by_type(EntityType::Organization).len(),
+        source_entities.get_entities_by_type(EntityType::Location).len(),
+        source_entities.get_entities_by_type(EntityType::Event).len()
+    );
+
+    info!(
+        target: TARGET_ENTITY,
+        "Target entity types: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+        target_entities.get_entities_by_type(EntityType::Person).len(),
+        target_entities.get_entities_by_type(EntityType::Organization).len(),
+        target_entities.get_entities_by_type(EntityType::Location).len(),
+        target_entities.get_entities_by_type(EntityType::Event).len()
+    );
 
     // 2. Calculate type-specific similarity scores
     metrics.person_overlap =
@@ -31,6 +57,21 @@ pub fn calculate_entity_similarity(
 
     metrics.event_overlap =
         calculate_type_similarity(source_entities, target_entities, EntityType::Event);
+
+    // Log individual entity comparisons for debugging
+    for source_entity in &source_entities.entities {
+        for target_entity in &target_entities.entities {
+            if source_entity.entity_type == target_entity.entity_type {
+                info!(
+                    target: TARGET_ENTITY,
+                    "Entity comparison: source={}({:?}), target={}({:?}), match={}",
+                    source_entity.name, source_entity.importance,
+                    target_entity.name, target_entity.importance,
+                    source_entity.normalized_name == target_entity.normalized_name
+                );
+            }
+        }
+    }
 
     // 3. Calculate primary entity overlap count
     metrics.primary_overlap_count = count_primary_overlap(source_entities, target_entities);
@@ -56,6 +97,15 @@ pub fn calculate_entity_similarity(
         metrics.temporal_proximity,
         metrics.combined_score
     );
+
+    // Critical error if we have overlapping entities but zero score
+    if metrics.entity_overlap_count > 0 && metrics.combined_score == 0.0 {
+        error!(
+            target: TARGET_ENTITY,
+            "CRITICAL ERROR: Entity similarity calculation produced zero score despite {} overlapping entities",
+            metrics.entity_overlap_count
+        );
+    }
 
     metrics
 }

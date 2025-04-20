@@ -98,6 +98,12 @@ Argus is currently in active development with major components implemented and f
   - Fixed incomplete function calls in analysis_worker.rs to ensure all parameters are passed
   - Added warning generation when entity IDs are missing or inconsistent
   - Implemented comprehensive source entity tracing through the matching pipeline
+- ✅ **Enhanced Debug Diagnostics**: Implemented comprehensive diagnostic enhancements to troubleshoot entity matching issues
+  - Added detailed entity-by-entity comparison logs in the matching process
+  - Enhanced entity retrieval with importance level and entity type breakdowns
+  - Added SQL query diagnostics to detect date filtering issues
+  - Implemented critical error detection for date filtering problems
+  - Added sample data logging for filtered articles to identify format issues
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

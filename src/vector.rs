@@ -742,6 +742,10 @@ pub async fn get_similar_articles_with_entities(
     info!(target: TARGET_VECTOR, "Performing vector similarity search...");
     let vector_matches = get_similar_articles(embedding, limit * 2).await?; // Get more results for better coverage
 
+    // Store the count before consuming the vector
+    let vector_only_count = vector_matches.len();
+    info!(target: TARGET_VECTOR, "Vector search returned {} results", vector_only_count);
+
     // Add vector matches to our result set
     for article in vector_matches {
         all_matches.insert(article.id, article);
@@ -753,12 +757,24 @@ pub async fn get_similar_articles_with_entities(
             info!(target: TARGET_VECTOR, "Performing entity-based search with {} entity IDs...", ids.len());
             let entity_matches = get_articles_by_entities(ids, limit * 2).await?;
 
+            info!(target: TARGET_VECTOR, 
+                "Entity search returned {} results for entity IDs: {:?}",
+                entity_matches.len(), ids);
+
+            if entity_matches.is_empty() {
+                error!(target: TARGET_VECTOR, 
+                    "CRITICAL: Entity search returned NO matches despite having valid entity IDs - database inconsistency possible");
+            }
+
             // For entity matches, calculate vector similarity if not already included
             for mut article in entity_matches {
                 if !all_matches.contains_key(&article.id) {
                     // Calculate vector similarity for this entity match
                     match calculate_vector_similarity(embedding, article.id).await {
                         Ok(vector_score) => {
+                            info!(target: TARGET_VECTOR, 
+                                "Added entity-based match: article_id={}, entity_overlap={}, vector_score={:.4}",
+                                article.id, article.entity_overlap_count.unwrap_or(0), vector_score);
                             article.score = vector_score; // Update with actual vector score
                             all_matches.insert(article.id, article);
                         }
@@ -775,11 +791,24 @@ pub async fn get_similar_articles_with_entities(
     }
 
     if all_matches.is_empty() {
-        info!(target: TARGET_VECTOR, "No matches found through either vector or entity-based search");
+        error!(target: TARGET_VECTOR, "CRITICAL: No matches found through either vector or entity-based search");
         return Ok(vec![]);
     }
 
     info!(target: TARGET_VECTOR, "Found {} total unique articles from both queries", all_matches.len());
+
+    // Calculate entity-only count
+    let entity_only_count = entity_ids.map_or(0, |ids| {
+        if ids.is_empty() {
+            0
+        } else {
+            all_matches.len() - vector_only_count
+        }
+    });
+
+    info!(target: TARGET_VECTOR, 
+        "Match sources: {} from vector similarity, {} from entity similarity",
+        vector_only_count, entity_only_count);
 
     // 3. Now enhance all matches with entity similarity scores
     let mut enhanced_matches = Vec::new();
@@ -848,6 +877,15 @@ pub async fn get_similar_articles_with_entities(
                 &article_entities,
                 event_date,
                 Some(&article.published_date),
+            );
+
+            // Log entity similarity calculation details
+            info!(target: TARGET_VECTOR,
+                "Entity similarity for article {}: entity_score={:.4}, person={:.2}, org={:.2}, location={:.2}, event={:.2}, overlap_count={}",
+                id, entity_sim.combined_score,
+                entity_sim.person_overlap, entity_sim.organization_overlap,
+                entity_sim.location_overlap, entity_sim.event_overlap,
+                entity_sim.entity_overlap_count
             );
 
             // Create enhanced match with combined score
@@ -1151,7 +1189,7 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
     let db = crate::db::Database::instance().await;
     let mut extracted = crate::entity::ExtractedEntities::new();
 
-    info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs: {:?}", entity_ids.len(), entity_ids);
+    info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs with detailed tracing: {:?}", entity_ids.len(), entity_ids);
 
     // If there are entity IDs, try to determine the article ID they're from
     // by checking the article_entities table
@@ -1169,6 +1207,8 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
 
             match db.get_article_entities(article_id).await {
                 Ok(article_entities) => {
+                    info!(target: TARGET_VECTOR, "Database returned {} total entities for article {}", article_entities.len(), article_id);
+
                     // Filter to include only entities in our entity_ids list
                     for (entity_id, name, entity_type_str, importance_str) in article_entities {
                         if entity_ids.contains(&entity_id) {
@@ -1224,18 +1264,44 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
                                 info!(target: TARGET_VECTOR, "Added fallback entity: id={}, name='{}', type={}", 
                                       id, name, entity_type_str);
                                 extracted.add_entity(entity);
+                            } else {
+                                error!(target: TARGET_VECTOR, "Failed to get details for entity ID {} - entity is missing from database", id);
                             }
                         }
                     }
+
+                    // Add detailed entity breakdown
+                    info!(
+                        target: TARGET_VECTOR,
+                        "Entity retrieval details: total entities={}, by importance: PRIMARY={}, SECONDARY={}, MENTIONED={}",
+                        extracted.entities.len(),
+                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Primary).count(),
+                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Secondary).count(),
+                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Mentioned).count()
+                    );
+
+                    // Add entity type breakdown
+                    info!(
+                        target: TARGET_VECTOR,
+                        "Entity types breakdown: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Person).count(),
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Organization).count(),
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Location).count(),
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Event).count()
+                    );
 
                     info!(target: TARGET_VECTOR, "Built {} entities using article relationship data", extracted.entities.len());
                     return Ok(extracted);
                 }
                 Err(e) => {
-                    warn!(target: TARGET_VECTOR, "Failed to get article entities for article {}: {}", article_id, e);
+                    error!(target: TARGET_VECTOR, "Failed to get article entities for article {}: {}", article_id, e);
                     // Fall through to basic lookup below
                 }
             }
+        } else if let Err(e) = article_id_result {
+            error!(target: TARGET_VECTOR, "Database error when trying to find source article for entity ID {}: {}", entity_ids[0], e);
+        } else {
+            warn!(target: TARGET_VECTOR, "Could not determine source article ID for entity ID {}", entity_ids[0]);
         }
     }
 
@@ -1257,8 +1323,39 @@ async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::Ex
                   id, name, entity_type_str);
             extracted.add_entity(entity);
         } else {
-            warn!(target: TARGET_VECTOR, "Failed to get details for entity ID {}", id);
+            error!(target: TARGET_VECTOR, "Failed to get details for entity ID {} - entity is missing from database", id);
         }
+    }
+
+    // Critical error if we have no entities despite having IDs
+    if extracted.entities.is_empty() && !entity_ids.is_empty() {
+        error!(
+            target: TARGET_VECTOR,
+            "CRITICAL: Failed to retrieve any entities despite having {} entity IDs: {:?}",
+            entity_ids.len(), entity_ids
+        );
+    }
+
+    // Add detailed entity breakdown
+    if !extracted.entities.is_empty() {
+        info!(
+            target: TARGET_VECTOR,
+            "Entity retrieval details: total entities={}, by importance: PRIMARY={}, SECONDARY={}, MENTIONED={}",
+            extracted.entities.len(),
+            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Primary).count(),
+            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Secondary).count(),
+            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Mentioned).count()
+        );
+
+        // Add entity type breakdown
+        info!(
+            target: TARGET_VECTOR,
+            "Entity types breakdown: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Person).count(),
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Organization).count(),
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Location).count(),
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Event).count()
+        );
     }
 
     info!(target: TARGET_VECTOR, "Built {} source entities from {} entity IDs using basic lookup", 
