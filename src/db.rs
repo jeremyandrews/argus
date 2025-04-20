@@ -1474,7 +1474,7 @@ impl Database {
             FROM articles a
             JOIN article_entities ae ON a.id = ae.article_id
             WHERE ae.entity_id IN (SELECT value FROM json_each(?))
-            AND datetime(a.pub_date) > datetime(?)
+            AND substr(a.pub_date, 1, 10) >= substr(?, 1, 10)
             GROUP BY a.id
             ORDER BY primary_count DESC, total_count DESC
             LIMIT ?
