@@ -76,69 +76,45 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Entity Extraction Integration and Bug Fixes
+### Current Focus: Fixing Entity Matching in iOS App
 
-We've fixed critical issues with the entity extraction system to ensure proper population of entity tables, which are essential for entity-based article matching.
+We've identified and are working to fix a persistent issue with entity matching not showing up properly in the iOS app:
 
-Recently identified and fixed issues:
-- ✅ Fixed entity extraction failure in process_entities.rs, test_entity_extraction.rs, and test_ollama_endpoints.rs
-- ✅ Identified and fixed two distinct problems:
-  1. **JSON Field Name Mismatch**: The LLM returns entities with a `type` field, but when serialized through Rust structs it became `entity_type`. Updated db.rs to look for `entity_type` instead of `type` in the process_entity_extraction function.
-  2. **Ollama Client Connection Issues**: Fixed improper URL handling in utility programs that was causing `RelativeUrlWithoutBase` errors when connecting to Ollama endpoints.
-- ✅ Ensured consistent patterns across all code that connects to Ollama endpoints by following the same approach used in main.rs
-- ✅ Added improved debugging information for protocol issues
-- ✅ Successfully tested fixes to verify entity extraction now works correctly
-
-Key learnings from this process:
-- Field name transformations during serialization/deserialization need careful tracking
-- Consistent patterns for external service connections are critical
-- Environment variable handling needs to be consistent across all binaries
-- Protocol stripping/handling should be centralized in utility functions
-
-Current implementation status:
-- ✅ Entity extraction now correctly extracts and stores entities from article text
-- ✅ Both the main Argus process and utility programs can connect to Ollama endpoints consistently
-- ✅ Entity data is properly stored in the database tables
-- ✅ Entity-based article matching and clustering now has the data it needs
-
-Next steps:
-- Monitor entity extraction quality and adjust prompts as needed
-- Analyze entity distribution patterns to optimize matching algorithms
-- Enhance entity normalization for better cross-article matching
-- Consider UI enhancements to visualize entity relationships
-- Explore entity-based search functionality
-
-### Current Focus: Fixing Entity Retrieval in Similar Article Matching
-
-We've identified and fixed a critical issue in the entity-based similar article matching system that was causing some articles without entity overlap to still appear in results:
-
-**Root Cause: Missing Entity Source Information**
-- We discovered a data flow issue in the similar article search process:
-  - The entity extraction process was working correctly (successfully extracting entities)
-  - The database was storing entities properly
-  - But when retrieving similar articles, the entity IDs weren't being associated with the source article
-  - This led to log entries showing: `Building source entities from 0 entity IDs: []`
-  - Without source entities to compare against, the system couldn't verify entity overlap
+**Root Cause Analysis**
+- Entity extraction and storage are working correctly:
+  - Logs show successful extraction: `Successfully extracted 12 entities from article text`
+  - Entities are properly stored in the database: `Successfully processed entity extraction for article 19134669 with 12 entities`
+- However, when retrieving similar articles, the entity relationship information isn't being correctly used:
+  - Logs show: `Building source entities from 0 entity IDs: []`
+  - No logs found for "entities for article", indicating `get_article_entities` isn't being called
 
 **Implementation Issues**
-- We found two specific problems in the code:
-  1. **Missing source article ID parameter**: The `get_similar_articles_with_entities` function needed a way to identify the source article
-  2. **Incomplete function calls**: When this function was called in `analysis_worker.rs`, it wasn't supplying all the needed parameters
+- Our initial investigations revealed problems in the entity retrieval mechanism:
+  1. **Entity-Article Relationship Loss**: The `build_entities_from_ids` function was using `db.get_entity_details()` which only retrieves basic entity info without relationship data
+  2. **Importance Level Information Loss**: Entity importance levels (PRIMARY, SECONDARY, MENTIONED) weren't being preserved in the matching process
+  3. **Missing Source Article Context**: The source article ID wasn't being effectively utilized to retrieve proper entity relationships
 
-Recently completed fixes:
-- ✅ Enhanced `get_similar_articles_with_entities` function to track the source article ID
-- ✅ Added article ID verification to compare entities passed to the function against database records
-- ✅ Fixed the function calls in `analysis_worker.rs` to pass the source article ID parameter
-- ✅ Added comprehensive diagnostic logging showing entity retrieval details
-- ✅ Implemented database verification that compares entity counts between different sources
-- ✅ Added warnings for mismatches when entities exist in the database but aren't correctly passed to search
+**Current Fix Implementation**
+- ✅ Enhanced `build_entities_from_ids` function to:
+  - Try to determine source article ID from entity IDs via database lookup
+  - Use `db.get_article_entities()` to get complete entity-article relationship data
+  - Preserve proper importance levels from the database instead of assuming all are PRIMARY
+  - Add better fallback mechanisms when direct lookup fails
+- ✅ Improved `get_similar_articles_with_entities` function to:
+  - Add direct entity retrieval from source article as a fallback
+  - Include multiple recovery paths for entity data retrieval
+  - Provide better logging for diagnostic purposes
 
-Impact of these changes:
-- The system now correctly identifies the source article for entity comparison
-- All similar article results now properly include entity overlap
-- Detailed diagnostic information helps pinpoint any entity retrieval issues
-- Clear warnings appear when entity IDs don't match what's expected
-- The similar article relevance is significantly improved with proper entity matching
+**Ongoing Issues**
+- 🔄 Despite these improvements, entity matching still isn't properly appearing in the iOS app
+- 🔄 Investigating additional issues in the data flow between entity matching and the iOS app interface
+- 🔄 Examining if there are problems with how JSON payloads are constructed for the app
+
+**Next Steps**
+- 🔄 Gather more recent logs to check the current state of entity retrieval
+- 🔄 Analyze how entity data flows from the matching system to the final JSON payload
+- 🔄 Investigate any API or serialization issues that might be affecting the iOS app
+- 🔄 Consider additional recovery strategies or data integrity checks
 
 ### Previous Focus: Fixing Inconsistent Entity-Based Article Matching
 
