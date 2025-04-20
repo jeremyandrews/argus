@@ -104,6 +104,11 @@ Argus is currently in active development with major components implemented and f
   - Added SQL query diagnostics to detect date filtering issues
   - Implemented critical error detection for date filtering problems
   - Added sample data logging for filtered articles to identify format issues
+- ✅ **Date Comparison Fix**: Fixed critical issue with date filtering in SQL queries
+  - Identified that string comparison of RFC3339 formatted dates was failing
+  - Modified SQL query to use `datetime()` functions for proper date comparison
+  - Verified fix with direct SQL testing showing proper matching
+  - Ensured dates are properly compared regardless of string format differences
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

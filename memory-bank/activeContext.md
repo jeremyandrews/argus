@@ -118,19 +118,24 @@ We're implementing comprehensive diagnostics to identify why entity-based relate
   - Added sample output of articles being filtered by date to identify format issues
   - Enhanced logging of SQL execution with parameter values
 
-**Current Hypothesis**
-- The most likely issue is that date filtering in `get_articles_by_entities_with_date` is eliminating good matches
-- Possible causes:
-  1. Date format inconsistencies between stored dates and comparison dates
-  2. Overly restrictive date thresholds (currently 14 days)
-  3. Missing date values in articles with matching entities
+**Root Cause Found and Fixed**
+- ✅ Issue identified: Date filtering in `get_articles_by_entities_with_date` was eliminating all potential matches
+- ✅ The problem was in the SQL date comparison: `AND a.pub_date > ?` wasn't properly comparing RFC3339 formatted dates
+- ✅ Our enhanced diagnostics found that articles with matching entities were being found (hundreds of matches) but all were being eliminated by the date filter
+- ✅ Direct SQL tests confirmed the issue: string comparison of dates was unreliable, but using `datetime()` functions worked properly
+
+**Fix Implemented**
+- ✅ Modified the SQL query in `db.rs` to use SQLite's `datetime()` function:
+  ```sql
+  AND datetime(a.pub_date) > datetime(?)
+  ```
+- ✅ This ensures proper date comparison regardless of string format differences
+- ✅ Direct SQL testing confirmed the fix works correctly, finding matches within the date threshold
 
 **Next Steps**
-- 🔄 Deploy enhanced diagnostics and collect comprehensive logs
-- 🔄 Analyze logs for "CRITICAL" warnings related to date filtering or entity retrieval
-- 🔄 Examine entity similarity calculations for unexpected zero scores
-- 🔄 Based on diagnostic results, implement targeted fixes for the identified issues
-- 🔄 Consider extending the date threshold or making it optional if that proves to be the issue
+- 🔄 Deploy the fix and verify related articles now appear in the app
+- 🔄 Monitor logs to ensure entity matching continues to work properly
+- 🔄 Consider adding additional validation for date fields to prevent similar issues
 
 ### Previous Focus: Fixing Inconsistent Entity-Based Article Matching
 
