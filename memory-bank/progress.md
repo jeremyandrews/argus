@@ -106,9 +106,11 @@ Argus is currently in active development with major components implemented and f
   - Added sample data logging for filtered articles to identify format issues
 - ✅ **Date Comparison Fix**: Fixed critical issue with date filtering in SQL queries
   - Identified that string comparison of RFC3339 formatted dates was failing
-  - Modified SQL query to use `datetime()` functions for proper date comparison
-  - Verified fix with direct SQL testing showing proper matching
-  - Ensured dates are properly compared regardless of string format differences
+  - Initial attempt to use SQLite's `datetime()` functions did not fully resolve the issue
+  - Modified SQL query to use substring comparison: `substr(a.pub_date, 1, 10) >= substr(?, 1, 10)`
+  - This extracts only the date portion (YYYY-MM-DD) from both dates, avoiding timezone complexities
+  - Verified fix with direct SQL testing showing proper date-only matching
+  - Enhanced diagnostics confirmed the root cause and solution effectiveness
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

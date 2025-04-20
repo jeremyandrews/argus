@@ -122,15 +122,16 @@ We're implementing comprehensive diagnostics to identify why entity-based relate
 - ✅ Issue identified: Date filtering in `get_articles_by_entities_with_date` was eliminating all potential matches
 - ✅ The problem was in the SQL date comparison: `AND a.pub_date > ?` wasn't properly comparing RFC3339 formatted dates
 - ✅ Our enhanced diagnostics found that articles with matching entities were being found (hundreds of matches) but all were being eliminated by the date filter
-- ✅ Direct SQL tests confirmed the issue: string comparison of dates was unreliable, but using `datetime()` functions worked properly
+- ✅ Direct SQL tests showed the issue: even SQLite's `datetime()` function wasn't handling the RFC3339 formatted dates consistently
 
 **Fix Implemented**
-- ✅ Modified the SQL query in `db.rs` to use SQLite's `datetime()` function:
+- ✅ Modified the SQL query in `db.rs` to use a simpler date comparison approach:
   ```sql
-  AND datetime(a.pub_date) > datetime(?)
+  AND substr(a.pub_date, 1, 10) >= substr(?, 1, 10)
   ```
-- ✅ This ensures proper date comparison regardless of string format differences
-- ✅ Direct SQL testing confirmed the fix works correctly, finding matches within the date threshold
+- ✅ This extracts just the date portion (YYYY-MM-DD) from both the article date and threshold date
+- ✅ By comparing only the date portions, we avoid timezone and format complications
+- ✅ This approach ensures proper date comparison regardless of RFC3339 specific format variations
 
 **Next Steps**
 - 🔄 Deploy the fix and verify related articles now appear in the app
