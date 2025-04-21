@@ -452,6 +452,38 @@ async fn process_topics(
     params: &mut ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) {
+    // Early check to filter promotional content
+    let promo_check_prompt = prompts::filter_promotional_content(article_text);
+    let llm_params = extract_llm_params(params);
+    if let Some(promo_response) =
+        generate_llm_response(&promo_check_prompt, &llm_params, worker_detail).await
+    {
+        if promo_response.trim().to_lowercase().starts_with("yes") {
+            // This is a promotional article, skip further processing
+            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: article is primarily promotional (sales/discounts), skipping.", 
+                   worker_detail.name, worker_detail.id, worker_detail.model);
+
+            // Add to database as non-relevant
+            let _ = params
+                .db
+                .add_article(
+                    article_url,
+                    false,
+                    None,
+                    None,
+                    None,
+                    Some(&article_hash),
+                    Some(&title_domain_hash),
+                    None,
+                    pub_date,
+                    None, // event_date
+                )
+                .await;
+
+            return;
+        }
+    }
+
     let mut article_relevant = false;
 
     for topic in params.topics {

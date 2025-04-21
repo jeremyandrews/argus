@@ -252,6 +252,28 @@ REQUIREMENTS:
 * Must drop less critical details
 * Must use active voice
 * Must be ONE complete, coherent sentence
+* Must preserve source attribution and factual accuracy
+* Must distinguish between confirmed facts vs rumors/leaks/reports
+* Must NEVER convert "reportedly" or "according to leaks" into definitive statements
+* Must maintain the same level of certainty as the original summary
+
+CRITICAL: PRESERVE FACTUAL ACCURACY
+* If original mentions "leaks" or "rumors", your summary MUST include this qualification
+* If original says "reportedly" or "allegedly", your summary MUST maintain these qualifiers
+* NEVER present unconfirmed information as confirmed fact
+* NEVER convert phrases like "according to sources" into definitive statements
+* NEVER suggest a company officially announced something when article only mentions leaks/rumors
+
+PROPER ATTRIBUTION EXAMPLES:
+* INCORRECT: "Apple Details Foldable iPhone Specs" (implies official announcement)
+* CORRECT: "Apple's Foldable iPhone Specs Detailed in Recent Leaks" (preserves leak attribution)
+
+* INCORRECT: "Google Reveals New Product Features" (implies official reveal)
+* CORRECT: "Google's New Product Features Reportedly Include Voice Control" (maintains qualification)
+
+PROMOTIONAL CONTENT:
+* Your summary should focus on substantive information, not promotions or sales
+* If the article is primarily about price reductions, discounts, or limited-time offers, indicate this is a "price promotion article" rather than presenting it as significant news
 
 For multi-topic articles:
 * Use "In [timeframe], [main event]; [second event]; [third event]"
@@ -286,7 +308,7 @@ Create ONE 3-5 word title that:
 
 * Captures the main theme or themes
 * For single-topic articles:
-- The main thing in a headline is the fact. A headline should report an event and answer the questions “who?”, “what?”, and “where?”. Make the headline as informative as possible.
+- The main thing in a headline is the fact. A headline should report an event and answer the questions "who?", "what?", and "where?". Make the headline as informative as possible.
   - Good: *Trump Called Zelensky a Dictator*
   - Bad: _Revealed How Trump Called Zelensky_
 - The sentence MUST include a verb (an action). Always use a verb in the headline. The verb should add as much dynamism as possible.
@@ -303,6 +325,21 @@ Create ONE 3-5 word title that:
   - Good: *Germany Votes Today to Renew Bundestag*
   - Bad: _Germany Votes to Renew the Bundestag: Decisive Elections. The Scenarios_
 - Do not include details about projections, percentages, or secondary events.
+
+* CRITICAL FACTUAL ACCURACY REQUIREMENTS:
+- For rumors, leaks, or unconfirmed reports, your title MUST reflect this uncertainty
+  - Good: *iPhone Specs Leaked Online*
+  - Bad: *Apple Announces iPhone Specs* (when it's only a leak)
+- Never present rumors or leaks as confirmed facts
+  - Good: *Analyst Predicts Tesla Expansion*
+  - Bad: *Tesla Expands to New Markets* (when it's just a prediction)
+- Use verbs that accurately reflect the level of certainty
+  - For confirmed actions: "Announces", "Launches", "Releases"
+  - For rumors/leaks: "Reportedly", "Allegedly", "Rumored to", "Leaks Suggest"
+- For articles about price drops, discounts, or sales:
+  - Add "Sale:" prefix if the article is primarily about a promotional discount
+  - Example: *Sale: iPad Prices Reduced*
+
 * For multi-topic articles:
 - Use broader encompassing terms (e.g., "Global Weekly Developments")
 - Focus on the common thread if it exists
@@ -311,8 +348,12 @@ Create ONE 3-5 word title that:
 * Avoids clickbait or sensationalism
 * RETURN EXACTLY ONE TITLE, regardless of topic count
 
-**EXAMPLE (Single Topic):**
+**EXAMPLES (Single Topic):**
 "Trump Called Zelensky a Dictator"
+
+**EXAMPLES (With Attribution):**
+"iPhone Features Reportedly Leaked" (for leaks)
+"Apple Products' Prices Reduced" (for sales)
 
 **EXAMPLE (Multi-Topic):**
 "March Global Events Review"
@@ -1235,11 +1276,21 @@ Instructions:
    - Consider regional variations and local terminology
 2. Carefully read the article summary above.
 3. Compare the main focus of the article to the topic: {topic}
-4. Answer ONLY 'Yes' or 'No' based on the following criteria:
-   - Answer 'Yes' if the article is specifically about {topic} AND contains enough content for analysis,
-     regardless of the original language
-   - Answer 'No' if the article is not primarily about {topic}, only mentions it briefly, or is unrelated
-5. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
+4. Check if the article is primarily promotional:
+   - REJECT articles mainly about price reductions, discounts, or sales
+   - REJECT articles with titles or focuses like "Slashes Prices", "Offers Discounts", etc.
+   - REJECT articles that exist mainly to promote a sale or special offer
+   - ONLY accept articles that provide substantial information beyond price
+5. Answer ONLY 'Yes' or 'No' based on the following criteria:
+   - Answer 'Yes' if BOTH of these are true:
+     * The article is specifically about {topic} AND contains enough content for analysis
+     * The article is NOT primarily promotional or about price reductions/sales
+   - Answer 'No' if ANY of these are true:
+     * The article is not primarily about {topic}
+     * The article only mentions it briefly
+     * The article is unrelated
+     * The article is PRIMARILY about price drops, sales, or discounts
+6. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
 Answer:"#,
         article = article_text,
         topic = topic_name
@@ -1310,6 +1361,44 @@ Instructions:
      d) Is speculative about future possibilities
      e) Is primarily promotional content
 4. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
+Answer:"#,
+        article = article_text
+    )
+}
+
+pub fn filter_promotional_content(article_text: &str) -> String {
+    format!(
+        r#"
+----------
+{article}
+----------
+
+Question: Is this article primarily about a product price reduction, discount, sale, or special offer?
+Instructions:
+1. Carefully examine the article to determine if its primary purpose is to announce or promote:
+   - Price reductions or discounts
+   - Limited-time sales or offers
+   - Special pricing events or promotions
+   - Product deals or bargains
+
+2. Look for these specific patterns:
+   - Phrases like "slashes prices", "slashing prices", "price cut", "discount", "sale"
+   - Focus on temporary price changes rather than product features
+   - Primary emphasis on saving money rather than product information
+   - Headlines emphasizing price reductions rather than product capabilities
+   - Limited substantive information beyond pricing details
+
+3. Examples of promotional articles to REJECT:
+   - "Garmin Slashes Price on Forerunner 965 Smartwatch for Spring Sale"
+   - "Hydrow Offers Discounts on Rowing Machines in April 2025"
+   - "Amazon Slashes Prices on iPad Air, 11th Gen iPad"
+   - "Sony Headphones at 40% Off During Memorial Day Weekend"
+
+4. Answer ONLY 'Yes' or 'No' based on these criteria:
+   - Answer 'Yes' if the article is PRIMARILY about a price reduction, sale, or discount
+   - Answer 'No' if the article has substantial informational content beyond any mention of price
+
+5. Do not explain your reasoning - provide only a one-word answer: 'Yes' or 'No'.
 Answer:"#,
         article = article_text
     )
