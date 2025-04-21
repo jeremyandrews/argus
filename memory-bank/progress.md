@@ -111,6 +111,14 @@ Argus is currently in active development with major components implemented and f
   - This extracts only the date portion (YYYY-MM-DD) from both dates, avoiding timezone complexities
   - Verified fix with direct SQL testing showing proper date-only matching
   - Enhanced diagnostics confirmed the root cause and solution effectiveness
+- ✅ **Date Window Approach for Related Articles**: Implemented a more robust date filtering method
+  - Changed from fixed threshold date to a dynamic date window around each article's own publication date
+  - Window spans from 14 days before to 1 day after the article's publication date
+  - Updated `get_articles_by_entities_with_date` in db.rs to use this window approach
+  - Modified `get_similar_articles_with_entities` and `get_articles_by_entities` in vector.rs to pass source article ID
+  - Added code to retrieve the source article's publication date for date window calculation
+  - Enhanced logging to monitor effectiveness of the date window approach
+  - Identified future cleanup needs for articles with unrealistic dates
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

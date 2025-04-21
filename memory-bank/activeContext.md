@@ -134,9 +134,20 @@ We're implementing comprehensive diagnostics to identify why entity-based relate
 - ✅ This approach ensures proper date comparison regardless of RFC3339 specific format variations
 
 **Next Steps**
-- 🔄 Deploy the fix and verify related articles now appear in the app
+- ✅ Fixed the issue with the date filtering using a date window approach
 - 🔄 Monitor logs to ensure entity matching continues to work properly
-- 🔄 Consider adding additional validation for date fields to prevent similar issues
+- 🔄 Plan for date data cleanup to handle articles with future or invalid dates
+- 🔄 Improve date validation when articles are initially processed
+
+**Date Window Approach and Future Cleanup**
+- ✅ Changed from fixed date threshold to a dynamic date window (14 days before to 1 day after article's publication date)
+- ✅ Updated code in `db.rs` and `vector.rs` to use article's own publication date as a reference point
+- ✅ Added comprehensive logging to identify issues with date filtering
+- 🔄 Future data cleanup needed:
+  - Identify and fix articles with unrealistic future dates (beyond current date + 1 day)
+  - Review RSS feed processing to reject or flag articles with unlikely publication dates
+  - Consider implementing SQLite date validation in the schema
+  - Clean up corresponding vector database entries for articles with invalid dates
 
 ### Previous Focus: Fixing Inconsistent Entity-Based Article Matching
 

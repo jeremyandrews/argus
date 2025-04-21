@@ -1424,17 +1424,17 @@ impl Database {
     }
 
     /// Get articles that share significant entities with the given entity IDs
-    /// and are newer than the given date threshold
+    /// and are within a date window around the source article date
     pub async fn get_articles_by_entities_with_date(
         &self,
         entity_ids: &[i64],
         limit: u64,
-        date_threshold: &str,
+        source_date: &str,
     ) -> Result<Vec<(i64, Option<String>, Option<String>, Option<i64>, i64, i64)>, sqlx::Error>
     {
         // Log the search criteria
-        info!(target: TARGET_DB, "Looking for articles with entities: {:?}, date threshold: {}, limit: {}", 
-              entity_ids, date_threshold, limit);
+        info!(target: TARGET_DB, "Looking for articles with entities: {:?}, source date: {}, limit: {}", 
+              entity_ids, source_date, limit);
 
         // Convert entity_ids to a JSON array string for SQLite's json_each function
         let entity_ids_json = serde_json::to_string(entity_ids).map_err(|e| {
@@ -1466,7 +1466,7 @@ impl Database {
         };
 
         // Query for articles that share entities, prioritizing those with PRIMARY importance
-        // and filtering by date threshold
+        // and filtering by date window (14 days before to 1 day after the source article date)
         let query = r#"
             SELECT a.id, a.pub_date as published_date, a.category, a.quality_score,
                    COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
@@ -1474,13 +1474,18 @@ impl Database {
             FROM articles a
             JOIN article_entities ae ON a.id = ae.article_id
             WHERE ae.entity_id IN (SELECT value FROM json_each(?))
-            AND substr(a.pub_date, 1, 10) >= substr(?, 1, 10)
+            AND date(substr(a.pub_date, 1, 10)) >= date(substr(?, 1, 10), '-14 days')
+            AND date(substr(a.pub_date, 1, 10)) <= date(substr(?, 1, 10), '+1 day')
             GROUP BY a.id
             ORDER BY primary_count DESC, total_count DESC
             LIMIT ?
             "#;
 
         info!(target: TARGET_DB, "Entity search query: {}", query);
+
+        // Log the date window we're using
+        info!(target: TARGET_DB, "Using date window: from {} - 14 days to {} + 1 day", 
+              source_date, source_date);
 
         // Log some sample pub_dates from the database
         let sample_dates: Vec<String> = match sqlx::query_scalar(
@@ -1499,13 +1504,14 @@ impl Database {
 
         let rows = sqlx::query(query)
             .bind(&entity_ids_json)
-            .bind(date_threshold)
+            .bind(source_date) // Min date
+            .bind(source_date) // Max date
             .bind(limit as i64)
             .fetch_all(&self.pool)
             .await?;
 
-        info!(target: TARGET_DB, "Entity search returned {} results for entities: {:?} (with date filter > {})", 
-            rows.len(), entity_ids, date_threshold);
+        info!(target: TARGET_DB, "Entity search returned {} results for entities: {:?} using date window", 
+            rows.len(), entity_ids);
 
         // If we got no results with date filter but had matches without it, log this critical info
         if rows.is_empty() && total_matching > 0 {

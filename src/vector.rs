@@ -755,7 +755,8 @@ pub async fn get_similar_articles_with_entities(
     if let Some(ids) = entity_ids {
         if !ids.is_empty() {
             info!(target: TARGET_VECTOR, "Performing entity-based search with {} entity IDs...", ids.len());
-            let entity_matches = get_articles_by_entities(ids, limit * 2).await?;
+            let entity_matches =
+                get_articles_by_entities(ids, limit * 2, source_article_id).await?;
 
             info!(target: TARGET_VECTOR, 
                 "Entity search returned {} results for entity IDs: {:?}",
@@ -1019,17 +1020,34 @@ pub async fn get_similar_articles_with_entities(
 }
 
 /// Get articles that share significant entities with the given entity IDs
-async fn get_articles_by_entities(entity_ids: &[i64], limit: u64) -> Result<Vec<ArticleMatch>> {
+async fn get_articles_by_entities(
+    entity_ids: &[i64],
+    limit: u64,
+    source_article_id: Option<i64>,
+) -> Result<Vec<ArticleMatch>> {
     let db = crate::db::Database::instance().await;
 
-    // Calculate date threshold for recent articles
-    let date_threshold = calculate_similarity_date_threshold();
-    info!(target: TARGET_VECTOR, "Using date threshold for entity-based search: {} (calculated from {} days ago)", 
-          date_threshold, SIMILARITY_TIME_WINDOW_DAYS);
+    // Get the source article's publication date if we have a source article ID
+    let source_date = if let Some(id) = source_article_id {
+        match db.get_article_details_with_dates(id).await {
+            Ok((pub_date, _)) => pub_date,
+            Err(e) => {
+                error!(target: TARGET_VECTOR, "Failed to get source article date: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
-    // Use the database function we added to get articles by entities with date filter
+    // Use the article's own date, or current date as fallback
+    let date_for_search = source_date.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    info!(target: TARGET_VECTOR, "Using source date for article similarity: {}", date_for_search);
+
+    // Use the database function to get articles by entities within a date window
     let entity_matches = db
-        .get_articles_by_entities_with_date(entity_ids, limit, &date_threshold)
+        .get_articles_by_entities_with_date(entity_ids, limit, &date_for_search)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get articles by entities: {}", e))?;
 
