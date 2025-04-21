@@ -1380,8 +1380,7 @@ impl Database {
         &self,
         entity_ids: &[i64],
         limit: u64,
-    ) -> Result<Vec<(i64, Option<String>, Option<String>, Option<i64>, i64, i64)>, sqlx::Error>
-    {
+    ) -> Result<Vec<(i64, Option<String>, Option<String>, i64, i64)>, sqlx::Error> {
         // Convert entity_ids to a JSON array string for SQLite's json_each function
         let entity_ids_json = serde_json::to_string(entity_ids).map_err(|e| {
             sqlx::Error::Protocol(format!("JSON serialization error: {}", e).into())
@@ -1406,15 +1405,14 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
 
-        // Convert rows to tuples
-        let results = rows
+        // Convert rows to tuples - must match the expected return type in function signature
+        let results: Vec<(i64, Option<String>, Option<String>, i64, i64)> = rows
             .into_iter()
             .map(|row| {
                 (
                     row.get("id"),
                     row.get("published_date"),
                     row.get("category"),
-                    row.get("quality_score"),
                     row.get::<i64, _>("primary_count"),
                     row.get::<i64, _>("total_count"),
                 )
@@ -1431,8 +1429,7 @@ impl Database {
         entity_ids: &[i64],
         limit: u64,
         source_date: &str,
-    ) -> Result<Vec<(i64, Option<String>, Option<String>, Option<i64>, i64, i64)>, sqlx::Error>
-    {
+    ) -> Result<Vec<(i64, Option<String>, Option<String>, i64, i64)>, sqlx::Error> {
         // Log the search criteria
         info!(target: TARGET_DB, "Looking for articles with entities: {:?}, source date: {}, limit: {}", 
               entity_ids, source_date, limit);
@@ -1468,7 +1465,7 @@ impl Database {
 
         // Base query without date filtering
         let base_query = r#"
-            SELECT a.id, a.pub_date as published_date, a.category, a.quality_score,
+            SELECT a.id, a.pub_date as published_date, a.category,
                    COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
                    COUNT(ae.entity_id) as total_count
             FROM articles a
@@ -1576,15 +1573,14 @@ impl Database {
             }
         }
 
-        // Convert rows to tuples
-        let results = rows
+        // Convert rows to tuples - must match the expected return type (5-tuple)
+        let results: Vec<(i64, Option<String>, Option<String>, i64, i64)> = rows
             .into_iter()
             .map(|row| {
                 (
                     row.get("id"),
                     row.get("published_date"),
                     row.get("category"),
-                    row.get("quality_score"),
                     row.get::<i64, _>("primary_count"),
                     row.get::<i64, _>("total_count"),
                 )

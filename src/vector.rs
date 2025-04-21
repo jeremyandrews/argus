@@ -7,10 +7,9 @@ use candle_transformers::models::bert::{
 use once_cell::sync::OnceCell;
 use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::vectors::VectorsOptions;
-use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, PointId, PointStruct, SearchParams, SearchPoints, UpsertPoints,
-    VectorParams, VectorsConfig, WithPayloadSelector, WithVectorsSelector, WriteOrdering,
+    PointId, PointStruct, SearchParams, SearchPoints, UpsertPoints, WithPayloadSelector,
+    WithVectorsSelector, WriteOrdering,
 };
 use qdrant_client::Qdrant;
 use serde_json::json;
@@ -693,6 +692,369 @@ struct EnhancedArticleMatch {
     quality_score: i8,
 }
 
+/// Get articles that share significant entities with the given entity IDs
+async fn get_articles_by_entities(
+    entity_ids: &[i64],
+    limit: u64,
+    source_article_id: Option<i64>,
+) -> Result<Vec<ArticleMatch>> {
+    let db = crate::db::Database::instance().await;
+
+    // Get the source article's publication date if we have a source article ID
+    let source_date = if let Some(id) = source_article_id {
+        match db.get_article_details_with_dates(id).await {
+            Ok((pub_date, _)) => pub_date,
+            Err(e) => {
+                error!(target: TARGET_VECTOR, "Failed to get source article date: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Use the article's own date, or current date as fallback
+    let date_for_search = source_date.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    info!(target: TARGET_VECTOR, "Using source date for article similarity: {}", date_for_search);
+
+    // Use the database function to get articles by entities within a date window
+    let entity_matches = db
+        .get_articles_by_entities_with_date(entity_ids, limit, &date_for_search)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get articles by entities: {}", e))?;
+
+    // Convert to ArticleMatch objects
+    let matches: Vec<ArticleMatch> = entity_matches
+        .into_iter()
+        .map(
+            |(id, published_date, category, primary_count, total_count)| {
+                // Use default quality score of 0
+                let quality_score = 0i8;
+
+                // Calculate a preliminary score based on entity overlap
+                let primary_count = primary_count as f32;
+                let total_count = total_count as f32;
+
+                // Score formula: prioritize PRIMARY entities but also consider total overlap
+                let entity_score = if total_count > 0.0 {
+                    (0.7 * (primary_count / entity_ids.len() as f32))
+                        + (0.3 * (total_count / entity_ids.len() as f32))
+                } else {
+                    0.0
+                };
+
+                ArticleMatch {
+                    id,
+                    published_date: published_date.unwrap_or_default(),
+                    category: category.unwrap_or_default(),
+                    quality_score,
+                    score: entity_score, // Preliminary score, will be refined later
+
+                    // Add entity metrics fields
+                    vector_score: None, // Will be calculated later
+                    vector_active_dimensions: None,
+                    vector_magnitude: None,
+                    entity_overlap_count: Some(total_count as usize),
+                    primary_overlap_count: Some(primary_count as usize),
+                    person_overlap: None, // Detailed metrics not available at this stage
+                    org_overlap: None,
+                    location_overlap: None,
+                    event_overlap: None,
+                    temporal_proximity: None,
+                    similarity_formula: Some(format!("Entity-based score: 70% primary entities ({} of {}) + 30% total entities ({} of {})",
+                        primary_count as usize, entity_ids.len(), total_count as usize, entity_ids.len())),
+                }
+            },
+        )
+        .collect();
+
+    Ok(matches)
+}
+
+/// Calculate vector similarity between an embedding and a specific article
+async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
+    let client = Qdrant::from_url(
+        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .build()?;
+
+    // Get the article's vector from Qdrant
+    let response = client
+        .get_points(qdrant_client::qdrant::GetPoints {
+            collection_name: "articles".to_string(),
+            ids: vec![PointId {
+                point_id_options: Some(PointIdOptions::Num(article_id as u64)),
+            }],
+            with_payload: Some(WithPayloadSelector::from(false)),
+            with_vectors: Some(WithVectorsSelector::from(true)),
+            ..Default::default()
+        })
+        .await?;
+
+    // Extract the vector from the response
+    if let Some(point) = response.result.first() {
+        if let Some(vectors) = &point.vectors {
+            if let Some(opts) = &vectors.vectors_options {
+                // Extract the vector data using fully qualified type path
+                let vector_data = match opts {
+                    &qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(ref v) => {
+                        &v.data
+                    }
+                    _ => {
+                        error!(target: TARGET_VECTOR, "Unexpected vector format for article {}", article_id);
+                        return Ok(0.0);
+                    }
+                };
+
+                // Calculate cosine similarity
+                let dot_product: f32 = embedding
+                    .iter()
+                    .zip(vector_data.iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+
+                let mag1: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let mag2: f32 = vector_data.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+                let similarity = if mag1 > 0.0 && mag2 > 0.0 {
+                    dot_product / (mag1 * mag2)
+                } else {
+                    0.0
+                };
+
+                return Ok(similarity);
+            }
+        }
+    }
+
+    // If we couldn't get the vector or calculate similarity
+    error!(
+        target: TARGET_VECTOR,
+        "Failed to calculate vector similarity for article {}", article_id
+    );
+    Ok(0.0) // Default to no similarity
+}
+
+/// Get all entities for a specific article
+async fn get_article_entities(article_id: i64) -> Result<Option<crate::entity::ExtractedEntities>> {
+    let db = crate::db::Database::instance().await;
+
+    // Get article's date information
+    let (_pub_date, event_date) = db.get_article_details_with_dates(article_id).await?;
+
+    // Create an extracted entities object
+    let mut extracted = crate::entity::ExtractedEntities::new();
+
+    // Set event date if available
+    if let Some(date) = event_date {
+        extracted = extracted.with_event_date(&date);
+    }
+
+    // Get all entities linked to this article
+    let entities = db.get_article_entities(article_id).await?;
+
+    // Convert database rows to Entity objects
+    for (entity_id, name, entity_type_str, importance_str) in entities {
+        let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
+        let importance = crate::entity::ImportanceLevel::from(importance_str.as_str());
+
+        // Create entity and add to collection
+        let entity =
+            crate::entity::Entity::new(&name, &name.to_lowercase(), entity_type, importance)
+                .with_id(entity_id);
+
+        extracted.add_entity(entity);
+    }
+
+    if extracted.entities.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(extracted))
+}
+
+/// Build an ExtractedEntities object from entity IDs
+async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::ExtractedEntities> {
+    let db = crate::db::Database::instance().await;
+    let mut extracted = crate::entity::ExtractedEntities::new();
+
+    info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs with detailed tracing: {:?}", entity_ids.len(), entity_ids);
+
+    // If there are entity IDs, try to determine the article ID they're from
+    // by checking the article_entities table
+    if !entity_ids.is_empty() {
+        let article_id_result = sqlx::query_scalar::<_, i64>(
+            "SELECT article_id FROM article_entities WHERE entity_id = ? LIMIT 1",
+        )
+        .bind(entity_ids[0]) // Just use the first entity ID to find the article
+        .fetch_optional(db.pool())
+        .await;
+
+        if let Ok(Some(article_id)) = article_id_result {
+            // Found source article - get all entities with proper relationships
+            info!(target: TARGET_VECTOR, "Found source article ID {} for entity ID {}", article_id, entity_ids[0]);
+
+            match db.get_article_entities(article_id).await {
+                Ok(article_entities) => {
+                    info!(target: TARGET_VECTOR, "Database returned {} total entities for article {}", article_entities.len(), article_id);
+
+                    // Filter to include only entities in our entity_ids list
+                    for (entity_id, name, entity_type_str, importance_str) in article_entities {
+                        if entity_ids.contains(&entity_id) {
+                            let entity_type =
+                                crate::entity::EntityType::from(entity_type_str.as_str());
+                            let importance =
+                                crate::entity::ImportanceLevel::from(importance_str.as_str());
+
+                            let entity = crate::entity::Entity::new(
+                                &name,
+                                &name.to_lowercase(),
+                                entity_type,
+                                importance, // Use actual importance from database
+                            )
+                            .with_id(entity_id);
+
+                            info!(target: TARGET_VECTOR, "Added entity with proper relationship: id={}, name='{}', type={}, importance={}", 
+                                entity_id, name, entity_type_str, importance_str);
+                            extracted.add_entity(entity);
+                        }
+                    }
+
+                    // If we didn't match all entities, fall back to basic lookup for the rest
+                    if extracted.entities.len() < entity_ids.len() {
+                        let found_ids: std::collections::HashSet<i64> =
+                            extracted.entities.iter().filter_map(|e| e.id).collect();
+
+                        let missing_ids: Vec<i64> = entity_ids
+                            .iter()
+                            .filter(|&&id| !found_ids.contains(&id))
+                            .copied()
+                            .collect();
+
+                        info!(target: TARGET_VECTOR, "Missing {} entities, falling back to basic lookup for IDs: {:?}", 
+                              missing_ids.len(), missing_ids);
+
+                        // Fall back to basic lookup for missing entities
+                        for &id in &missing_ids {
+                            if let Ok(Some((name, entity_type_str, _parent_id))) =
+                                db.get_entity_details(id).await
+                            {
+                                let entity_type =
+                                    crate::entity::EntityType::from(entity_type_str.as_str());
+
+                                let entity = crate::entity::Entity::new(
+                                    &name,
+                                    &name.to_lowercase(),
+                                    entity_type,
+                                    crate::entity::ImportanceLevel::Primary, // Default to PRIMARY for fallback
+                                )
+                                .with_id(id);
+
+                                info!(target: TARGET_VECTOR, "Added fallback entity: id={}, name='{}', type={}", 
+                                      id, name, entity_type_str);
+                                extracted.add_entity(entity);
+                            } else {
+                                error!(target: TARGET_VECTOR, "Failed to get details for entity ID {} - entity is missing from database", id);
+                            }
+                        }
+                    }
+
+                    // Add detailed entity breakdown
+                    info!(
+                        target: TARGET_VECTOR,
+                        "Entity retrieval details: total entities={}, by importance: PRIMARY={}, SECONDARY={}, MENTIONED={}",
+                        extracted.entities.len(),
+                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Primary).count(),
+                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Secondary).count(),
+                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Mentioned).count()
+                    );
+
+                    // Add entity type breakdown
+                    info!(
+                        target: TARGET_VECTOR,
+                        "Entity types breakdown: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Person).count(),
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Organization).count(),
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Location).count(),
+                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Event).count()
+                    );
+
+                    info!(target: TARGET_VECTOR, "Built {} entities using article relationship data", extracted.entities.len());
+                    return Ok(extracted);
+                }
+                Err(e) => {
+                    error!(target: TARGET_VECTOR, "Failed to get article entities for article {}: {}", article_id, e);
+                    // Fall through to basic lookup below
+                }
+            }
+        } else if let Err(e) = article_id_result {
+            error!(target: TARGET_VECTOR, "Database error when trying to find source article for entity ID {}: {}", entity_ids[0], e);
+        } else {
+            warn!(target: TARGET_VECTOR, "Could not determine source article ID for entity ID {}", entity_ids[0]);
+        }
+    }
+
+    // Fall back to basic entity lookup if we couldn't find relationship data
+    for &id in entity_ids {
+        if let Ok(Some((name, entity_type_str, _parent_id))) = db.get_entity_details(id).await {
+            let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
+
+            // Create entity with PRIMARY importance (these are our source entities)
+            let entity = crate::entity::Entity::new(
+                &name,
+                &name.to_lowercase(),
+                entity_type,
+                crate::entity::ImportanceLevel::Primary,
+            )
+            .with_id(id);
+
+            info!(target: TARGET_VECTOR, "Added source entity: id={}, name='{}', type={}", 
+                  id, name, entity_type_str);
+            extracted.add_entity(entity);
+        } else {
+            error!(target: TARGET_VECTOR, "Failed to get details for entity ID {} - entity is missing from database", id);
+        }
+    }
+
+    // Critical error if we have no entities despite having IDs
+    if extracted.entities.is_empty() && !entity_ids.is_empty() {
+        error!(
+            target: TARGET_VECTOR,
+            "CRITICAL: Failed to retrieve any entities despite having {} entity IDs: {:?}",
+            entity_ids.len(), entity_ids
+        );
+    }
+
+    // Add detailed entity breakdown
+    if !extracted.entities.is_empty() {
+        info!(
+            target: TARGET_VECTOR,
+            "Entity retrieval details: total entities={}, by importance: PRIMARY={}, SECONDARY={}, MENTIONED={}",
+            extracted.entities.len(),
+            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Primary).count(),
+            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Secondary).count(),
+            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Mentioned).count()
+        );
+
+        // Add entity type breakdown
+        info!(
+            target: TARGET_VECTOR,
+            "Entity types breakdown: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Person).count(),
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Organization).count(),
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Location).count(),
+            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Event).count()
+        );
+    }
+
+    info!(target: TARGET_VECTOR, "Built {} source entities from {} entity IDs using basic lookup", 
+          extracted.entities.len(), entity_ids.len());
+
+    Ok(extracted)
+}
+
 /// Find similar articles using a dual-query approach that combines vector similarity with entity matching
 pub async fn get_similar_articles_with_entities(
     embedding: &Vec<f32>,
@@ -1027,393 +1389,4 @@ pub async fn get_similar_articles_with_entities(
     }
 
     Ok(final_matches)
-}
-
-/// Get articles that share significant entities with the given entity IDs
-async fn get_articles_by_entities(
-    entity_ids: &[i64],
-    limit: u64,
-    source_article_id: Option<i64>,
-) -> Result<Vec<ArticleMatch>> {
-    let db = crate::db::Database::instance().await;
-
-    // Get the source article's publication date if we have a source article ID
-    let source_date = if let Some(id) = source_article_id {
-        match db.get_article_details_with_dates(id).await {
-            Ok((pub_date, _)) => pub_date,
-            Err(e) => {
-                error!(target: TARGET_VECTOR, "Failed to get source article date: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // Use the article's own date, or current date as fallback
-    let date_for_search = source_date.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
-
-    info!(target: TARGET_VECTOR, "Using source date for article similarity: {}", date_for_search);
-
-    // Use the database function to get articles by entities within a date window
-    let entity_matches = db
-        .get_articles_by_entities_with_date(entity_ids, limit, &date_for_search)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get articles by entities: {}", e))?;
-
-    // Convert to ArticleMatch objects
-    let matches: Vec<ArticleMatch> = entity_matches
-        .into_iter()
-        .map(
-            |(id, published_date, category, quality_score, primary_count, total_count)| {
-                let quality_score = quality_score.unwrap_or(0) as i8;
-
-                // Calculate a preliminary score based on entity overlap
-                let primary_count = primary_count as f32;
-                let total_count = total_count as f32;
-
-                // Score formula: prioritize PRIMARY entities but also consider total overlap
-                let entity_score = if total_count > 0.0 {
-                    (0.7 * (primary_count / entity_ids.len() as f32))
-                        + (0.3 * (total_count / entity_ids.len() as f32))
-                } else {
-                    0.0
-                };
-
-                ArticleMatch {
-                    id,
-                    published_date: published_date.unwrap_or_default(),
-                    category: category.unwrap_or_default(),
-                    quality_score,
-                    score: entity_score, // Preliminary score, will be refined later
-
-                    // Add entity metrics fields
-                    vector_score: None, // Will be calculated later
-                    vector_active_dimensions: None,
-                    vector_magnitude: None,
-                    entity_overlap_count: Some(total_count as usize),
-                    primary_overlap_count: Some(primary_count as usize),
-                    person_overlap: None, // Detailed metrics not available at this stage
-                    org_overlap: None,
-                    location_overlap: None,
-                    event_overlap: None,
-                    temporal_proximity: None,
-                    similarity_formula: Some(format!("Entity-based score: 70% primary entities ({} of {}) + 30% total entities ({} of {})",
-                        primary_count as usize, entity_ids.len(), total_count as usize, entity_ids.len())),
-                }
-            },
-        )
-        .collect();
-
-    info!(target: TARGET_VECTOR, "Found {} articles by entity matching", matches.len());
-    Ok(matches)
-}
-
-/// Calculate vector similarity between an embedding and a specific article
-async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
-    let client = Qdrant::from_url(
-        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
-    )
-    .timeout(std::time::Duration::from_secs(60))
-    .build()?;
-
-    // Get the article's vector from Qdrant
-    let response = client
-        .get_points(qdrant_client::qdrant::GetPoints {
-            collection_name: "articles".to_string(),
-            ids: vec![PointId {
-                point_id_options: Some(PointIdOptions::Num(article_id as u64)),
-            }],
-            with_payload: Some(WithPayloadSelector::from(false)),
-            with_vectors: Some(WithVectorsSelector::from(true)),
-            ..Default::default()
-        })
-        .await?;
-
-    // Extract the vector from the response
-    if let Some(point) = response.result.first() {
-        if let Some(vectors) = &point.vectors {
-            if let Some(opts) = &vectors.vectors_options {
-                // Extract the vector data using fully qualified type path
-                let vector_data = match opts {
-                    &qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(ref v) => {
-                        &v.data
-                    }
-                    _ => {
-                        error!(target: TARGET_VECTOR, "Unexpected vector format for article {}", article_id);
-                        return Ok(0.0);
-                    }
-                };
-
-                // Calculate cosine similarity
-                let dot_product: f32 = embedding
-                    .iter()
-                    .zip(vector_data.iter())
-                    .map(|(a, b)| a * b)
-                    .sum();
-
-                let mag1: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let mag2: f32 = vector_data.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-                let similarity = if mag1 > 0.0 && mag2 > 0.0 {
-                    dot_product / (mag1 * mag2)
-                } else {
-                    0.0
-                };
-
-                return Ok(similarity);
-            }
-        }
-    }
-
-    // If we couldn't get the vector or calculate similarity
-    error!(
-        target: TARGET_VECTOR,
-        "Failed to calculate vector similarity for article {}", article_id
-    );
-    Ok(0.0) // Default to no similarity
-}
-
-/// Get all entities for a specific article
-async fn get_article_entities(article_id: i64) -> Result<Option<crate::entity::ExtractedEntities>> {
-    let db = crate::db::Database::instance().await;
-
-    // Get article's date information
-    let (_pub_date, event_date) = db.get_article_details_with_dates(article_id).await?;
-
-    // Create an extracted entities object
-    let mut extracted = crate::entity::ExtractedEntities::new();
-
-    // Set event date if available
-    if let Some(date) = event_date {
-        extracted = extracted.with_event_date(&date);
-    }
-
-    // Get all entities linked to this article
-    let entities = db.get_article_entities(article_id).await?;
-
-    // Convert database rows to Entity objects
-    for (entity_id, name, entity_type_str, importance_str) in entities {
-        let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
-        let importance = crate::entity::ImportanceLevel::from(importance_str.as_str());
-
-        // Create entity and add to collection
-        let entity =
-            crate::entity::Entity::new(&name, &name.to_lowercase(), entity_type, importance)
-                .with_id(entity_id);
-
-        extracted.add_entity(entity);
-    }
-
-    if extracted.entities.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(extracted))
-}
-
-/// Build an ExtractedEntities object from entity IDs
-async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::ExtractedEntities> {
-    let db = crate::db::Database::instance().await;
-    let mut extracted = crate::entity::ExtractedEntities::new();
-
-    info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs with detailed tracing: {:?}", entity_ids.len(), entity_ids);
-
-    // If there are entity IDs, try to determine the article ID they're from
-    // by checking the article_entities table
-    if !entity_ids.is_empty() {
-        let article_id_result = sqlx::query_scalar::<_, i64>(
-            "SELECT article_id FROM article_entities WHERE entity_id = ? LIMIT 1",
-        )
-        .bind(entity_ids[0]) // Just use the first entity ID to find the article
-        .fetch_optional(db.pool())
-        .await;
-
-        if let Ok(Some(article_id)) = article_id_result {
-            // Found source article - get all entities with proper relationships
-            info!(target: TARGET_VECTOR, "Found source article ID {} for entity ID {}", article_id, entity_ids[0]);
-
-            match db.get_article_entities(article_id).await {
-                Ok(article_entities) => {
-                    info!(target: TARGET_VECTOR, "Database returned {} total entities for article {}", article_entities.len(), article_id);
-
-                    // Filter to include only entities in our entity_ids list
-                    for (entity_id, name, entity_type_str, importance_str) in article_entities {
-                        if entity_ids.contains(&entity_id) {
-                            let entity_type =
-                                crate::entity::EntityType::from(entity_type_str.as_str());
-                            let importance =
-                                crate::entity::ImportanceLevel::from(importance_str.as_str());
-
-                            let entity = crate::entity::Entity::new(
-                                &name,
-                                &name.to_lowercase(),
-                                entity_type,
-                                importance, // Use actual importance from database
-                            )
-                            .with_id(entity_id);
-
-                            info!(target: TARGET_VECTOR, "Added entity with proper relationship: id={}, name='{}', type={}, importance={}", 
-                                entity_id, name, entity_type_str, importance_str);
-                            extracted.add_entity(entity);
-                        }
-                    }
-
-                    // If we didn't match all entities, fall back to basic lookup for the rest
-                    if extracted.entities.len() < entity_ids.len() {
-                        let found_ids: std::collections::HashSet<i64> =
-                            extracted.entities.iter().filter_map(|e| e.id).collect();
-
-                        let missing_ids: Vec<i64> = entity_ids
-                            .iter()
-                            .filter(|&&id| !found_ids.contains(&id))
-                            .copied()
-                            .collect();
-
-                        info!(target: TARGET_VECTOR, "Missing {} entities, falling back to basic lookup for IDs: {:?}", 
-                              missing_ids.len(), missing_ids);
-
-                        // Fall back to basic lookup for missing entities
-                        for &id in &missing_ids {
-                            if let Ok(Some((name, entity_type_str, _parent_id))) =
-                                db.get_entity_details(id).await
-                            {
-                                let entity_type =
-                                    crate::entity::EntityType::from(entity_type_str.as_str());
-
-                                let entity = crate::entity::Entity::new(
-                                    &name,
-                                    &name.to_lowercase(),
-                                    entity_type,
-                                    crate::entity::ImportanceLevel::Primary, // Default to PRIMARY for fallback
-                                )
-                                .with_id(id);
-
-                                info!(target: TARGET_VECTOR, "Added fallback entity: id={}, name='{}', type={}", 
-                                      id, name, entity_type_str);
-                                extracted.add_entity(entity);
-                            } else {
-                                error!(target: TARGET_VECTOR, "Failed to get details for entity ID {} - entity is missing from database", id);
-                            }
-                        }
-                    }
-
-                    // Add detailed entity breakdown
-                    info!(
-                        target: TARGET_VECTOR,
-                        "Entity retrieval details: total entities={}, by importance: PRIMARY={}, SECONDARY={}, MENTIONED={}",
-                        extracted.entities.len(),
-                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Primary).count(),
-                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Secondary).count(),
-                        extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Mentioned).count()
-                    );
-
-                    // Add entity type breakdown
-                    info!(
-                        target: TARGET_VECTOR,
-                        "Entity types breakdown: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
-                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Person).count(),
-                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Organization).count(),
-                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Location).count(),
-                        extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Event).count()
-                    );
-
-                    info!(target: TARGET_VECTOR, "Built {} entities using article relationship data", extracted.entities.len());
-                    return Ok(extracted);
-                }
-                Err(e) => {
-                    error!(target: TARGET_VECTOR, "Failed to get article entities for article {}: {}", article_id, e);
-                    // Fall through to basic lookup below
-                }
-            }
-        } else if let Err(e) = article_id_result {
-            error!(target: TARGET_VECTOR, "Database error when trying to find source article for entity ID {}: {}", entity_ids[0], e);
-        } else {
-            warn!(target: TARGET_VECTOR, "Could not determine source article ID for entity ID {}", entity_ids[0]);
-        }
-    }
-
-    // Fall back to basic entity lookup if we couldn't find relationship data
-    for &id in entity_ids {
-        if let Ok(Some((name, entity_type_str, _parent_id))) = db.get_entity_details(id).await {
-            let entity_type = crate::entity::EntityType::from(entity_type_str.as_str());
-
-            // Create entity with PRIMARY importance (these are our source entities)
-            let entity = crate::entity::Entity::new(
-                &name,
-                &name.to_lowercase(),
-                entity_type,
-                crate::entity::ImportanceLevel::Primary,
-            )
-            .with_id(id);
-
-            info!(target: TARGET_VECTOR, "Added source entity: id={}, name='{}', type={}", 
-                  id, name, entity_type_str);
-            extracted.add_entity(entity);
-        } else {
-            error!(target: TARGET_VECTOR, "Failed to get details for entity ID {} - entity is missing from database", id);
-        }
-    }
-
-    // Critical error if we have no entities despite having IDs
-    if extracted.entities.is_empty() && !entity_ids.is_empty() {
-        error!(
-            target: TARGET_VECTOR,
-            "CRITICAL: Failed to retrieve any entities despite having {} entity IDs: {:?}",
-            entity_ids.len(), entity_ids
-        );
-    }
-
-    // Add detailed entity breakdown
-    if !extracted.entities.is_empty() {
-        info!(
-            target: TARGET_VECTOR,
-            "Entity retrieval details: total entities={}, by importance: PRIMARY={}, SECONDARY={}, MENTIONED={}",
-            extracted.entities.len(),
-            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Primary).count(),
-            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Secondary).count(),
-            extracted.entities.iter().filter(|e| e.importance == crate::entity::ImportanceLevel::Mentioned).count()
-        );
-
-        // Add entity type breakdown
-        info!(
-            target: TARGET_VECTOR,
-            "Entity types breakdown: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
-            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Person).count(),
-            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Organization).count(),
-            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Location).count(),
-            extracted.entities.iter().filter(|e| e.entity_type == crate::entity::EntityType::Event).count()
-        );
-    }
-
-    info!(target: TARGET_VECTOR, "Built {} source entities from {} entity IDs using basic lookup", 
-          extracted.entities.len(), entity_ids.len());
-
-    Ok(extracted)
-}
-
-async fn _create_collection() -> Result<()> {
-    let qdrant_url =
-        std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required");
-    let client = Qdrant::from_url(&qdrant_url)
-        .timeout(std::time::Duration::from_secs(60))
-        .build()?;
-
-    let vector_params = VectorParams {
-        size: 1024, // E5 embedding size
-        distance: Distance::Cosine as i32,
-        ..Default::default()
-    };
-
-    let create_collection = CreateCollection {
-        collection_name: "articles".to_string(),
-        vectors_config: Some(VectorsConfig {
-            config: Some(Config::Params(vector_params)),
-        }),
-        ..Default::default()
-    };
-
-    client.create_collection(create_collection).await?;
-
-    Ok(())
 }
