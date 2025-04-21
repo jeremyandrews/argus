@@ -1477,14 +1477,15 @@ impl Database {
         "#;
 
         // Query with date filtering using COALESCE to check both event_date and pub_date
+        // and using today's date as the reference point for the window
         let query_with_date_filter = format!(
             r#"
             {}
             AND COALESCE(
                 date(substr(a.event_date, 1, 10)),
                 date(substr(a.pub_date, 1, 10))
-            ) BETWEEN date(substr(?, 1, 10), '-14 days')
-                   AND date(substr(?, 1, 10), '+1 day')
+            ) BETWEEN date('now', '-14 days')
+                   AND date('now', '+1 day')
             GROUP BY a.id
             ORDER BY primary_count DESC, total_count DESC
             LIMIT ?
@@ -1504,16 +1505,13 @@ impl Database {
         );
 
         // Log the date window we're using
-        info!(target: TARGET_DB, "Using date window: from {} - 14 days to {} + 1 day", 
-              source_date, source_date);
+        info!(target: TARGET_DB, "Using date window: from today - 14 days to today + 1 day");
 
         // Decide which query to use and execute it
         let rows = if !source_date.is_empty() {
             info!(target: TARGET_DB, "Using query with date filtering");
             sqlx::query(&query_with_date_filter)
                 .bind(&entity_ids_json)
-                .bind(source_date) // Min date
-                .bind(source_date) // Max date
                 .bind(limit as i64)
                 .fetch_all(&self.pool)
                 .await?
