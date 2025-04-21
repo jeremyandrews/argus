@@ -617,6 +617,8 @@ async fn process_analysis_item(
                     argument_quality,
                     source_type,
                     additional_insights,
+                    action_recommendations,
+                    talking_points,
                 ) = process_analysis(
                     &article_text,
                     &article_html,
@@ -655,6 +657,8 @@ async fn process_analysis_item(
                     "relation_to_topic": relation_to_topic,
                     "source_analysis": source_analysis,
                     "additional_insights": additional_insights,
+                    "action_recommendations": action_recommendations,
+                    "talking_points": talking_points,
                     "sources_quality": sources_quality,
                     "argument_quality": argument_quality,
                     "quality": quality,
@@ -905,6 +909,8 @@ async fn process_analysis_item(
                         argument_quality,
                         source_type,
                         additional_insights,
+                        action_recommendations,
+                        talking_points,
                     ) = process_analysis(
                         &article_text,
                         &article_html,
@@ -946,6 +952,8 @@ async fn process_analysis_item(
                             "relation_to_topic": relation,
                             "source_analysis": source_analysis,
                             "additional_insights": additional_insights,
+                            "action_recommendations": action_recommendations,
+                            "talking_points": talking_points,
                             "sources_quality": sources_quality,
                             "argument_quality": argument_quality,
                             "quality": quality,
@@ -1272,6 +1280,8 @@ async fn process_analysis(
     u8,
     String,
     String,
+    String,
+    String,
 ) {
     debug!("Starting analysis for article: {}", article_url);
 
@@ -1289,6 +1299,8 @@ async fn process_analysis(
             2,
             2,
             String::from("none"),
+            String::new(),
+            String::new(),
             String::new(),
         );
     }
@@ -1310,6 +1322,8 @@ async fn process_analysis(
                 2,
                 2,
                 String::from("none"),
+                String::new(),
+                String::new(),
                 String::new(),
             );
         }
@@ -1424,6 +1438,33 @@ async fn process_analysis(
     } else {
         String::new()
     };
+
+    // Generate action recommendations
+    let action_recommendations = if !summary.is_empty() {
+        generate_llm_response(
+            &prompts::action_recommendations_prompt(article_text, pub_date),
+            llm_params,
+            worker_detail,
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    // Generate talking points
+    let talking_points = if !summary.is_empty() {
+        generate_llm_response(
+            &prompts::talking_points_prompt(article_text, pub_date),
+            llm_params,
+            worker_detail,
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
     (
         summary,
         tiny_summary,
@@ -1436,5 +1477,7 @@ async fn process_analysis(
         argument_quality,
         source_type,
         additional_insights,
+        action_recommendations,
+        talking_points,
     )
 }

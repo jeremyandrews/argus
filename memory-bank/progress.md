@@ -30,6 +30,8 @@ Argus is currently in active development with major components implemented and f
 - ✅ **Critical Analysis**: Assessment of source credibility and content quality
 - ✅ **Logical Fallacy Detection**: Identification of reasoning flaws in content
 - ✅ **Geographic Impact Assessment**: Detection of geographical relevance for safety issues
+- ✅ **Action Recommendations**: Providing practical, actionable steps based on article content
+- ✅ **Talking Points**: Generating discussion-worthy topics for sharing and engagement
 - ✅ **Basic Vector Similarity**: Initial implementation of article similarity using E5 embeddings
 
 ### Entity-Based Article Matching

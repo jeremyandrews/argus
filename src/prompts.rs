@@ -982,6 +982,149 @@ Return ONLY one of these exact words: official, academic, questionable, corporat
     )
 }
 
+pub fn action_recommendations_prompt(article_text: &str, pub_date: Option<&str>) -> String {
+    format!(
+        r#"{context}
+## ARTICLE (FOR ACTION RECOMMENDATIONS):
+----------
+{article}
+----------
+
+IMPORTANT INSTRUCTIONS:
+* **Analyze ONLY the article above.**
+* **IGNORE the global context unless explicitly mentioned in article.**
+* **For non-English text, include translations of relevant quotes.**
+
+### **Action Recommendations**
+Create a list of 3-5 clear, practical, and actionable recommendations based directly on the article's content. These should be things readers could reasonably do in response to the information provided.
+
+### Recommendation Guidelines
+* Focus on actions that are:
+  - **Practical:** Can be implemented by the average reader
+  - **Specific:** Clear and concrete, not vague suggestions
+  - **Relevant:** Directly related to the article's content
+  - **Diverse:** Cover different types of actions when possible
+  - **Balanced:** Represent different perspectives when appropriate
+
+* For different article types, consider:
+  - **News Events:** How to prepare for, respond to, or learn more about the situation
+  - **Technology:** How to utilize, evaluate, or adapt to the technology
+  - **Policy Changes:** How to comply with, benefit from, or engage with the policy
+  - **Research Findings:** How to apply findings to personal or professional contexts
+  - **Market Developments:** How to adjust strategies or make informed decisions
+
+### Response Format
+* Start each recommendation with a strong action verb
+* Keep each point to 1-2 sentences (25-40 words)
+* Use bullet points (-)
+* Include concrete details from the article
+* Maintain factual accuracy
+* Avoid generic advice that would apply to any article
+
+**EXAMPLE (Technology Article):**
+- **Download the security patch** released by Microsoft immediately, as it addresses the critical Windows vulnerability that has already compromised over 100,000 systems worldwide.
+- **Enable two-factor authentication** on all cloud services mentioned in the article, particularly those handling sensitive data like financial or healthcare information.
+- **Review your organization's response plan** for ransomware attacks, ensuring it addresses the specific threats detailed by the security researchers at Black Hat 2024.
+- **Sign up for the free webinar** on November 15th featuring cybersecurity experts from the article who will demonstrate practical prevention techniques.
+
+**EXAMPLE (Political Development):**
+- **Contact your representative** about the infrastructure bill discussed in the article, especially if you live in one of the five states explicitly mentioned as receiving priority funding.
+- **Attend the public hearing** scheduled for October 7th where officials will answer questions about how the new regulations affect homeowners in coastal regions.
+- **Apply for the tax credit** before the December 31st deadline, as the article indicates this opportunity will not be extended into the next fiscal year.
+- **Review the official guidelines** published on the government website referenced in the article to determine your eligibility for the expanded program.
+
+**EXAMPLE (Health News):**
+- **Schedule a consultation** with your healthcare provider about the new treatment option, particularly if you have the specific condition discussed in the research findings.
+- **Verify insurance coverage** for the newly approved medication, as the article notes that several major providers already include it in their formularies.
+- **Download the symptom-tracking app** developed by the research team, which is available for free during the first month after release.
+- **Join the patient advocacy group** mentioned in the article that is working to improve access to the treatment in underserved communities.
+
+**POOR EXAMPLES (Avoid):**
+- "Learn more about this topic" (too vague)
+- "Stay informed about developments" (not specific enough)
+- "Consider how this affects you" (not actionable)
+- "Share this information with others" (generic)
+
+Now create 3-5 specific, actionable recommendations based on this article:
+{write_in_clear_english}
+{dont_tell_me}"#,
+        context = global_context(pub_date),
+        article = article_text,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
+        dont_tell_me = DONT_TELL_ME
+    )
+}
+
+pub fn talking_points_prompt(article_text: &str, pub_date: Option<&str>) -> String {
+    format!(
+        r#"{context}
+## ARTICLE (FOR TALKING POINTS):
+----------
+{article}
+----------
+
+IMPORTANT INSTRUCTIONS:
+* **Analyze ONLY the article above.**
+* **IGNORE the global context unless explicitly mentioned in article.**
+* **For non-English text, include translations of relevant quotes.**
+
+### **Talking Points**
+Create 3-5 insightful talking points that could drive meaningful discussion about this article. These should help someone engage others in conversation about the topic, whether in casual discussions, social media, professional settings, or formal debates.
+
+### Talking Point Guidelines
+* Create points that are:
+  - **Thought-provoking:** Stimulate deeper thinking and conversation
+  - **Balanced:** Acknowledge different perspectives when appropriate
+  - **Evidence-based:** Grounded in specific facts from the article
+  - **Substantive:** Focus on significant aspects, not trivial details
+  - **Diverse:** Cover different dimensions of the topic
+
+* For different article types, consider:
+  - **News Events:** Implications, historical parallels, future impact
+  - **Technology:** Ethical considerations, practical applications, societal effects
+  - **Policy Changes:** Beneficiaries, challenges, alternative approaches
+  - **Research Findings:** Limitations, applications, surprising elements
+  - **Market Developments:** Winners/losers, underlying trends, future scenarios
+
+### Response Format
+* Format each point as a discussion-starter question OR a bold statement + follow-up question
+* Keep each talking point to 30-50 words
+* Use bullet points (-)
+* Include specific references to article content
+* Ensure factual accuracy
+* Avoid basic summary points that don't promote discussion
+
+**EXAMPLE (Technology Article):**
+- **How might the facial recognition limitations** described in the article affect different demographic groups unequally, given the researchers found a 35% higher error rate for certain populations?
+- **The article suggests that companies are rushing AI deployment before adequate testing.** How should we balance innovation speed with safety in emerging technologies?
+- **Is the 5-year timeline for quantum computing breakthroughs** realistic given the technical challenges outlined by the MIT researchers, or are the commercial predictions overly optimistic?
+
+**EXAMPLE (Economic News):**
+- **The shift toward remote work has created "winner and loser" cities.** How might the 15% population outflow from major urban centers reshape housing markets and tax bases in the coming decade?
+- **Despite record corporate profits mentioned in the article,** wage growth remains stagnant at 2.3%. What explains this disconnection between company success and worker compensation?
+- **How significant is the Central Bank's strategy shift** toward inflation tolerance, and who stands to benefit most from the new approach outlined by Chairperson Rodriguez?
+
+**EXAMPLE (Health Research):**
+- **The article reports a surprising 40% reduction in symptoms,** yet the sample size was relatively small. How should patients balance hope with scientific caution when evaluating breakthrough treatments?
+- **Could the accessibility issues highlighted in the study** lead to wider health disparities, especially considering the $6,000 monthly cost is only partially covered by insurance?
+- **The researchers prioritized quality of life over longevity.** Is this shift in medical research priorities reflective of changing societal values around healthcare?
+
+**POOR EXAMPLES (Avoid):**
+- "What do you think about this issue?" (too vague)
+- "The article talks about new technology." (mere summary)
+- "Is this development good or bad?" (overly simplistic)
+- "The CEO made some interesting points." (lacks substance)
+
+Now create 3-5 engaging talking points based on this article:
+{write_in_clear_english}
+{dont_tell_me}"#,
+        context = global_context(pub_date),
+        article = article_text,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
+        dont_tell_me = DONT_TELL_ME
+    )
+}
+
 pub fn additional_insights_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
         r#"# Analysis Framework

@@ -86,6 +86,9 @@ flowchart LR
 ### 5. Analysis Patterns
 - **Multi-Stage Analysis**: Progressive refinement of content understanding
 - **Quality Scoring**: Source quality and argument quality metrics
+- **Actionable Content**: Generating practical recommendations and discussion points
+  - *Action Recommendations*: Providing 3-5 concrete, practical steps users can take based on article content
+  - *Talking Points*: Creating 3-5 discussion-worthy topics to facilitate sharing and conversation
 - **Fallback Mechanism**: Adaptive worker behavior during idle periods
 
 ### 6. Notification Patterns

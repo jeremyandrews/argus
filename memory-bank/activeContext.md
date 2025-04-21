@@ -227,6 +227,8 @@ Recently completed:
 - **Source Quality Assessment**: Evaluating source credibility and reliability
 - **Argument Quality Evaluation**: Detecting logical fallacies and reasoning strength
 - **Additional Insights**: Generating deeper context and connections
+- **Action Recommendations**: Providing practical, actionable steps based on article content
+- **Talking Points**: Generating discussion-worthy topics related to article content
 
 ## Next Development Steps
 
