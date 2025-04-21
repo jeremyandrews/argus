@@ -139,10 +139,15 @@ We're implementing comprehensive diagnostics to identify why entity-based relate
 - 🔄 Plan for date data cleanup to handle articles with future or invalid dates
 - 🔄 Improve date validation when articles are initially processed
 
-**Date Window Approach and Future Cleanup**
+**Date Window Approach and Database Fixes**
 - ✅ Changed from fixed date threshold to a dynamic date window (14 days before to 1 day after article's publication date)
 - ✅ Updated code in `db.rs` and `vector.rs` to use article's own publication date as a reference point
 - ✅ Added comprehensive logging to identify issues with date filtering
+- ✅ Fixed critical bugs with date filtering and NULL handling:
+  - **NULL Handling Fix**: Modified `store_embedding` to properly handle NULL values for dates by using `Option<&str>` parameters instead of defaulting to "unknown" string literals
+  - **Date Window Enhancement**: Updated SQL query to use COALESCE to check both event_date and pub_date when filtering: `COALESCE(date(substr(a.event_date,1,10)), date(substr(a.pub_date,1,10)))`
+  - **Performance Optimization**: Added index on `articles(pub_date)` to improve query performance
+  - **Proper NULL Semantics**: Only include the date filter when a source date exists, ensuring proper SQL behavior with NULL values
 - 🔄 Future data cleanup needed:
   - Identify and fix articles with unrealistic future dates (beyond current date + 1 day)
   - Review RSS feed processing to reject or flag articles with unlikely publication dates

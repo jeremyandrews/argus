@@ -407,8 +407,8 @@ pub async fn get_article_vectors(text: &str) -> Result<Option<Vec<f32>>> {
 pub async fn store_embedding(
     sqlite_id: i64,
     embedding: &Vec<f32>,
-    published_date: &str,
-    category: &str,
+    published_date: Option<&str>, // Changed from &str to Option<&str>
+    category: Option<&str>,       // Changed from &str to Option<&str>
     quality: i8,
     entity_ids: Option<Vec<i64>>,
     event_date: Option<&str>,
@@ -423,11 +423,13 @@ pub async fn store_embedding(
 
     let mut payload: HashMap<String, qdrant_client::qdrant::Value> = HashMap::new();
 
-    // Add basic metadata
-    payload.insert(
-        "published_date".to_string(),
-        json!(published_date).try_into().unwrap(),
-    );
+    // Add basic metadata - only when present
+    if let Some(date) = published_date {
+        payload.insert(
+            "published_date".to_string(),
+            json!(date).try_into().unwrap(),
+        );
+    }
     payload.insert("category".to_string(), json!(category).try_into().unwrap());
     payload.insert(
         "quality_score".to_string(),

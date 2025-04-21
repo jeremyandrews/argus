@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::OnceCell;
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 use urlnorm::UrlNormalizer;
 
@@ -92,6 +92,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_seen_at_r2_url ON articles (seen_at, r2_url);
             CREATE INDEX IF NOT EXISTS idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url);
             CREATE INDEX IF NOT EXISTS idx_articles_event_date ON articles (event_date);
+            CREATE INDEX IF NOT EXISTS idx_articles_pub_date ON articles (pub_date);
             CREATE INDEX IF NOT EXISTS idx_articles_cluster_id ON articles (cluster_id);
             
             -- Entity tables for improved article matching
@@ -1465,63 +1466,78 @@ impl Database {
             }
         };
 
-        // Query for articles that share entities, prioritizing those with PRIMARY importance
-        // and filtering by date window (14 days before to 1 day after the source article date)
-        let query = r#"
+        // Base query without date filtering
+        let base_query = r#"
             SELECT a.id, a.pub_date as published_date, a.category, a.quality_score,
                    COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
                    COUNT(ae.entity_id) as total_count
             FROM articles a
             JOIN article_entities ae ON a.id = ae.article_id
             WHERE ae.entity_id IN (SELECT value FROM json_each(?))
-            AND date(substr(a.pub_date, 1, 10)) >= date(substr(?, 1, 10), '-14 days')
-            AND date(substr(a.pub_date, 1, 10)) <= date(substr(?, 1, 10), '+1 day')
+        "#;
+
+        // Query with date filtering using COALESCE to check both event_date and pub_date
+        let query_with_date_filter = format!(
+            r#"
+            {}
+            AND COALESCE(
+                date(substr(a.event_date, 1, 10)),
+                date(substr(a.pub_date, 1, 10))
+            ) BETWEEN date(substr(?, 1, 10), '-14 days')
+                   AND date(substr(?, 1, 10), '+1 day')
             GROUP BY a.id
             ORDER BY primary_count DESC, total_count DESC
             LIMIT ?
-            "#;
+            "#,
+            base_query
+        );
 
-        info!(target: TARGET_DB, "Entity search query: {}", query);
+        // Query without date filtering
+        let query_without_date_filter = format!(
+            r#"
+            {}
+            GROUP BY a.id
+            ORDER BY primary_count DESC, total_count DESC
+            LIMIT ?
+            "#,
+            base_query
+        );
 
         // Log the date window we're using
         info!(target: TARGET_DB, "Using date window: from {} - 14 days to {} + 1 day", 
               source_date, source_date);
 
-        // Log some sample pub_dates from the database
-        let sample_dates: Vec<String> = match sqlx::query_scalar(
-            "SELECT pub_date FROM articles WHERE pub_date IS NOT NULL LIMIT 5",
-        )
-        .fetch_all(&self.pool)
-        .await
-        {
-            Ok(dates) => dates,
-            Err(e) => {
-                warn!(target: TARGET_DB, "Failed to fetch sample article dates: {}", e);
-                vec![]
-            }
+        // Decide which query to use and execute it
+        let rows = if !source_date.is_empty() {
+            info!(target: TARGET_DB, "Using query with date filtering");
+            sqlx::query(&query_with_date_filter)
+                .bind(&entity_ids_json)
+                .bind(source_date) // Min date
+                .bind(source_date) // Max date
+                .bind(limit as i64)
+                .fetch_all(&self.pool)
+                .await?
+        } else {
+            info!(target: TARGET_DB, "No source date provided, skipping date filtering");
+            sqlx::query(&query_without_date_filter)
+                .bind(&entity_ids_json)
+                .bind(limit as i64)
+                .fetch_all(&self.pool)
+                .await?
         };
-        info!(target: TARGET_DB, "Sample article dates for comparison: {:?}", sample_dates);
-
-        let rows = sqlx::query(query)
-            .bind(&entity_ids_json)
-            .bind(source_date) // Min date
-            .bind(source_date) // Max date
-            .bind(limit as i64)
-            .fetch_all(&self.pool)
-            .await?;
 
         info!(target: TARGET_DB, "Entity search returned {} results for entities: {:?} using date window", 
             rows.len(), entity_ids);
 
         // If we got no results with date filter but had matches without it, log this critical info
-        if rows.is_empty() && total_matching > 0 {
+        if rows.is_empty() && total_matching > 0 && !source_date.is_empty() {
             error!(target: TARGET_DB,
                 "CRITICAL: Date filter is eliminating all potential matches! Found {} matching articles but 0 after date filter", 
                 total_matching);
 
             // Let's log a few of the matching articles that were filtered out
             let sample_query = r#"
-                SELECT a.id, a.pub_date, a.category,
+                SELECT a.id, a.pub_date, a.event_date, a.category,
                        COUNT(CASE WHEN ae.importance = 'PRIMARY' THEN 1 ELSE NULL END) as primary_count,
                        COUNT(ae.entity_id) as total_count
                 FROM articles a
@@ -1541,13 +1557,19 @@ impl Database {
                     for row in samples {
                         let id: i64 = row.get("id");
                         let pub_date: Option<String> = row.get("pub_date");
+                        let event_date: Option<String> = row.get("event_date");
                         let category: Option<String> = row.get("category");
                         let primary_count: i64 = row.get("primary_count");
                         let total_count: i64 = row.get("total_count");
 
                         info!(target: TARGET_DB,
-                            "Example match filtered by date: article_id={}, pub_date={}, category={}, primary_count={}, total_count={}",
-                            id, pub_date.unwrap_or_default(), category.unwrap_or_default(), primary_count, total_count);
+                            "Example match filtered by date: article_id={}, pub_date={}, event_date={}, category={}, primary_count={}, total_count={}",
+                            id,
+                            pub_date.unwrap_or_default(),
+                            event_date.unwrap_or_default(),
+                            category.unwrap_or_default(),
+                            primary_count,
+                            total_count);
                     }
                 }
                 Err(e) => {

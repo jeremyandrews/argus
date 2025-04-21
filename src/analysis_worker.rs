@@ -812,8 +812,8 @@ async fn process_analysis_item(
                     if let Err(e) = store_embedding(
                         article_id,
                         &embedding,
-                        pub_date.as_deref().unwrap_or("unknown"),
-                        topic,
+                        pub_date.as_deref(),
+                        Some(topic),
                         quality,
                         entity_ids,
                         event_date.as_deref(),
@@ -1093,8 +1093,8 @@ async fn process_analysis_item(
                             if let Err(e) = store_embedding(
                                 article_id,
                                 &embedding,
-                                pub_date.as_deref().unwrap_or("default value"),
-                                &topic,
+                                pub_date.as_deref(),
+                                Some(&topic),
                                 quality,
                                 entity_ids.clone(),
                                 event_date.as_deref(),

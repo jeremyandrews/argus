@@ -119,6 +119,14 @@ Argus is currently in active development with major components implemented and f
   - Added code to retrieve the source article's publication date for date window calculation
   - Enhanced logging to monitor effectiveness of the date window approach
   - Identified future cleanup needs for articles with unrealistic dates
+
+- ✅ **NULL Handling and Date Filtering Fixes**: Fixed critical bugs in data storage and retrieval
+  - Fixed `store_embedding` in vector.rs to properly handle NULL values using `Option<&str>` parameters
+  - Enhanced SQL query with COALESCE to consider both event_date and pub_date when filtering
+  - Added index on articles(pub_date) for improved query performance
+  - Modified query strategy to skip date filtering when no source date exists
+  - Fixed "unknown" string literals being stored instead of proper NULL values
+  - Implemented proper SQL substring date extraction to handle RFC3339 formatted dates consistently
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity

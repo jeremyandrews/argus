@@ -114,7 +114,7 @@ dependencies = [
 
 [[package]]
 name = "argus"
-version = "0.11.17"
+version = "0.11.18"
 dependencies = [
  "anyhow",
  "async-openai",
