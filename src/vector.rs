@@ -755,37 +755,45 @@ pub async fn get_similar_articles_with_entities(
     if let Some(ids) = entity_ids {
         if !ids.is_empty() {
             info!(target: TARGET_VECTOR, "Performing entity-based search with {} entity IDs...", ids.len());
-            let entity_matches =
-                get_articles_by_entities(ids, limit * 2, source_article_id).await?;
+            // SET LOG LEVEL TO TRACE/DEBUG
+            info!(target: TARGET_VECTOR, "CRITICAL DEBUG: About to call get_articles_by_entities with source_article_id: {:?}", source_article_id);
 
-            info!(target: TARGET_VECTOR, 
-                "Entity search returned {} results for entity IDs: {:?}",
-                entity_matches.len(), ids);
+            match get_articles_by_entities(ids, limit * 2, source_article_id).await {
+                Ok(entity_matches) => {
+                    info!(target: TARGET_VECTOR, 
+                        "Entity search returned {} results for entity IDs: {:?}",
+                        entity_matches.len(), ids);
 
-            if entity_matches.is_empty() {
-                error!(target: TARGET_VECTOR, 
-                    "CRITICAL: Entity search returned NO matches despite having valid entity IDs - database inconsistency possible");
-            }
+                    if entity_matches.is_empty() {
+                        error!(target: TARGET_VECTOR, 
+                            "CRITICAL: Entity search returned NO matches despite having valid entity IDs - database inconsistency possible");
+                    }
 
-            // For entity matches, calculate vector similarity if not already included
-            for mut article in entity_matches {
-                if !all_matches.contains_key(&article.id) {
-                    // Calculate vector similarity for this entity match
-                    match calculate_vector_similarity(embedding, article.id).await {
-                        Ok(vector_score) => {
-                            info!(target: TARGET_VECTOR, 
-                                "Added entity-based match: article_id={}, entity_overlap={}, vector_score={:.4}",
-                                article.id, article.entity_overlap_count.unwrap_or(0), vector_score);
-                            article.score = vector_score; // Update with actual vector score
-                            all_matches.insert(article.id, article);
-                        }
-                        Err(e) => {
-                            error!(target: TARGET_VECTOR, "Failed to calculate vector similarity for article {}: {:?}", article.id, e);
-                            // Still include the article even if we couldn't get vector similarity
-                            article.score = 0.0;
-                            all_matches.insert(article.id, article);
+                    // Continue processing with entity_matches
+                    // For entity matches, calculate vector similarity if not already included
+                    for mut article in entity_matches {
+                        if !all_matches.contains_key(&article.id) {
+                            // Calculate vector similarity for this entity match
+                            match calculate_vector_similarity(embedding, article.id).await {
+                                Ok(vector_score) => {
+                                    info!(target: TARGET_VECTOR, 
+                                        "Added entity-based match: article_id={}, entity_overlap={}, vector_score={:.4}",
+                                        article.id, article.entity_overlap_count.unwrap_or(0), vector_score);
+                                    article.score = vector_score; // Update with actual vector score
+                                    all_matches.insert(article.id, article);
+                                }
+                                Err(e) => {
+                                    error!(target: TARGET_VECTOR, "Failed to calculate vector similarity for article {}: {:?}", article.id, e);
+                                    // Still include the article even if we couldn't get vector similarity
+                                    article.score = 0.0;
+                                    all_matches.insert(article.id, article);
+                                }
+                            }
                         }
                     }
+                }
+                Err(e) => {
+                    error!(target: TARGET_VECTOR, "CRITICAL ERROR in get_articles_by_entities: {:?}", e);
                 }
             }
         }

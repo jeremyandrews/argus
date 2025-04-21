@@ -1049,6 +1049,14 @@ async fn process_analysis_item(
                                 .unwrap_or((None, None));
 
                             // SECOND: Now perform similarity search with the extracted entity IDs
+                            info!(
+                                target: TARGET_LLM_REQUEST,
+                                "Searching for similar articles with {} entity IDs, event date: {:?}, and source article ID: {}",
+                                entity_ids.as_ref().map_or(0, |ids| ids.len()),
+                                event_date,
+                                article_id
+                            );
+
                             if let Ok(similar_articles) = get_similar_articles_with_entities(
                                 &embedding,
                                 10,
