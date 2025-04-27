@@ -831,6 +831,9 @@ async fn process_analysis_item(
                     }
                 }
 
+                // Add the article ID to the JSON now that we have it
+                response_json["id"] = json!(article_id);
+
                 // Send notification to app
                 if let Some(r2_url) = send_to_app(&response_json).await {
                     // Update the article with R2 details
@@ -1115,6 +1118,9 @@ async fn process_analysis_item(
                                 );
                             }
                         }
+
+                        // Add the article ID to the JSON now that we have it
+                        response_json["id"] = json!(article_id);
 
                         // Send notification to app
                         if let Some(r2_url) = send_to_app(&response_json).await {

@@ -23,6 +23,7 @@ Based on code review, recent development appears focused on:
 5. **Quality Metrics**: Generating source quality and argument quality scores
 6. **Life Safety Alerts**: Implementing geographical impact detection for safety-critical information
 7. **Enhanced LLM Error Logging**: Improved connection identification in error logs to pinpoint failing LLM instances
+8. **Article ID Exposure**: Added article IDs to R2 JSON files for enabling matching feedback from iOS app
 
 ## Current Enhancement Project: Entity-Based Article Clustering
 
@@ -169,6 +170,12 @@ We've created a set of tools to help systematically identify why matches are bei
    - ✅ Improved entity-based matching to work with IDs or article objects
    - ✅ Added helper methods to support diagnostic tools
 
+4. **iOS Feedback Enablement**
+   - ✅ Added article IDs to the R2 JSON files to enable matching feedback from the iOS app
+   - ✅ Modified the analysis_worker.rs to include article IDs in both life safety and matched topics JSON
+   - ✅ Ensured article IDs are available in all interfaces where feedback might be needed
+   - ✅ Created comprehensive documentation for using the diagnostic tools in memory-bank/entity_matching_tools.md
+
 #### Using the Entity Matching Diagnostic Tools
 
 **API Endpoint Usage:**
@@ -299,6 +306,7 @@ Recently completed:
 - **Push Notification System**: Refining the notification delivery system
 - **R2 Content Storage**: Storing and serving content through Cloudflare R2
 - **Subscription Management**: Managing user topic subscriptions and preferences
+- **Article ID Exposure**: Added article IDs to the JSON data stored in R2 for enabling match feedback from users
 
 ### Performance Optimization
 - **Resource Allocation**: Balancing workloads between decision and analysis tasks
@@ -322,6 +330,7 @@ Based on codebase analysis, likely next steps include:
 4. **Topic Management**: Building tools for better topic configuration and management
 5. **User Preference Refinement**: Further customization of notification preferences
 6. **Content Filtering Improvements**: Refining relevance detection and quality assessment
+7. **Entity Matching Feedback**: Analyzing user feedback on missed matches to improve the algorithm
 
 ## Active Decisions
 
@@ -334,6 +343,7 @@ Based on codebase analysis, likely next steps include:
 - **Topic Configuration**: Determining the best approach for managing and updating topic definitions
 - **Quality Thresholds**: Setting appropriate thresholds for content quality assessment
 - **Notification Frequency**: Balancing notification volume to avoid overwhelming users
+- **Entity Matching Feedback**: Establishing a process for incorporating user feedback on missed matches
 
 ### Technical Decisions
 - **LLM Provider Strategy**: Evaluating cost/performance tradeoffs between different LLM providers
@@ -346,6 +356,7 @@ Based on codebase analysis, likely next steps include:
 - **Authentication Flow**: JWT-based authentication system for secure access
 - **Push Notification Handling**: Proper setup of APNs certificates and device token management
 - **Content Synchronization**: Tracking read/unread status across devices
+- **Entity Match Feedback**: Using article IDs to report missed matches for algorithm improvement
 
 ### Slack Integration
 - **Message Formatting**: Standardized formatting for different content types
