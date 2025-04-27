@@ -653,10 +653,10 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct ArticleMatch {
     // Basic article identification and metadata
-    pub id: i64,
+    pub id: i64, // Database ID of the article (always included)
     pub published_date: String,
     pub category: String,
     pub quality_score: i8,
@@ -678,6 +678,19 @@ pub struct ArticleMatch {
 
     // Formula explanation
     pub similarity_formula: Option<String>, // Explanation of how the score was calculated
+}
+
+/// Represents an article match that fell below the threshold (near-miss)
+#[derive(Debug, serde::Serialize)]
+pub struct NearMissMatch {
+    pub article_id: i64,                     // Database ID of the article
+    pub score: f32,                          // Final similarity score (below threshold)
+    pub threshold: f32,                      // Threshold that was used
+    pub missing_score: f32,                  // How much more score was needed to match
+    pub vector_score: Option<f32>,           // Vector similarity component
+    pub entity_score: Option<f32>,           // Entity similarity component
+    pub entity_overlap_count: Option<usize>, // Number of shared entities
+    pub reason: String,                      // Human-readable explanation of why it didn't match
 }
 
 /// Enhanced article match with both vector and entity similarity
@@ -773,7 +786,7 @@ async fn get_articles_by_entities(
 }
 
 /// Calculate vector similarity between an embedding and a specific article
-async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
+pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
     let client = Qdrant::from_url(
         &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
     )
@@ -838,7 +851,9 @@ async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> R
 }
 
 /// Get all entities for a specific article
-async fn get_article_entities(article_id: i64) -> Result<Option<crate::entity::ExtractedEntities>> {
+pub async fn get_article_entities(
+    article_id: i64,
+) -> Result<Option<crate::entity::ExtractedEntities>> {
     let db = crate::db::Database::instance().await;
 
     // Get article's date information
@@ -1310,20 +1325,49 @@ pub async fn get_similar_articles_with_entities(
         );
     }
 
+    // Track near-miss matches for diagnostic purposes
+    let similarity_threshold = 0.75;
+    let mut near_misses = Vec::new();
+
     // Apply minimum combined threshold (0.75)
     let final_matches: Vec<ArticleMatch> = enhanced_matches
-        .into_iter()
-        .filter(|m| {
-            let passes = m.final_score >= 0.75;
-            if !passes {
-                info!(target: TARGET_VECTOR,
-                    "FILTERED OUT: article_id={}, final_score={:.4} (below 0.75), vector={:.4}, entity={:.4}, overlap={}",
-                    m.article_id, m.final_score, m.vector_score, m.entity_similarity.combined_score,
-                    m.entity_similarity.entity_overlap_count
-                );
-            }
-            passes
-        })
+                .into_iter()
+                .filter(|m| {
+                    let passes = m.final_score >= similarity_threshold;
+                    if !passes {
+                        // Create a near-miss record for this article
+                        let missing_score = similarity_threshold - m.final_score;
+                        let reason = if m.entity_similarity.entity_overlap_count == 0 {
+                            "No entity overlap".to_string()
+                        } else if m.entity_similarity.combined_score < 0.3 {
+                            format!("Weak entity similarity ({:.2})", m.entity_similarity.combined_score)
+                        } else if m.vector_score < 0.5 {
+                            format!("Low vector similarity ({:.2})", m.vector_score)
+                        } else {
+                            "Combined score below threshold".to_string()
+                        };
+
+                        // Log details about why it didn't match
+                        info!(target: TARGET_VECTOR,
+                            "NEAR MISS: article_id={}, final_score={:.4} (below {:.2}), vector={:.4}, entity={:.4}, overlap={}, reason={}",
+                            m.article_id, m.final_score, similarity_threshold, m.vector_score,
+                            m.entity_similarity.combined_score, m.entity_similarity.entity_overlap_count, reason
+                        );
+
+                        // Add to near-miss collection
+                        near_misses.push(NearMissMatch {
+                            article_id: m.article_id,
+                            score: m.final_score,
+                            threshold: similarity_threshold,
+                            missing_score: missing_score,
+                            vector_score: Some(m.vector_score),
+                            entity_score: Some(m.entity_similarity.combined_score),
+                            entity_overlap_count: Some(m.entity_similarity.entity_overlap_count),
+                            reason,
+                        });
+                    }
+                    passes
+                })
         .take(limit as usize)
         .map(|m| {
             info!(target: TARGET_VECTOR,

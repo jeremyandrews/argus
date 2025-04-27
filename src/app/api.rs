@@ -14,6 +14,8 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 
 use crate::db::Database;
+use crate::entity::matching::calculate_entity_similarity;
+use crate::vector::{calculate_vector_similarity, get_article_entities};
 use crate::SubscriptionsResponse;
 
 /// Represents the response for an authentication request, containing a JWT token.
@@ -54,6 +56,36 @@ struct SyncSeenArticlesResponse {
     unseen_articles: Vec<String>,
 }
 
+/// Request for analyzing match between two articles
+#[derive(Deserialize)]
+struct ArticleMatchAnalysisRequest {
+    source_article_id: i64,
+    target_article_id: i64,
+}
+
+/// Detailed response about article match analysis
+#[derive(Serialize)]
+struct ArticleMatchAnalysisResponse {
+    source_article_id: i64,
+    target_article_id: i64,
+    vector_similarity: f32,
+    entity_similarity: Option<f32>,
+    combined_score: f32,
+    threshold: f32,
+    match_status: bool,
+    source_entity_count: usize,
+    target_entity_count: usize,
+    shared_entity_count: usize,
+    shared_primary_entity_count: usize,
+    person_overlap: Option<f32>,
+    org_overlap: Option<f32>,
+    location_overlap: Option<f32>,
+    event_overlap: Option<f32>,
+    temporal_proximity: Option<f32>,
+    match_formula: String,
+    reason_for_failure: Option<String>,
+}
+
 /// Static private key used for encoding and decoding JWT tokens.
 static PRIVATE_KEY: Lazy<Mutex<Vec<u8>>> = Lazy::new(|| {
     let rng = SystemRandom::new();
@@ -88,6 +120,176 @@ static VALID_TOPICS: Lazy<HashSet<String>> = Lazy::new(|| {
     topics
 });
 
+/// Analyze the matching between two specific articles to understand why they
+/// match or don't match. This is a diagnostic endpoint for tuning the matching algorithm.
+async fn analyze_article_match(
+    ConnectInfo(_addr): ConnectInfo<SocketAddr>,
+    _headers: HeaderMap,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(payload): Json<ArticleMatchAnalysisRequest>,
+) -> Result<Json<ArticleMatchAnalysisResponse>, StatusCode> {
+    // Validate the JWT token
+    let token = auth_header.token();
+    if decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256)).is_err() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    info!(
+        "Analyzing match between articles {} and {}",
+        payload.source_article_id, payload.target_article_id
+    );
+
+    // Get embeddings for both articles from Qdrant
+    let source_article_id = payload.source_article_id;
+    let target_article_id = payload.target_article_id;
+
+    // Initialize response defaults
+    let mut response = ArticleMatchAnalysisResponse {
+        source_article_id,
+        target_article_id,
+        vector_similarity: 0.0,
+        entity_similarity: None,
+        combined_score: 0.0,
+        threshold: 0.75, // Standard threshold
+        match_status: false,
+        source_entity_count: 0,
+        target_entity_count: 0,
+        shared_entity_count: 0,
+        shared_primary_entity_count: 0,
+        person_overlap: None,
+        org_overlap: None,
+        location_overlap: None,
+        event_overlap: None,
+        temporal_proximity: None,
+        match_formula: "60% vector similarity + 40% entity similarity".to_string(),
+        reason_for_failure: None,
+    };
+
+    // Step 1: Get both articles' entity data
+    let source_entities = match get_article_entities(source_article_id).await {
+        Ok(Some(entities)) => entities,
+        Ok(None) => {
+            response.reason_for_failure =
+                Some("Source article has no extracted entities".to_string());
+            return Ok(Json(response));
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get entities for source article {}: {}",
+                source_article_id, e
+            );
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    let target_entities = match get_article_entities(target_article_id).await {
+        Ok(Some(entities)) => entities,
+        Ok(None) => {
+            response.reason_for_failure =
+                Some("Target article has no extracted entities".to_string());
+            return Ok(Json(response));
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get entities for target article {}: {}",
+                target_article_id, e
+            );
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Step 2: Calculate vector similarity
+    let vector_similarity = match calculate_vector_similarity(&vec![0.0; 1024], target_article_id)
+        .await
+    {
+        Ok(similarity) => similarity,
+        Err(e) => {
+            warn!("Failed to calculate vector similarity: {}", e);
+            response.reason_for_failure = Some("Failed to calculate vector similarity".to_string());
+            return Ok(Json(response));
+        }
+    };
+
+    response.vector_similarity = vector_similarity;
+
+    // Step 3: Calculate entity similarity
+    let db = Database::instance().await;
+    let (source_pub_date, source_event_date) =
+        match db.get_article_details_with_dates(source_article_id).await {
+            Ok(dates) => dates,
+            Err(e) => {
+                warn!("Failed to get source article dates: {}", e);
+                (None, None)
+            }
+        };
+
+    let (target_pub_date, _) = match db.get_article_details_with_dates(target_article_id).await {
+        Ok(dates) => dates,
+        Err(e) => {
+            warn!("Failed to get target article dates: {}", e);
+            (None, None)
+        }
+    };
+
+    // Calculate entity similarity
+    let entity_sim = calculate_entity_similarity(
+        &source_entities,
+        &target_entities,
+        source_event_date.as_deref().or(source_pub_date.as_deref()),
+        target_pub_date.as_deref(),
+    );
+
+    // Update response with entity details
+    response.entity_similarity = Some(entity_sim.combined_score);
+    response.source_entity_count = source_entities.entities.len();
+    response.target_entity_count = target_entities.entities.len();
+    response.shared_entity_count = entity_sim.entity_overlap_count;
+    response.shared_primary_entity_count = entity_sim.primary_overlap_count;
+    response.person_overlap = Some(entity_sim.person_overlap);
+    response.org_overlap = Some(entity_sim.organization_overlap);
+    response.location_overlap = Some(entity_sim.location_overlap);
+    response.event_overlap = Some(entity_sim.event_overlap);
+    response.temporal_proximity = Some(entity_sim.temporal_proximity);
+
+    // Calculate combined score (60% vector + 40% entity)
+    response.combined_score = 0.6 * vector_similarity + 0.4 * entity_sim.combined_score;
+
+    // Determine match status
+    response.match_status = response.combined_score >= response.threshold;
+
+    // Add detailed reason if not matching
+    if !response.match_status {
+        let missing_score = response.threshold - response.combined_score;
+
+        if entity_sim.entity_overlap_count == 0 {
+            response.reason_for_failure = Some(format!(
+                "No shared entities. Articles with no entity overlap cannot match regardless of vector similarity."
+            ));
+        } else if vector_similarity < 0.5 {
+            response.reason_for_failure = Some(format!(
+                "Low vector similarity ({:.2}). Articles need at least {:.2} more points to reach threshold.",
+                vector_similarity, missing_score
+            ));
+        } else if entity_sim.combined_score < 0.3 {
+            response.reason_for_failure = Some(format!(
+                "Weak entity similarity ({:.2}). Despite sharing {} entities, the importance levels or entity types don't align well.",
+                entity_sim.combined_score, entity_sim.entity_overlap_count
+            ));
+        } else {
+            response.reason_for_failure = Some(format!(
+                "Combined score ({:.2}) below threshold ({:.2}). Needs {:.2} more points to match.",
+                response.combined_score, response.threshold, missing_score
+            ));
+        }
+    }
+
+    info!("Match analysis result: articles {} and {} - match={}, score={:.2}, vector={:.2}, entity={:.2}, shared_entities={}",
+          source_article_id, target_article_id, response.match_status, response.combined_score,
+          vector_similarity, entity_sim.combined_score, entity_sim.entity_overlap_count);
+
+    Ok(Json(response))
+}
+
 /// Main application loop, setting up and running the Axum-based API server.
 pub async fn app_api_loop() -> Result<()> {
     let app = Router::new()
@@ -96,7 +298,8 @@ pub async fn app_api_loop() -> Result<()> {
         .route("/subscriptions", post(get_subscriptions))
         .route("/subscribe", post(subscribe_to_topic))
         .route("/unsubscribe", post(unsubscribe_from_topic))
-        .route("/articles/sync", post(sync_seen_articles));
+        .route("/articles/sync", post(sync_seen_articles))
+        .route("/articles/analyze-match", post(analyze_article_match));
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -382,6 +585,8 @@ async fn sync_seen_articles(
 
     Ok(Json(SyncSeenArticlesResponse { unseen_articles }))
 }
+
+// [Nothing here - remove this duplicate function]
 
 async fn get_subscriptions(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,

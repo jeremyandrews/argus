@@ -76,9 +76,9 @@ We're implementing a comprehensive entity-based system to improve article cluste
 8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
 9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
 
-### Current Focus: Enhanced Diagnostics for Entity Matching Issues
+### Previous Focus: Enhanced Diagnostics for Entity Matching Issues
 
-We're implementing comprehensive diagnostics to identify why entity-based related articles aren't appearing properly in the iOS app:
+We've implemented comprehensive diagnostics to identify why entity-based related articles weren't appearing properly in the iOS app:
 
 **Root Cause Analysis**
 - Entity extraction and storage are working correctly:
@@ -133,12 +133,6 @@ We're implementing comprehensive diagnostics to identify why entity-based relate
 - ✅ By comparing only the date portions, we avoid timezone and format complications
 - ✅ This approach ensures proper date comparison regardless of RFC3339 specific format variations
 
-**Next Steps**
-- ✅ Fixed the issue with the date filtering using a date window approach
-- 🔄 Monitor logs to ensure entity matching continues to work properly
-- 🔄 Plan for date data cleanup to handle articles with future or invalid dates
-- 🔄 Improve date validation when articles are initially processed
-
 **Date Window Approach and Database Fixes**
 - ✅ Changed from fixed date threshold to a dynamic date window (14 days before to 1 day after article's publication date)
 - ✅ Updated code in `db.rs` and `vector.rs` to use article's own publication date as a reference point
@@ -148,11 +142,99 @@ We're implementing comprehensive diagnostics to identify why entity-based relate
   - **Date Window Enhancement**: Updated SQL query to use COALESCE to check both event_date and pub_date when filtering: `COALESCE(date(substr(a.event_date,1,10)), date(substr(a.pub_date,1,10)))`
   - **Performance Optimization**: Added index on `articles(pub_date)` to improve query performance
   - **Proper NULL Semantics**: Only include the date filter when a source date exists, ensuring proper SQL behavior with NULL values
-- 🔄 Future data cleanup needed:
-  - Identify and fix articles with unrealistic future dates (beyond current date + 1 day)
-  - Review RSS feed processing to reject or flag articles with unlikely publication dates
-  - Consider implementing SQLite date validation in the schema
-  - Clean up corresponding vector database entries for articles with invalid dates
+
+### Current Focus: Entity Matching Diagnostic & Improvement Tools
+
+While our entity-based article matching system works correctly for the matches it does find (high precision), we're addressing the issue of missed matches (low recall). Our analysis indicates we're missing approximately 80% of valid matches. To systematically improve this, we've implemented comprehensive diagnostic tools as part of our multi-phase improvement plan.
+
+#### Implemented Diagnostic Tools
+
+We've created a set of tools to help systematically identify why matches are being missed:
+
+1. **API Diagnostic Endpoint**
+   - ✅ Added `/articles/analyze-match` endpoint for analyzing specific article pairs
+   - ✅ Provides detailed vector similarity, entity similarity, and combined score metrics
+   - ✅ Shows entity-by-entity comparison with importance levels
+   - ✅ Explains reasons why matches fail with specific thresholds and required scores
+   - ✅ Includes NearMissMatch detection for articles that almost matched
+
+2. **Command-line Analysis Tools**
+   - ✅ Created `analyze_matches` utility for detailed analysis of a single article pair
+   - ✅ Implemented `batch_analyze` tool to process multiple article pairs and generate statistics
+   - ✅ Built `create_match_pairs` utility to generate test datasets from recent articles
+   - ✅ Added detailed reporting on common pattern failures and match statistics
+
+3. **Enhanced Database Support**
+   - ✅ Added `find_articles_with_entities` method to retrieve articles with entity data
+   - ✅ Improved entity-based matching to work with IDs or article objects
+   - ✅ Added helper methods to support diagnostic tools
+
+#### Using the Entity Matching Diagnostic Tools
+
+**API Endpoint Usage:**
+```bash
+# Test a specific article pair with curl
+curl -X POST https://api.argus.com/articles/analyze-match \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"source_article_id": 12345, "target_article_id": 67890}'
+```
+
+**Single Article Pair Analysis:**
+```bash
+# Run detailed analysis of why two articles do or don't match
+cargo run --bin analyze_matches 12345 67890
+```
+This will output detailed metrics about vector similarity, entity overlap, scores for each entity type (person, organization, location, event), temporal proximity, and a clear explanation of why the articles do or don't match.
+
+**Batch Analysis Tool:**
+```bash
+# Process a CSV file of article pairs and generate statistical report
+cargo run --bin batch_analyze article_pairs.csv results.csv
+```
+This analyzes multiple article pairs and produces:
+- Detailed CSV with scoring information for each pair
+- Summary statistics about match success rates
+- Most common reasons for match failures
+- Average scores for matches vs. non-matches
+- Entity overlap analysis
+
+**Test Data Generation:**
+```bash
+# Create a CSV file with article pairs for testing
+cargo run --bin create_match_pairs test_pairs.csv 100 7
+```
+This generates a test dataset by:
+- Finding articles with entity data from the last N days (7 in this example)
+- Creating pairs of articles likely to be related (same-day publication)
+- Adding random pairs to reach the target count (100 in this example)
+- Outputting a CSV file ready for use with the batch analysis tool
+
+#### Ongoing Multi-Phase Approach
+
+We're implementing a four-phase plan to improve entity matching while maintaining precision:
+
+1. **Measurement & Feedback System** (Current Phase - Tools Implemented)
+   - ✅ Exposed article IDs in all interfaces for feedback collection
+   - ✅ Created diagnostic endpoints to explain matching decisions
+   - ✅ Implemented logging of potential matches that fall below threshold
+   - ✅ Built analysis tools to identify patterns in missed matches
+
+2. **Enhanced Normalization & Fuzzy Matching** (Planned)
+   - Implement fuzzy matching for entity names using Levenshtein distance and phonetic algorithms
+   - Add acronym detection and expansion (e.g., "FBI" ↔ "Federal Bureau of Investigation")
+   - Implement word stemming for variations (e.g., "President Biden" ↔ "Biden's presidency")
+   - Create an entity alias system to track known variations
+
+3. **Parameter Optimization** (Planned)
+   - Experiment with different similarity thresholds and weight distributions
+   - Implement adaptive thresholds based on article characteristics
+   - Develop entity type-specific matching parameters
+
+4. **Advanced Relationship Modeling** (Planned)
+   - Build hierarchical entity relationships
+   - Implement relationship-aware matching
+   - Add contextual understanding of entity importance
 
 ### Previous Focus: Fixing Inconsistent Entity-Based Article Matching
 

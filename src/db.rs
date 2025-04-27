@@ -1649,4 +1649,26 @@ impl Database {
 
         Ok(added_entity_ids)
     }
+
+    /// Find articles that have associated entities and were published after a certain date
+    pub async fn find_articles_with_entities(
+        &self,
+        date_threshold: &str,
+    ) -> Result<Vec<i64>, sqlx::Error> {
+        let rows = sqlx::query_scalar(
+            r#"
+            SELECT DISTINCT a.id
+            FROM articles a
+            JOIN article_entities ae ON a.id = ae.article_id
+            WHERE (a.pub_date >= ?1 OR a.pub_date IS NULL)
+            ORDER BY a.id DESC
+            LIMIT 5000
+            "#,
+        )
+        .bind(date_threshold)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
+    }
 }

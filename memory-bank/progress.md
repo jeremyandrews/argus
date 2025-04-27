@@ -59,6 +59,35 @@ Argus is currently in active development with major components implemented and f
 
 ## In Progress
 
+### Entity Matching Improvement Plan
+- ✅ **Phase 1: Measurement & Feedback System**
+  - ✅ **API Diagnostic Endpoint**: Added `/articles/analyze-match` endpoint to analyze specific article pairs
+    - Provides detailed vector similarity and entity overlap metrics
+    - Shows why articles do or don't match with specific scores
+    - Identifies "near misses" that fall just below matching threshold
+  - ✅ **Command-line Analysis Tools**: Created three utilities for match diagnostic:
+    - `analyze_matches`: Detailed single pair analyzer with comprehensive metrics 
+    - `batch_analyze`: Process multiple pairs with statistical analysis 
+    - `create_match_pairs`: Test dataset generator for systematic testing
+  - ✅ **Enhanced Logging**: Added logging for near-miss matches with detailed reasons
+  - ✅ **Database Support**: Extended database with helper methods to support diagnostics
+    - Added `find_articles_with_entities` to retrieve articles with entity data
+    - Enhanced entity-based matching to support multiple input formats
+    - Improved error handling for diagnostic operations
+- 📋 **Phase 2: Enhanced Normalization & Fuzzy Matching**
+  - 📋 **Fuzzy Name Matching**: Levenshtein distance and phonetic matching for entity names
+  - 📋 **Acronym Handling**: Detection and expansion of acronyms and abbreviations
+  - 📋 **Word Stemming**: Handling variations in entity names through stemming
+  - 📋 **Entity Aliases**: System to track and match known variations of the same entity
+- 📋 **Phase 3: Parameter Optimization**
+  - 📋 **Threshold Experiments**: Testing different similarity thresholds and weights
+  - 📋 **Adaptive Thresholds**: Dynamic thresholds based on article characteristics
+  - 📋 **Type-Specific Matching**: Entity type-specific parameters and weights
+- 📋 **Phase 4: Advanced Relationship Modeling**
+  - 📋 **Hierarchical Relationships**: Building relationships between connected entities
+  - 📋 **Relationship-Aware Matching**: Using entity relationships in matching algorithm
+  - 📋 **Contextual Importance**: Better understanding of entity importance in context
+
 ### Entity Extraction and Storage
 - ✅ **JSON Schema System**: Implemented JsonSchemaType enum to handle different LLM response formats
 - ✅ **Schema Definitions**: Added proper schema definitions for entity extraction responses

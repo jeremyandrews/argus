@@ -83,6 +83,43 @@
   - Similarity descriptions in output should accurately reflect the actual calculation being performed
   - Maintain the minimum threshold (currently 0.75) above what's possible with vector similarity alone (0.6) to require entity overlap
 
+## Entity Matching Diagnostic Tools
+- The system includes several specialized diagnostic tools for entity matching analysis:
+  - `analyze_matches`: Command-line tool for detailed analysis of a single article pair
+  - `batch_analyze`: Command-line tool for statistical analysis of multiple article pairs
+  - `create_match_pairs`: Command-line tool for generating test datasets
+  - `/articles/analyze-match` API endpoint for diagnostic information
+
+- When using diagnostic tools, follow these conventions:
+  - Single pair analysis should include detailed output for all metrics (vector, entity by type, temporal)
+  - Batch analysis should generate both CSV output and summary statistics
+  - Statistical reports should include match success rates, common failure patterns, score distributions
+  - Testing should involve both known matches and known non-matches to assess precision and recall
+
+- Diagnostic output format should include:
+  - Clear threshold information showing the cutoff for matches (currently 0.75)
+  - Individual component scores (vector, entity, temporal) with their weighted contributions
+  - Entity-by-entity comparison showing shared entities and their importance levels
+  - Clear explanation of why articles did or didn't match
+  - For near misses, show how close they came to the threshold
+
+- Common match failure patterns to check for:
+  - No shared entities despite semantic similarity (entity extraction failure)
+  - Weak vector similarity despite strong entity overlap (embedding issues)
+  - Date filtering eliminating valid matches (date format or window issues)
+  - Entity importance misalignment (correct entities but wrong importance level)
+  - Single entity type dominance (e.g., only location matches, no people/org matches)
+
+- Test dataset generation should produce:
+  - A mix of likely matches (same-day articles) and random pairs
+  - CSV format compatible with batch_analyze tool
+  - Sufficient volume for statistical significance (100+ pairs minimum)
+  - Recent articles with complete entity data (use find_articles_with_entities)
+- Always check *all* code paths that handle similar articles without entity data to ensure they apply the 60% weighting consistently
+- Important bug pattern to watch for: when there are multiple code paths for article processing, ensure all paths apply the same weighting rules
+- Similar articles should never appear in results unless they meet both the threshold (0.75+) and have entity overlap
+- Enhanced diagnostic logging has been added for entity extraction, entity matching, and similarity scoring to help troubleshoot issues
+
 ## Application Conventions
 - iOS app relies on push notifications with payload size limits
 - Detailed content is stored in R2 and linked in notifications
