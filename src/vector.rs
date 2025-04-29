@@ -793,6 +793,11 @@ pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) 
     .timeout(std::time::Duration::from_secs(60))
     .build()?;
 
+    info!(target: TARGET_VECTOR, "Starting vector similarity calculation for article {}", article_id);
+    let source_magnitude = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+    info!(target: TARGET_VECTOR, "Source embedding dimensions: {}, magnitude: {:.6}", 
+          embedding.len(), source_magnitude);
+
     // Get the article's vector from Qdrant
     let response = client
         .get_points(qdrant_client::qdrant::GetPoints {
@@ -806,48 +811,86 @@ pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) 
         })
         .await?;
 
+    info!(target: TARGET_VECTOR, "Vector retrieval response received for article {}, points: {}", 
+          article_id, response.result.len());
+
     // Extract the vector from the response
     if let Some(point) = response.result.first() {
+        info!(target: TARGET_VECTOR, "Found point for article {}", article_id);
+
         if let Some(vectors) = &point.vectors {
+            info!(target: TARGET_VECTOR, "Vector data exists for article {}", article_id);
+
+            // Get the specific type name of the vectors_options enum
+            let type_name = std::any::type_name_of_val(&vectors.vectors_options);
+            info!(target: TARGET_VECTOR, "Vector options type for article {}: {}", article_id, type_name);
+
             if let Some(opts) = &vectors.vectors_options {
-                // Extract the vector data using fully qualified type path
-                let vector_data = match opts {
+                // Detailed debug info about the enum variant
+                info!(target: TARGET_VECTOR, "Vector options variant for article {}: {:?}", article_id, opts);
+
+                // Extract the vector data
+                match opts {
                     &qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(ref v) => {
-                        &v.data
+                        info!(target: TARGET_VECTOR, "Successfully extracted vector for article {}: dimensions={}, first_values=[{:.4}, {:.4}, ...]", 
+                              article_id, v.data.len(), 
+                              v.data.first().unwrap_or(&0.0), 
+                              v.data.get(1).unwrap_or(&0.0));
+
+                        let magnitude = v.data.iter().map(|x| x * x).sum::<f32>().sqrt();
+                        info!(target: TARGET_VECTOR, "Vector magnitude for article {}: {:.6}", article_id, magnitude);
+
+                        // Check for problematic vectors
+                        if magnitude < 0.001 {
+                            error!(target: TARGET_VECTOR, "CRITICAL: Near-zero magnitude vector detected for article {}", article_id);
+                        }
+
+                        // Dimension checking
+                        if embedding.len() != v.data.len() {
+                            error!(target: TARGET_VECTOR, "CRITICAL: Vector dimension mismatch for article {}: source={}, target={}", 
+                                  article_id, embedding.len(), v.data.len());
+                            return Err(anyhow::anyhow!("Vector dimension mismatch"));
+                        }
+
+                        // Calculate cosine similarity
+                        let dot_product: f32 = embedding
+                            .iter()
+                            .zip(v.data.iter())
+                            .map(|(a, b)| a * b)
+                            .sum();
+
+                        let mag1: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+                        let mag2: f32 = v.data.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+                        let similarity = if mag1 > 0.0 && mag2 > 0.0 {
+                            dot_product / (mag1 * mag2)
+                        } else {
+                            error!(target: TARGET_VECTOR, "CRITICAL: Zero magnitude vector detected during similarity calculation for article {}", article_id);
+                            return Err(anyhow::anyhow!("Zero magnitude vector detected"));
+                        };
+
+                        info!(target: TARGET_VECTOR, "Successfully calculated similarity for article {}: {:.6}", article_id, similarity);
+                        return Ok(similarity);
                     }
-                    _ => {
-                        error!(target: TARGET_VECTOR, "Unexpected vector format for article {}", article_id);
-                        return Ok(0.0);
+                    other => {
+                        // This branch handles other enum variants we might not expect
+                        error!(target: TARGET_VECTOR, "Unexpected vector format for article {}: {:?}", article_id, other);
+                        return Err(anyhow::anyhow!("Unexpected vector format"));
                     }
-                };
-
-                // Calculate cosine similarity
-                let dot_product: f32 = embedding
-                    .iter()
-                    .zip(vector_data.iter())
-                    .map(|(a, b)| a * b)
-                    .sum();
-
-                let mag1: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let mag2: f32 = vector_data.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-                let similarity = if mag1 > 0.0 && mag2 > 0.0 {
-                    dot_product / (mag1 * mag2)
-                } else {
-                    0.0
-                };
-
-                return Ok(similarity);
+                }
+            } else {
+                error!(target: TARGET_VECTOR, "Vector options is None for article {}", article_id);
             }
+        } else {
+            error!(target: TARGET_VECTOR, "No vectors in response for article {}", article_id);
         }
+    } else {
+        error!(target: TARGET_VECTOR, "Empty result for article {} vector retrieval", article_id);
     }
 
     // If we couldn't get the vector or calculate similarity
-    error!(
-        target: TARGET_VECTOR,
-        "Failed to calculate vector similarity for article {}", article_id
-    );
-    Ok(0.0) // Default to no similarity
+    error!(target: TARGET_VECTOR, "Failed to calculate vector similarity for article {}", article_id);
+    Err(anyhow::anyhow!("Failed to calculate vector similarity"))
 }
 
 /// Get all entities for a specific article

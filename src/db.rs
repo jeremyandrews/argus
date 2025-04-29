@@ -25,6 +25,85 @@ impl Database {
     pub fn pool(&self) -> &Pool<Sqlite> {
         &self.pool
     }
+
+    /// Gets the article body text content from the analysis JSON field
+    pub async fn get_article_text(&self, article_id: i64) -> Result<String, sqlx::Error> {
+        let analysis =
+            sqlx::query_scalar::<_, Option<String>>("SELECT analysis FROM articles WHERE id = ?")
+                .bind(article_id)
+                .fetch_one(self.pool())
+                .await?;
+
+        if let Some(analysis_json) = analysis {
+            // Parse the JSON and extract the article_body field
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&analysis_json) {
+                if let Some(body) = parsed.get("article_body").and_then(|v| v.as_str()) {
+                    return Ok(body.to_string());
+                }
+            }
+            // If we can't parse JSON or find article_body, return the raw JSON
+            return Ok(analysis_json);
+        }
+
+        // If no analysis found, try to get tiny_summary
+        let tiny_summary = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT tiny_summary FROM articles WHERE id = ?",
+        )
+        .bind(article_id)
+        .fetch_one(self.pool())
+        .await?;
+
+        if let Some(summary) = tiny_summary {
+            return Ok(summary);
+        }
+
+        // Last resort - return empty string
+        Ok(String::new())
+    }
+
+    /// Gets article category and quality score
+    pub async fn get_article_metadata(
+        &self,
+        article_id: i64,
+    ) -> Result<(Option<String>, i8), sqlx::Error> {
+        // Get category directly from articles table
+        let category =
+            sqlx::query_scalar::<_, Option<String>>("SELECT category FROM articles WHERE id = ?")
+                .bind(article_id)
+                .fetch_one(self.pool())
+                .await?;
+
+        // Try to get quality from analysis JSON
+        let analysis =
+            sqlx::query_scalar::<_, Option<String>>("SELECT analysis FROM articles WHERE id = ?")
+                .bind(article_id)
+                .fetch_one(self.pool())
+                .await?;
+
+        let mut quality: i8 = 0;
+
+        if let Some(analysis_json) = analysis {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&analysis_json) {
+                if let Some(quality_val) = parsed.get("quality").and_then(|v| v.as_i64()) {
+                    quality = quality_val as i8;
+                }
+            }
+        }
+
+        Ok((category, quality))
+    }
+
+    /// Gets all entity IDs for an article
+    pub async fn get_article_entity_ids(&self, article_id: i64) -> Result<Vec<i64>, sqlx::Error> {
+        let result = sqlx::query_scalar::<_, i64>(
+            "SELECT entity_id FROM article_entities WHERE article_id = ?",
+        )
+        .bind(article_id)
+        .fetch_all(self.pool())
+        .await;
+
+        result
+    }
 }
 
 // Helper method to check if an sqlx error is a database lock error
