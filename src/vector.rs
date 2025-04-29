@@ -1231,18 +1231,43 @@ pub async fn get_similar_articles_with_entities(
                     // For entity matches, calculate vector similarity if not already included
                     for mut article in entity_matches {
                         if !all_matches.contains_key(&article.id) {
-                            // Calculate vector similarity for this entity match
-                            match calculate_vector_similarity(embedding, article.id).await {
-                                Ok(vector_score) => {
-                                    info!(target: TARGET_VECTOR, 
-                                        "Added entity-based match: article_id={}, entity_overlap={}, vector_score={:.4}",
-                                        article.id, article.entity_overlap_count.unwrap_or(0), vector_score);
-                                    article.score = vector_score; // Update with actual vector score
-                                    all_matches.insert(article.id, article);
+                            // Special handling for self-comparisons (when article is comparing to itself)
+                            if source_article_id.is_some()
+                                && article.id == source_article_id.unwrap()
+                            {
+                                info!(target: TARGET_VECTOR, 
+                                    "Skipping vector calculation for self-comparison of article {}", article.id);
+
+                                // When comparing to self, the vector similarity is 1.0 (identical)
+                                article.vector_score = Some(1.0);
+                                article.score = 1.0;
+                                all_matches.insert(article.id, article);
+                                continue;
+                            }
+
+                            // For other articles, calculate vector similarity directly
+                            match get_article_vector_from_qdrant(article.id).await {
+                                Ok(target_vector) => {
+                                    match calculate_direct_similarity(embedding, &target_vector) {
+                                        Ok(vector_score) => {
+                                            info!(target: TARGET_VECTOR, 
+                                                "Added entity-based match: article_id={}, entity_overlap={}, vector_score={:.4}",
+                                                article.id, article.entity_overlap_count.unwrap_or(0), vector_score);
+                                            article.vector_score = Some(vector_score);
+                                            article.score = vector_score; // Update with actual vector score
+                                            all_matches.insert(article.id, article);
+                                        }
+                                        Err(e) => {
+                                            error!(target: TARGET_VECTOR, "Failed to calculate direct similarity for article {}: {:?}", article.id, e);
+                                            // Still include the article even if we couldn't get vector similarity
+                                            article.score = 0.0;
+                                            all_matches.insert(article.id, article);
+                                        }
+                                    }
                                 }
                                 Err(e) => {
-                                    error!(target: TARGET_VECTOR, "Failed to calculate vector similarity for article {}: {:?}", article.id, e);
-                                    // Still include the article even if we couldn't get vector similarity
+                                    error!(target: TARGET_VECTOR, "Failed to retrieve vector for article {}: {:?}", article.id, e);
+                                    // Still include the article even if we couldn't get the vector
                                     article.score = 0.0;
                                     all_matches.insert(article.id, article);
                                 }
