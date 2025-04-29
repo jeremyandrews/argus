@@ -28,6 +28,25 @@ impl fmt::Display for EntityType {
     }
 }
 
+impl EntityType {
+    /// Determine if two entity types are compatible for matching
+    pub fn is_compatible_with(&self, other: &EntityType) -> bool {
+        if self == other {
+            return true; // Same types always match
+        }
+
+        // Define compatible pairs
+        match (self, other) {
+            // Products can match with Organizations in specific cases
+            (EntityType::Product, EntityType::Organization)
+            | (EntityType::Organization, EntityType::Product) => true,
+
+            // Other compatible pairs could be defined here
+            _ => false,
+        }
+    }
+}
+
 impl From<&str> for EntityType {
     fn from(s: &str) -> Self {
         match s.to_uppercase().as_str() {

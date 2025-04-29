@@ -157,14 +157,24 @@ fn count_entity_overlap(
     // For each source entity, check if there's a matching target entity
     for source_entity in &source_entities.entities {
         for target_entity in &target_entities.entities {
-            // Entities must be of the same type
-            if source_entity.entity_type == target_entity.entity_type {
+            // Entities must be of the same type OR compatible types
+            if source_entity.entity_type == target_entity.entity_type
+                || source_entity
+                    .entity_type
+                    .is_compatible_with(&target_entity.entity_type)
+            {
                 // Check if names match using the normalizer
                 if normalizer.names_match(
                     &source_entity.normalized_name,
                     &target_entity.normalized_name,
-                    source_entity.entity_type,
+                    source_entity.entity_type, // Use source type for matching rules
                 ) {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Cross-type match: source={}({:?}), target={}({:?})",
+                        source_entity.name, source_entity.entity_type,
+                        target_entity.name, target_entity.entity_type,
+                    );
                     overlap_count += 1;
                     break; // Count each source entity only once
                 }
@@ -263,14 +273,24 @@ fn count_primary_overlap(
     // For each source primary entity, check if there's a matching target primary entity
     for source_entity in &source_primary {
         for target_entity in &target_primary {
-            // Entities must be of the same type
-            if source_entity.entity_type == target_entity.entity_type {
+            // Entities must be of the same type OR compatible types
+            if source_entity.entity_type == target_entity.entity_type
+                || source_entity
+                    .entity_type
+                    .is_compatible_with(&target_entity.entity_type)
+            {
                 // Check if names match using the normalizer
                 if normalizer.names_match(
                     &source_entity.normalized_name,
                     &target_entity.normalized_name,
-                    source_entity.entity_type,
+                    source_entity.entity_type, // Use source type for matching rules
                 ) {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Primary cross-type match: source={}({:?}), target={}({:?})",
+                        source_entity.name, source_entity.entity_type,
+                        target_entity.name, target_entity.entity_type,
+                    );
                     overlap_count += 1;
                     break; // Count each source entity only once
                 }
