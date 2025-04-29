@@ -81,6 +81,7 @@ struct ArticleMatchAnalysisResponse {
     org_overlap: Option<f32>,
     location_overlap: Option<f32>,
     event_overlap: Option<f32>,
+    product_overlap: Option<f32>,
     temporal_proximity: Option<f32>,
     match_formula: String,
     reason_for_failure: Option<String>,
@@ -160,6 +161,7 @@ async fn analyze_article_match(
         org_overlap: None,
         location_overlap: None,
         event_overlap: None,
+        product_overlap: None,
         temporal_proximity: None,
         match_formula: "60% vector similarity + 40% entity similarity".to_string(),
         reason_for_failure: None,
@@ -271,6 +273,7 @@ async fn analyze_article_match(
     response.org_overlap = Some(entity_sim.organization_overlap);
     response.location_overlap = Some(entity_sim.location_overlap);
     response.event_overlap = Some(entity_sim.event_overlap);
+    response.product_overlap = Some(entity_sim.product_overlap);
     response.temporal_proximity = Some(entity_sim.temporal_proximity);
 
     // Calculate combined score (60% vector + 40% entity)

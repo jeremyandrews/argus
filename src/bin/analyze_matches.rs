@@ -151,6 +151,16 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Log the date information we're working with
+    info!(
+        "Date information - Source article {}: event_date={:?}, pub_date={:?}",
+        source_id, source_event_date, source_pub_date
+    );
+    info!(
+        "Date information - Target article {}: event_date={:?}, pub_date={:?}",
+        target_id, None::<String>, target_pub_date
+    );
+
     // Calculate entity similarity
     let entity_sim = calculate_entity_similarity(
         &source_entities,

@@ -41,7 +41,7 @@ pub async fn extract_entities(
     llm_params.json_format = None;
 
     // Parse the response
-    let parsed = match parse_entity_response(&response) {
+    let mut parsed = match parse_entity_response(&response) {
         Ok(parsed) => parsed,
         Err(e) => {
             error!(
@@ -58,6 +58,34 @@ pub async fn extract_entities(
         "Successfully extracted {} entities from article text",
         parsed.entities.len()
     );
+
+    // Add fallback date extraction if no event date was found by the LLM
+    if parsed.event_date.is_none() {
+        // Try to extract dates using regex patterns
+        let date_patterns = [
+            // Month name, day, year: "April 15, 2025" or "April 15 2025"
+            r"(?i)(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,|\s)\s*\d{4}",
+            // ISO format: "2025-04-15"
+            r"\d{4}-\d{2}-\d{2}",
+            // Common US/UK formats: "04/15/2025", "15/04/2025"
+            r"\d{1,2}/\d{1,2}/\d{4}",
+        ];
+
+        // Look for dates in the article text
+        for pattern in &date_patterns {
+            if let Ok(re) = regex::Regex::new(pattern) {
+                if let Some(date_match) = re.find(article_text) {
+                    let date_str = date_match.as_str();
+                    parsed.event_date = Some(date_str.to_string());
+                    info!(
+                        target: TARGET_ENTITY,
+                        "Found event date via regex fallback: {}", date_str
+                    );
+                    break;
+                }
+            }
+        }
+    }
 
     Ok(parsed)
 }

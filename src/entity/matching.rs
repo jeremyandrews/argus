@@ -285,12 +285,16 @@ fn count_primary_overlap(
 fn calculate_temporal_proximity(source_date: Option<&str>, target_date: Option<&str>) -> f32 {
     match (source_date, target_date) {
         (Some(source), Some(target)) => {
+            // Log the date strings we're comparing
+            debug!(target: TARGET_ENTITY, "Comparing dates: source={}, target={}", source, target);
+
             // Try to parse dates (multiple formats)
             let source_parsed = parse_date(source);
             let target_parsed = parse_date(target);
 
             match (source_parsed, target_parsed) {
                 (Some(s_date), Some(t_date)) => {
+                    debug!(target: TARGET_ENTITY, "Successfully parsed dates: source={}, target={}", s_date, t_date);
                     // Calculate days between dates
                     let days_diff = (s_date - t_date).num_days().abs();
 
@@ -318,6 +322,16 @@ fn calculate_temporal_proximity(source_date: Option<&str>, target_date: Option<&
 
 /// Parse date string into NaiveDate, trying multiple formats
 fn parse_date(date_str: &str) -> Option<NaiveDate> {
+    // Try RFC3339 format with timezone (2025-04-29T05:17:23+00:00)
+    if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(date_str) {
+        return Some(datetime.date_naive());
+    }
+
+    // Try ISO format with time but no timezone (2025-04-29T05:17:23)
+    if let Ok(datetime) = chrono::NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S") {
+        return Some(datetime.date());
+    }
+
     // Try ISO format (YYYY-MM-DD)
     if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
         return Some(date);
