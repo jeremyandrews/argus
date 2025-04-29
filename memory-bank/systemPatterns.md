@@ -67,21 +67,36 @@ flowchart LR
 - **Index Optimization**: Strategic indexing for query performance
 
 ### 4. Content Matching Patterns
-1. **Vector Similarity Matching**
-   - Embeds article summaries into vector space
-   - Calculates cosine similarity between embeddings
-   - Identifies semantically similar content
+1. **Multi-Factor Similarity**
+   - Combines vector similarity (60% weight), entity overlap (30% weight), and temporal proximity (10% weight)
+   - Enforces minimum threshold (0.75) that requires both vector similarity and entity overlap
+   - Provides transparency with detailed similarity metrics for debugging and improvement
+   - Ensures consistent weighting across all code paths
    
-2. **Entity-Based Matching**
-   - Extracts named entities (people, organizations, locations, events)
+2. **Vector Similarity Matching**
+   - Embeds article summaries into vector space using Qdrant
+   - Calculates cosine similarity between embeddings
+   - Retrieves vectors directly from Qdrant for comparison
+   - Handles special cases like self-comparisons with explicit logic
+   
+3. **Entity-Based Matching**
+   - Extracts named entities (people, organizations, locations, events) with structured LLM prompts
    - Normalizes entity names for consistent matching
    - Tracks entity importance (PRIMARY, SECONDARY, MENTIONED)
-   - Links articles sharing significant entities
+   - Links articles sharing significant entities with importance-based weighting
+   - Performs entity type-specific scoring (person, organization, location, event)
    
-3. **Temporal Correlation**
+4. **Temporal Correlation**
    - Tracks publication dates and event dates
+   - Uses dynamic date windows for related article matching (14 days before to 1 day after)
    - Groups content related to the same timeframe
    - Enables chronological event tracking
+   
+5. **Dual-Query Approach**
+   - Combines entity-based and vector-based search results
+   - Ensures high recall by capturing matches from both approaches
+   - Deduplicates and ranks results based on combined score
+   - Provides fallback patterns when one approach fails
 
 ### 5. Analysis Patterns
 - **Multi-Stage Analysis**: Progressive refinement of content understanding

@@ -63,6 +63,7 @@
 - Always retrieve actual article vectors from Qdrant - never use dummy or placeholder vectors:
   - INCORRECT: `calculate_vector_similarity(&vec![0.0; 1024], article_id)` - using a dummy vector
   - CORRECT: `calculate_direct_similarity(&source_vector, &target_vector)` - using real vectors
+- Qdrant client is used via the qdrant-client crate (version 1.13)
 - For consistency, lib.rs exports common functions for vector operations:
   ```rust
   pub use vector::{calculate_direct_similarity, get_article_vector_from_qdrant};
@@ -160,3 +161,61 @@
 - Detailed content is stored in R2 and linked in notifications
 - Users subscribe to topics through the iOS app
 - Quality filters allow users to set minimum quality thresholds
+
+## Text Processing Libraries
+- **String Similarity (strsim v0.11.1)**: Used for fuzzy matching and comparison
+  - Provides Levenshtein distance, Jaro-Winkler, and other similarity metrics
+  - Used in entity matching to handle minor spelling variations
+  - Appropriate threshold is typically 0.8+ for name matches
+
+- **Word Stemming (rust-stemmers v1.2.0)**: Used for normalizing word variations
+  - Reduces words to their base/root form (e.g., "running" → "run")
+  - Important for entity normalization where morphological variants appear
+  - Should be coupled with case normalization for best results
+
+- **Unicode Handling**:
+  - unicode-normalization (v0.1.24): Ensures consistent Unicode representation (use NFC normalization)
+  - unicode-segmentation (v1.12): Proper handling of grapheme clusters and word boundaries
+  - Important for processing non-English content and special characters
+  - All entity names should be Unicode-normalized before comparison or storage
+
+- **Language Detection (whatlang v0.16.4)**:
+  - Used to identify the language of article content
+  - Helps apply appropriate language-specific processing rules
+  - Minimum confidence threshold should be 0.8 for language detection
+
+## Date Handling in SQLite
+- RFC3339 formatted dates require special handling in SQLite queries:
+  - Direct string comparison can fail due to timezone and formatting variations
+  - INCORRECT: `WHERE a.pub_date > ?` directly comparing RFC3339 strings
+  - CORRECT: `WHERE substr(a.pub_date, 1, 10) >= substr(?, 1, 10)` comparing just the date portion
+
+- Best Practices for Date Filtering:
+  - Extract just the date portion (YYYY-MM-DD) using substring operations
+  - Use date windows rather than fixed thresholds (e.g., 14 days before to 1 day after)
+  - When both event_date and pub_date exist, use COALESCE:
+    ```sql
+    WHERE COALESCE(date(substr(a.event_date,1,10)), date(substr(a.pub_date,1,10))) 
+          BETWEEN date(substr(?,1,10), '-14 days') AND date(substr(?,1,10), '+1 day')
+    ```
+  - Add proper indexes for date fields: `CREATE INDEX IF NOT EXISTS articles_pub_date ON articles(pub_date)`
+  - Always handle NULL values properly with IS NULL checks or COALESCE
+
+- Date Parameters in Function Calls:
+  - Use Option<&str> for date parameters to properly handle NULL values
+  - INCORRECT: `store_embedding(conn, &id, &embedding, "unknown", "unknown", &entity_ids)`
+  - CORRECT: `store_embedding(conn, &id, &embedding, pub_date.as_deref(), event_date.as_deref(), &entity_ids)`
+
+## Cloud Storage Integration
+- **AWS SDK Configuration**:
+  - aws-config (v1.1.7): Used with behavior-version-latest feature for modern API behavior
+  - aws-sdk-s3 (v1.68): Provides S3 client for R2 integration
+  - Authentication using environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+  - R2 endpoint configuration uses custom endpoint URL (R2_ENDPOINT)
+
+- **Content Storage Pattern**:
+  - JSON files stored in predictable path format: `{bucket_name}/{uuid}.json`
+  - Analysis results stored with article ID in the filename for easy reference
+  - URLs to content are generated and included in notifications
+  - Content is stored in both full and summarized formats for different use cases
+  - Article IDs must be exposed in R2 JSON to allow for match feedback

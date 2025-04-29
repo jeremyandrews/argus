@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Argus is a functioning AI agent system for information monitoring and analysis with dual notification paths (Slack and iOS app). The system has a mature architecture with well-defined components:
+Argus is a fully operational AI agent system for information monitoring and analysis with dual notification paths (Slack and iOS app). The system has evolved into a mature architecture with well-defined components and enhanced entity-based article matching capabilities:
 
 - RSS feed parsing and queue management
 - Decision workers for content relevance determination

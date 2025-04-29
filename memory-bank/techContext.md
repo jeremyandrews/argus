@@ -5,14 +5,15 @@
 ### Core Technologies
 - **Language**: Rust (stable channel)
 - **Database**: SQLite
-- **Vector Database**: Integrated SQLite-based vector storage
+- **Vector Database**: Integrated SQLite-based vector storage with Qdrant client
 - **Web Framework**: Axum for API endpoints
 - **UI Clients**: 
   - Slack integration for notifications
   - Mobile application (React Native)
 
 ### External Services
-- **LLM Integration**: OpenAI API and local models via LLMaaS
+- **LLM Integration**: OpenAI API and local models via Ollama
+- **Cloud Storage**: AWS S3/Cloudflare R2 for content storage
 - **Logging**: Tracing library with structured logging
 - **Metrics**: Prometheus-compatible metrics collection
 - **Notification**: Slack API for alerts
@@ -115,3 +116,36 @@
 - **Architecture Documentation**: System design and patterns are documented
 - **API Documentation**: OpenAPI/Swagger documentation for REST endpoints
 - **Operational Documentation**: Deployment and monitoring guides
+
+## Libraries & Components
+
+### Data Processing & Storage
+- **qdrant-client**: Vector database client for semantic search operations
+- **sqlx**: SQLite database with async support
+- **aws-sdk-s3**: AWS S3 integration for R2 content storage
+- **feed-rs**: RSS feed parsing and processing
+- **readability**: HTML content extraction and cleaning
+
+### Text Processing
+- **tokenizers**: Text tokenization for LLM processing
+- **strsim**: String similarity calculations
+- **rust-stemmers**: Word stemming for normalization
+- **unicode-normalization**: Unicode text normalization
+- **unicode-segmentation**: Text segmentation utilities
+- **whatlang**: Language detection for multilingual support
+- **urlnorm**: URL normalization
+
+### Machine Learning
+- **candle-core/nn/transformers**: Machine learning operations framework
+- **async-openai**: OpenAI API client
+- **ollama-rs**: Ollama API integration for local LLMs
+
+### Web & API
+- **axum**: Web framework for API endpoints
+- **jsonwebtoken**: JWT authentication
+- **reqwest**: HTTP client for external API interactions
+
+### Security & Cryptography
+- **ring**: Cryptographic operations
+- **sha2**: Hashing functions
+- **base64**: Encoding and decoding
