@@ -2,9 +2,10 @@ use crate::entity::types::{
     EntitySimilarityMetrics, EntityType, ExtractedEntities, ImportanceLevel,
 };
 use chrono::NaiveDate;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use tracing::{debug, error, info, warn};
 
+use super::normalizer::EntityNormalizer;
 use super::TARGET_ENTITY;
 
 /// Calculate similarity between articles based on entity overlap
@@ -14,6 +15,9 @@ pub fn calculate_entity_similarity(
     source_date: Option<&str>,
     target_date: Option<&str>,
 ) -> EntitySimilarityMetrics {
+    // Create normalizer for entity comparisons
+    let normalizer = EntityNormalizer::new();
+
     // Log detailed information about the entities we're comparing
     info!(
         target: TARGET_ENTITY,
@@ -24,7 +28,8 @@ pub fn calculate_entity_similarity(
     let mut metrics = EntitySimilarityMetrics::new();
 
     // 1. Calculate basic entity overlap
-    metrics.entity_overlap_count = count_entity_overlap(source_entities, target_entities);
+    metrics.entity_overlap_count =
+        count_entity_overlap(source_entities, target_entities, &normalizer);
 
     // Log entity type breakdown for source and target
     info!(
@@ -46,35 +51,58 @@ pub fn calculate_entity_similarity(
     );
 
     // 2. Calculate type-specific similarity scores
-    metrics.person_overlap =
-        calculate_type_similarity(source_entities, target_entities, EntityType::Person);
+    metrics.person_overlap = calculate_type_similarity(
+        source_entities,
+        target_entities,
+        EntityType::Person,
+        &normalizer,
+    );
 
-    metrics.organization_overlap =
-        calculate_type_similarity(source_entities, target_entities, EntityType::Organization);
+    metrics.organization_overlap = calculate_type_similarity(
+        source_entities,
+        target_entities,
+        EntityType::Organization,
+        &normalizer,
+    );
 
-    metrics.location_overlap =
-        calculate_type_similarity(source_entities, target_entities, EntityType::Location);
+    metrics.location_overlap = calculate_type_similarity(
+        source_entities,
+        target_entities,
+        EntityType::Location,
+        &normalizer,
+    );
 
-    metrics.event_overlap =
-        calculate_type_similarity(source_entities, target_entities, EntityType::Event);
+    metrics.event_overlap = calculate_type_similarity(
+        source_entities,
+        target_entities,
+        EntityType::Event,
+        &normalizer,
+    );
 
     // Log individual entity comparisons for debugging
     for source_entity in &source_entities.entities {
         for target_entity in &target_entities.entities {
             if source_entity.entity_type == target_entity.entity_type {
+                let matches = normalizer.names_match(
+                    &source_entity.normalized_name,
+                    &target_entity.normalized_name,
+                    source_entity.entity_type,
+                );
+
                 info!(
                     target: TARGET_ENTITY,
                     "Entity comparison: source={}({:?}), target={}({:?}), match={}",
                     source_entity.name, source_entity.importance,
                     target_entity.name, target_entity.importance,
-                    source_entity.normalized_name == target_entity.normalized_name
+                    matches
                 );
             }
         }
     }
 
     // 3. Calculate primary entity overlap count
-    metrics.primary_overlap_count = count_primary_overlap(source_entities, target_entities);
+    metrics.primary_overlap_count =
+        count_primary_overlap(source_entities, target_entities, &normalizer);
 
     // 4. Calculate temporal proximity (if dates available)
     metrics.temporal_proximity = calculate_temporal_proximity(
@@ -114,24 +142,29 @@ pub fn calculate_entity_similarity(
 fn count_entity_overlap(
     source_entities: &ExtractedEntities,
     target_entities: &ExtractedEntities,
+    normalizer: &EntityNormalizer,
 ) -> usize {
-    // Create sets of normalized entity names for efficient comparison
-    let source_entity_names: HashSet<&str> = source_entities
-        .entities
-        .iter()
-        .map(|e| e.normalized_name.as_str())
-        .collect();
+    let mut overlap_count = 0;
 
-    let target_entity_names: HashSet<&str> = target_entities
-        .entities
-        .iter()
-        .map(|e| e.normalized_name.as_str())
-        .collect();
+    // For each source entity, check if there's a matching target entity
+    for source_entity in &source_entities.entities {
+        for target_entity in &target_entities.entities {
+            // Entities must be of the same type
+            if source_entity.entity_type == target_entity.entity_type {
+                // Check if names match using the normalizer
+                if normalizer.names_match(
+                    &source_entity.normalized_name,
+                    &target_entity.normalized_name,
+                    source_entity.entity_type,
+                ) {
+                    overlap_count += 1;
+                    break; // Count each source entity only once
+                }
+            }
+        }
+    }
 
-    // Count intersection (entities that appear in both sets)
-    source_entity_names
-        .intersection(&target_entity_names)
-        .count()
+    overlap_count
 }
 
 /// Calculate similarity score for a specific entity type
@@ -139,6 +172,7 @@ fn calculate_type_similarity(
     source_entities: &ExtractedEntities,
     target_entities: &ExtractedEntities,
     entity_type: EntityType,
+    normalizer: &EntityNormalizer,
 ) -> f32 {
     // Get entities of the specified type
     let source_type_entities = source_entities.get_entities_by_type(entity_type);
@@ -149,47 +183,56 @@ fn calculate_type_similarity(
         return 0.0;
     }
 
-    // Create maps of entity name -> importance for weighted matching
-    let mut source_map: HashMap<&str, f32> = HashMap::new();
-    let mut target_map: HashMap<&str, f32> = HashMap::new();
-
     // Weights by importance
     const PRIMARY_WEIGHT: f32 = 1.0;
     const SECONDARY_WEIGHT: f32 = 0.6;
     const MENTIONED_WEIGHT: f32 = 0.3;
 
-    // Populate source map with normalized entity names
-    for entity in &source_type_entities {
-        let weight = match entity.importance {
-            ImportanceLevel::Primary => PRIMARY_WEIGHT,
-            ImportanceLevel::Secondary => SECONDARY_WEIGHT,
-            ImportanceLevel::Mentioned => MENTIONED_WEIGHT,
-        };
-        source_map.insert(entity.normalized_name.as_str(), weight);
-    }
-
-    // Populate target map with normalized entity names
-    for entity in &target_type_entities {
-        let weight = match entity.importance {
-            ImportanceLevel::Primary => PRIMARY_WEIGHT,
-            ImportanceLevel::Secondary => SECONDARY_WEIGHT,
-            ImportanceLevel::Mentioned => MENTIONED_WEIGHT,
-        };
-        target_map.insert(entity.normalized_name.as_str(), weight);
-    }
-
-    // Calculate weighted overlap sum (entities found in both with their weights)
+    // Calculate weighted overlap score
     let mut overlap_score = 0.0;
-    for (name, source_weight) in &source_map {
-        if let Some(target_weight) = target_map.get(name) {
-            // Average the weights for entities that appear in both
-            let combined_weight = (source_weight + target_weight) / 2.0;
-            overlap_score += combined_weight;
+    let mut matched_target_indices = HashSet::new();
+
+    // For each source entity, find the best matching target entity
+    for source_entity in &source_type_entities {
+        let source_weight = match source_entity.importance {
+            ImportanceLevel::Primary => PRIMARY_WEIGHT,
+            ImportanceLevel::Secondary => SECONDARY_WEIGHT,
+            ImportanceLevel::Mentioned => MENTIONED_WEIGHT,
+        };
+
+        // Find best matching target entity that hasn't been matched yet
+        for (target_idx, target_entity) in target_type_entities.iter().enumerate() {
+            // Skip already matched target entities
+            if matched_target_indices.contains(&target_idx) {
+                continue;
+            }
+
+            // Check if entities match
+            if normalizer.names_match(
+                &source_entity.normalized_name,
+                &target_entity.normalized_name,
+                entity_type,
+            ) {
+                let target_weight = match target_entity.importance {
+                    ImportanceLevel::Primary => PRIMARY_WEIGHT,
+                    ImportanceLevel::Secondary => SECONDARY_WEIGHT,
+                    ImportanceLevel::Mentioned => MENTIONED_WEIGHT,
+                };
+
+                // Average the weights for entities that match
+                let combined_weight = (source_weight + target_weight) / 2.0;
+                overlap_score += combined_weight;
+
+                // Mark this target entity as matched
+                matched_target_indices.insert(target_idx);
+                break;
+            }
         }
     }
 
     // Normalize score - divide by the theoretical maximum score if all entities matched
-    let max_possible_score = (source_map.len() + target_map.len()) as f32 / 2.0 * PRIMARY_WEIGHT;
+    let max_possible_score =
+        (source_type_entities.len() + target_type_entities.len()) as f32 / 2.0 * PRIMARY_WEIGHT;
     if max_possible_score > 0.0 {
         overlap_score / max_possible_score
     } else {
@@ -201,24 +244,33 @@ fn calculate_type_similarity(
 fn count_primary_overlap(
     source_entities: &ExtractedEntities,
     target_entities: &ExtractedEntities,
+    normalizer: &EntityNormalizer,
 ) -> usize {
     // Get primary entities
     let source_primary = source_entities.get_primary_entities();
     let target_primary = target_entities.get_primary_entities();
 
-    // Create sets of normalized entity names
-    let source_names: HashSet<&str> = source_primary
-        .iter()
-        .map(|e| e.normalized_name.as_str())
-        .collect();
+    let mut overlap_count = 0;
 
-    let target_names: HashSet<&str> = target_primary
-        .iter()
-        .map(|e| e.normalized_name.as_str())
-        .collect();
+    // For each source primary entity, check if there's a matching target primary entity
+    for source_entity in &source_primary {
+        for target_entity in &target_primary {
+            // Entities must be of the same type
+            if source_entity.entity_type == target_entity.entity_type {
+                // Check if names match using the normalizer
+                if normalizer.names_match(
+                    &source_entity.normalized_name,
+                    &target_entity.normalized_name,
+                    source_entity.entity_type,
+                ) {
+                    overlap_count += 1;
+                    break; // Count each source entity only once
+                }
+            }
+        }
+    }
 
-    // Count intersection
-    source_names.intersection(&target_names).count()
+    overlap_count
 }
 
 /// Calculate temporal proximity score between article dates

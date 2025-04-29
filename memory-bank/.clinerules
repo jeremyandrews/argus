@@ -58,6 +58,41 @@
 - LLM client initialization should be centralized or follow a clear template
 - Use the `process_ollama_configs` and `process_analysis_ollama_configs` functions from lib.rs to parse environment variables
 
+## Vector Similarity Calculation
+- Vector similarity is a critical component of article matching (weighted at 60% of the final score)
+- Always retrieve actual article vectors from Qdrant - never use dummy or placeholder vectors:
+  - INCORRECT: `calculate_vector_similarity(&vec![0.0; 1024], article_id)` - using a dummy vector
+  - CORRECT: `calculate_direct_similarity(&source_vector, &target_vector)` - using real vectors
+- For consistency, lib.rs exports common functions for vector operations:
+  ```rust
+  pub use vector::{calculate_direct_similarity, get_article_vector_from_qdrant};
+  ```
+- Always use these exported functions rather than reimplementing vector operations
+- Special handling is required for self-comparisons (when an article is compared to itself):
+  - Self-comparisons should always return a vector similarity of 1.0 (perfect match)
+  - Explicitly check for self-comparisons: `if article_id == source_article_id`
+- Vector similarity calculation has three main steps:
+  1. Retrieve source article vector from Qdrant
+  2. Retrieve target article vector from Qdrant
+  3. Calculate cosine similarity between the two vectors
+- All new code that needs vector similarity should use a common pattern:
+  ```rust
+  // First, get both vectors
+  let source_vector = get_article_vector_from_qdrant(source_id).await?;
+  let target_vector = get_article_vector_from_qdrant(target_id).await?;
+  
+  // Then calculate similarity
+  let similarity = calculate_direct_similarity(&source_vector, &target_vector)?;
+  ```
+- Error handling for vector operations should provide specific failure reasons:
+  - Vector not found in database
+  - Dimension mismatch between vectors
+  - Near-zero magnitude vectors (can cause NaN results)
+  - Qdrant connection failures
+- Vector similarity functions should always check vector magnitudes:
+  - A vector magnitude below 0.001 should be treated as an error
+  - Avoid division by zero errors by checking magnitudes before normalization
+
 ## Entity-Based Article Matching
 - Entity extraction uses structured LLM prompts to identify people, organizations, locations, and events
 - Entity extraction requires the EntityExtraction schema type for proper JSON handling

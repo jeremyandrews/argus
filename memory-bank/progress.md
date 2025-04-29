@@ -158,6 +158,26 @@ Argus is currently in active development with major components implemented and f
   - Modified query strategy to skip date filtering when no source date exists
   - Fixed "unknown" string literals being stored instead of proper NULL values
   - Implemented proper SQL substring date extraction to handle RFC3339 formatted dates consistently
+
+- ✅ **Vector Similarity Calculation Fix**: Fixed critical issue with vector similarity calculation in the article matching system
+  - Identified incorrect vector calculation in three different parts of the codebase:
+    - In diagnostic tools: Using a dummy zero vector instead of retrieving source article vectors
+    - In API code: Same issue in `app/api.rs` - using a dummy vector `&vec![0.0; 1024]` for calculations
+    - In `vector.rs`: Not properly handling self-comparisons of articles
+  - Fixed `vector.rs` to:
+    - Properly handle self-comparisons with explicit vector_score and score setting for self-comparisons
+    - Implement direct vector retrieval and comparison for entity-matched articles
+    - Use better error handling for vector calculation failures
+  - Fixed `app/api.rs` to:
+    - Retrieve vectors for both source and target articles directly from Qdrant
+    - Use common `calculate_direct_similarity` function for consistent calculation
+    - Add proper error handling with specific messages for each failure mode
+  - Leveraged common code path through lib.rs re-exports to ensure consistency
+  - The fix resulted in:
+    - Correctly calculated vector similarity scores (e.g., 92% similarity instead of 0%)
+    - Successful matches for articles that should match based on content
+    - Better error reporting when vector calculations fail
+
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
 - 🔄 **Qdrant Integration**: Extending vector database integration with entity data
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity
@@ -240,6 +260,7 @@ Argus is currently in active development with major components implemented and f
 - ✓ Enhanced LLM error logging with connection information
 - ✓ Dual-query article similarity with entity and vector matching
 - ✓ Fixed entity extraction failures in utility programs
+- ✓ Fixed vector similarity calculation for proper article matching
 
 ### In Progress
 - 🔄 Qdrant integration for entity-based vector search
