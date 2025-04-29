@@ -79,6 +79,13 @@ pub fn calculate_entity_similarity(
         &normalizer,
     );
 
+    metrics.product_overlap = calculate_type_similarity(
+        source_entities,
+        target_entities,
+        EntityType::Product,
+        &normalizer,
+    );
+
     // Log individual entity comparisons for debugging
     for source_entity in &source_entities.entities {
         for target_entity in &target_entities.entities {
@@ -115,13 +122,14 @@ pub fn calculate_entity_similarity(
 
     debug!(
         target: TARGET_ENTITY,
-        "Entity similarity metrics: overlap_count={}, primary_overlap={}, person={:.2}, org={:.2}, location={:.2}, event={:.2}, temporal={:.2}, combined={:.2}",
+        "Entity similarity metrics: overlap_count={}, primary_overlap={}, person={:.2}, org={:.2}, location={:.2}, event={:.2}, product={:.2}, temporal={:.2}, combined={:.2}",
         metrics.entity_overlap_count,
         metrics.primary_overlap_count,
         metrics.person_overlap,
         metrics.organization_overlap,
         metrics.location_overlap,
         metrics.event_overlap,
+        metrics.product_overlap,
         metrics.temporal_proximity,
         metrics.combined_score
     );

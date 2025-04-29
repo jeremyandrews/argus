@@ -140,7 +140,15 @@ impl EntityNormalizer {
 
     /// Apply basic normalization: Unicode normalization, lowercase, whitespace
     fn basic_normalize(&self, name: &str) -> String {
-        name.nfkd() // Unicode normalization
+        // Handle apostrophes specially before general punctuation
+        let name_without_apostrophes = name
+            .replace("'s ", " ") // Remove possessive "'s "
+            .replace("' ", " ") // Remove other apostrophe forms
+            .replace("'s", "s") // Handle possessive at end of word
+            .replace("'", ""); // Remove remaining apostrophes
+
+        name_without_apostrophes
+            .nfkd() // Unicode normalization
             .collect::<String>()
             .to_lowercase() // Case normalization
             .trim() // Remove leading/trailing whitespace
@@ -183,5 +191,22 @@ mod tests {
         // Non-matches
         assert!(!normalizer.names_match("Blue Origin", "SpaceX", EntityType::Organization));
         assert!(!normalizer.names_match("Jeff Bezos", "Elon Musk", EntityType::Person));
+    }
+
+    #[test]
+    fn test_apostrophe_handling() {
+        let normalizer = EntityNormalizer::new();
+
+        // Test apostrophe normalization
+        assert_eq!(
+            normalizer.basic_normalize("SpaceX's Starlinks"),
+            "spacex starlinks"
+        );
+        assert_eq!(normalizer.basic_normalize("SpaceX's"), "spacexs");
+        assert_eq!(normalizer.basic_normalize("James' Book"), "james book");
+
+        // Test matching with apostrophes
+        assert!(normalizer.names_match("SpaceX's Starlinks", "Starlink", EntityType::Product));
+        assert!(normalizer.names_match("McDonald's", "McDonalds", EntityType::Organization));
     }
 }

@@ -186,6 +186,9 @@ pub struct EntitySimilarityMetrics {
     // Event similarity
     pub event_overlap: f32,
 
+    // Product similarity
+    pub product_overlap: f32,
+
     // Temporal proximity (0 to 1, where 1 is same date)
     pub temporal_proximity: f32,
 
@@ -201,11 +204,12 @@ impl EntitySimilarityMetrics {
     /// Calculate combined score from individual components
     pub fn calculate_combined_score(&mut self) {
         // Weighted average of entity-based similarities
-        self.combined_score = 0.3 * self.person_overlap
+        self.combined_score = 0.25 * self.person_overlap
             + 0.2 * self.organization_overlap
-            + 0.15 * self.location_overlap
-            + 0.15 * self.event_overlap
-            + 0.2 * self.temporal_proximity;
+            + 0.1 * self.location_overlap
+            + 0.1 * self.event_overlap
+            + 0.2 * self.product_overlap
+            + 0.15 * self.temporal_proximity;
     }
 }
 
