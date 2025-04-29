@@ -1433,10 +1433,17 @@ pub async fn get_similar_articles_with_entities(
     let similarity_threshold = 0.75;
     let mut near_misses = Vec::new();
 
-    // Apply minimum combined threshold (0.75)
+    // Apply minimum combined threshold (0.75) and filter out self-matches
     let final_matches: Vec<ArticleMatch> = enhanced_matches
                 .into_iter()
                 .filter(|m| {
+                    // First, filter out self-matches (articles shouldn't match themselves)
+                    if source_article_id.is_some() && m.article_id == source_article_id.unwrap() {
+                        info!(target: TARGET_VECTOR, "Filtered out self-match for article {}", m.article_id);
+                        return false;
+                    }
+
+                    // Then check similarity threshold
                     let passes = m.final_score >= similarity_threshold;
                     if !passes {
                         // Create a near-miss record for this article

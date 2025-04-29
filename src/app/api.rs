@@ -68,6 +68,7 @@ struct ArticleMatchAnalysisRequest {
 struct ArticleMatchAnalysisResponse {
     source_article_id: i64,
     target_article_id: i64,
+    is_self_match: bool,
     vector_similarity: f32,
     entity_similarity: Option<f32>,
     combined_score: f32,
@@ -144,10 +145,14 @@ async fn analyze_article_match(
     let source_article_id = payload.source_article_id;
     let target_article_id = payload.target_article_id;
 
+    // Check if this is a self-match (comparing an article to itself)
+    let is_self_match = source_article_id == target_article_id;
+
     // Initialize response defaults
     let mut response = ArticleMatchAnalysisResponse {
         source_article_id,
         target_article_id,
+        is_self_match,
         vector_similarity: 0.0,
         entity_similarity: None,
         combined_score: 0.0,
@@ -166,6 +171,16 @@ async fn analyze_article_match(
         match_formula: "60% vector similarity + 40% entity similarity".to_string(),
         reason_for_failure: None,
     };
+
+    // For self-matches, add a note about not displaying in UI
+    if is_self_match {
+        info!(
+            "Self-match detected for article {}, this would be filtered in related articles",
+            source_article_id
+        );
+        response.reason_for_failure =
+            Some("Self-matches are filtered from related articles in the UI".to_string());
+    }
 
     // Step 1: Get both articles' entity data
     let source_entities = match get_article_entities(source_article_id).await {
