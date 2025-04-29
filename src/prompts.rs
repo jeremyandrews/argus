@@ -271,31 +271,61 @@ PROPER ATTRIBUTION EXAMPLES:
 * INCORRECT: "Google Reveals New Product Features" (implies official reveal)
 * CORRECT: "Google's New Product Features Reportedly Include Voice Control" (maintains qualification)
 
+TEMPORAL ACCURACY (CRITICAL):
+* TODAY means {date} - the system's current date at the time of processing
+* ALWAYS use appropriate tense to distinguish between past, present, and future events
+* For PAST events (before today): Use past tense ("announced," "released," "discovered")
+* For PRESENT events (happening now): Use present tense ("is announcing," "is rolling out")
+* For FUTURE events (after today): Use future-indicating phrases ("will announce," "plans to release," "is scheduled to launch")
+* NEVER describe future events as if they've already happened
+* Check dates carefully and maintain temporal accuracy
+* When a date is mentioned in the article, compare it to TODAY to determine proper tense
+
+LEAD-IN VARIETY:
+* DO NOT always start with "In [month/date/year]" unless the date is CRITICAL to understanding the news
+* ONLY highlight the date when it adds significant value to the information (e.g., election dates, product release timing)
+* Vary your opening approaches based on what's most important about the news:
+  - For significant actions: Start with the subject and their action
+  - For major discoveries: Highlight what was found
+  - For announcements: Focus on what was revealed
+  - For ongoing situations: Emphasize current developments
+  - For analyses/reports: Start with key findings
+
 PROMOTIONAL CONTENT:
 * Your summary should focus on substantive information, not promotions or sales
 * If the article is primarily about price reductions, discounts, or limited-time offers, indicate this is a "price promotion article" rather than presenting it as significant news
 
 For multi-topic articles:
-* Use "In [timeframe], [main event]; [second event]; [third event]"
+* Synthesize the main points without relying on "In [timeframe]" as a crutch
 * Drop minor events to stay within length
 * Keep only the most significant numbers/dates
 * Plan your sentence before writing to ensure completion within limit
 
-EXAMPLES OF CORRECT LENGTH:
-**Perfect Length (178 chars):**
-"In February 2025, Drupal released its Views module allowing users to create organized content lists without SQL queries, offering Page and Block display options with customizable formats."
+EXAMPLES OF DIVERSE, EFFECTIVE SUMMARIES:
+**Action-Focused (182 chars):**
+"Drupal released its Views module allowing users to create organized content lists without SQL queries, offering Page and Block display options with customizable formats."
 
-**Acceptable Length (256 chars):**
-"In February 2025, the article 'Drupal Views: How to Set Up and Work with' explained how to use Drupal's Views module for organizing content display through the Structure section, with options for Page or Block displays and various format options like tables and grids."
+**Discovery-Focused (195 chars):**
+"Researchers at MIT discovered a new quantum computing method that reduces error rates by 40% while requiring fewer qubits, potentially accelerating practical applications by several years."
+
+**Announcement-Focused (176 chars):**
+"Apple's upcoming iPhone will feature satellite connectivity for emergency calls in remote areas without cellular coverage, according to multiple sources familiar with the company's plans."
+
+**Analysis-Focused (189 chars):**
+"Recent climate data reveals Arctic ice reached its lowest summer extent since records began, with scientists warning the region could experience ice-free summers by 2035 if current trends continue."
+
+**Date-Important Example (204 chars):**
+"On November 5, 2025, voters will decide on Proposition 37, which would establish universal basic income for all state residents over 18, funded by a 2% wealth tax on assets exceeding $50 million."
 
 **INCORRECT APPROACH - DO NOT DO THIS:**
 "The article explains how to use the Drupal Views module for organizing content display, including how to add views through the Structure section, configure settings, choose between Page or Block displays..." [Incomplete at 400 characters]
 
 **CORRECT APPROACH - DO THIS INSTEAD:**
-"In February 2025, an article explained how Drupal's Views module helps organize content by creating custom displays without SQL queries, offering both Page and Block options with various formatting choices."
+"Drupal's Views module helps organize content by creating custom displays without SQL queries, offering both Page and Block options with various formatting choices for easier website content management."
 {write_in_clear_english}
 {dont_tell_me}"#,
         summary = summary_response,
+        date = current_date(),
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )

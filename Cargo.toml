@@ -1,11 +1,11 @@
 [package]
 name = "argus"
-version = "0.12.8"
+version = "0.12.9"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-async-openai = "0.27"
+async-openai = "0.28"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.68"
 axum = "0.8"
