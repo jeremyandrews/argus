@@ -785,18 +785,21 @@ async fn get_articles_by_entities(
     Ok(matches)
 }
 
-/// Calculate vector similarity between an embedding and a specific article
-pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
+/// Retrieve an article's vector embedding from Qdrant
+///
+/// # Arguments
+/// * `article_id` - The ID of the article to retrieve the vector for
+///
+/// # Returns
+/// * `Result<Vec<f32>>` - The vector embedding or an error
+pub async fn get_article_vector_from_qdrant(article_id: i64) -> Result<Vec<f32>> {
     let client = Qdrant::from_url(
         &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
     )
     .timeout(std::time::Duration::from_secs(60))
     .build()?;
 
-    info!(target: TARGET_VECTOR, "Starting vector similarity calculation for article {}", article_id);
-    let source_magnitude = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-    info!(target: TARGET_VECTOR, "Source embedding dimensions: {}, magnitude: {:.6}", 
-          embedding.len(), source_magnitude);
+    info!(target: TARGET_VECTOR, "Retrieving vector for article {}", article_id);
 
     // Get the article's vector from Qdrant
     let response = client
@@ -843,37 +846,12 @@ pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) 
                         // Check for problematic vectors
                         if magnitude < 0.001 {
                             error!(target: TARGET_VECTOR, "CRITICAL: Near-zero magnitude vector detected for article {}", article_id);
+                            return Err(anyhow::anyhow!("Near-zero magnitude vector detected"));
                         }
 
-                        // Dimension checking
-                        if embedding.len() != v.data.len() {
-                            error!(target: TARGET_VECTOR, "CRITICAL: Vector dimension mismatch for article {}: source={}, target={}", 
-                                  article_id, embedding.len(), v.data.len());
-                            return Err(anyhow::anyhow!("Vector dimension mismatch"));
-                        }
-
-                        // Calculate cosine similarity
-                        let dot_product: f32 = embedding
-                            .iter()
-                            .zip(v.data.iter())
-                            .map(|(a, b)| a * b)
-                            .sum();
-
-                        let mag1: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-                        let mag2: f32 = v.data.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-                        let similarity = if mag1 > 0.0 && mag2 > 0.0 {
-                            dot_product / (mag1 * mag2)
-                        } else {
-                            error!(target: TARGET_VECTOR, "CRITICAL: Zero magnitude vector detected during similarity calculation for article {}", article_id);
-                            return Err(anyhow::anyhow!("Zero magnitude vector detected"));
-                        };
-
-                        info!(target: TARGET_VECTOR, "Successfully calculated similarity for article {}: {:.6}", article_id, similarity);
-                        return Ok(similarity);
+                        return Ok(v.data.clone());
                     }
                     other => {
-                        // This branch handles other enum variants we might not expect
                         error!(target: TARGET_VECTOR, "Unexpected vector format for article {}: {:?}", article_id, other);
                         return Err(anyhow::anyhow!("Unexpected vector format"));
                     }
@@ -888,9 +866,67 @@ pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) 
         error!(target: TARGET_VECTOR, "Empty result for article {} vector retrieval", article_id);
     }
 
-    // If we couldn't get the vector or calculate similarity
-    error!(target: TARGET_VECTOR, "Failed to calculate vector similarity for article {}", article_id);
-    Err(anyhow::anyhow!("Failed to calculate vector similarity"))
+    error!(target: TARGET_VECTOR, "Failed to retrieve vector for article {}", article_id);
+    Err(anyhow::anyhow!("Vector not found"))
+}
+
+/// Calculate cosine similarity directly between two vectors
+///
+/// # Arguments
+/// * `vec1` - First vector
+/// * `vec2` - Second vector
+///
+/// # Returns
+/// * `Result<f32>` - The cosine similarity or an error
+pub fn calculate_direct_similarity(vec1: &[f32], vec2: &[f32]) -> Result<f32> {
+    if vec1.len() != vec2.len() {
+        return Err(anyhow::anyhow!(
+            "Vector dimensions don't match: {} vs {}",
+            vec1.len(),
+            vec2.len()
+        ));
+    }
+
+    let mag1: f32 = vec1.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let mag2: f32 = vec2.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+    if mag1 < 0.001 || mag2 < 0.001 {
+        return Err(anyhow::anyhow!("Zero magnitude vector detected"));
+    }
+
+    let dot_product: f32 = vec1.iter().zip(vec2.iter()).map(|(a, b)| a * b).sum();
+    let similarity = dot_product / (mag1 * mag2);
+
+    Ok(similarity)
+}
+
+/// Calculate vector similarity between an embedding and a specific article
+pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) -> Result<f32> {
+    info!(target: TARGET_VECTOR, "Starting vector similarity calculation for article {}", article_id);
+    let source_magnitude = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+    info!(target: TARGET_VECTOR, "Source embedding dimensions: {}, magnitude: {:.6}", 
+          embedding.len(), source_magnitude);
+
+    if source_magnitude < 0.001 {
+        error!(target: TARGET_VECTOR, "CRITICAL: Source vector has near-zero magnitude");
+        return Err(anyhow::anyhow!("Source vector has near-zero magnitude"));
+    }
+
+    // Get the target article's vector using our new function
+    let target_vector = get_article_vector_from_qdrant(article_id).await?;
+
+    // Check dimensions match
+    if embedding.len() != target_vector.len() {
+        error!(target: TARGET_VECTOR, "CRITICAL: Vector dimension mismatch for article {}: source={}, target={}", 
+               article_id, embedding.len(), target_vector.len());
+        return Err(anyhow::anyhow!("Vector dimension mismatch"));
+    }
+
+    // Use the direct similarity calculation
+    let similarity = calculate_direct_similarity(embedding, &target_vector)?;
+    info!(target: TARGET_VECTOR, "Successfully calculated similarity for article {}: {:.6}", article_id, similarity);
+
+    Ok(similarity)
 }
 
 /// Get all entities for a specific article

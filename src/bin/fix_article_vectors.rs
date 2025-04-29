@@ -1,14 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use argus::db::Database;
 use argus::vector::{get_article_vectors, store_embedding};
-use qdrant_client::qdrant::point_id::PointIdOptions;
-use qdrant_client::qdrant::{PointId, WithPayloadSelector, WithVectorsSelector};
-use qdrant_client::Qdrant;
 use std::env;
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
-
-const QDRANT_URL_ENV: &str = "QDRANT_URL";
 
 /// Utility to validate and fix vector embeddings for specific articles
 ///
@@ -22,14 +17,6 @@ const QDRANT_URL_ENV: &str = "QDRANT_URL";
 /// 1. Check if the articles have valid vector embeddings
 /// 2. If not, regenerate and store new embeddings
 /// 3. Verify the fix with a similarity calculation
-///
-/// Output example:
-/// ```
-/// Validating vector for article 21235787...
-/// No valid vector found or validation failed
-/// Regenerating vector for article 21235787...
-/// Successfully reprocessed vector for article 21235787
-/// ```
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -83,9 +70,7 @@ async fn main() -> Result<()> {
                     id1, id2
                 );
 
-                // Create dummy vector for dummy_vector parameter (actual vectors come from DB)
-                let dummy_vector = vec![0.0; 1024];
-                match verify_similarity(&dummy_vector, id1, id2).await {
+                match verify_similarity(id1, id2).await {
                     Ok(similarity) => {
                         info!(
                             "Similarity between articles {} and {}: {:.6}",
@@ -189,85 +174,27 @@ async fn validate_and_reprocess_vector(article_id: i64) -> Result<()> {
 
 // Validation function to check if an article's vector is valid
 async fn validate_article_vector(article_id: i64) -> Result<bool> {
-    let client = Qdrant::from_url(
-        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
-    )
-    .timeout(std::time::Duration::from_secs(60))
-    .build()?;
-
-    // Get the article's vector from Qdrant
-    let response = client
-        .get_points(qdrant_client::qdrant::GetPoints {
-            collection_name: "articles".to_string(),
-            ids: vec![PointId {
-                point_id_options: Some(PointIdOptions::Num(article_id as u64)),
-            }],
-            with_payload: Some(WithPayloadSelector::from(false)),
-            with_vectors: Some(WithVectorsSelector::from(true)),
-            ..Default::default()
-        })
-        .await?;
-
-    if let Some(point) = response.result.first() {
-        if let Some(vectors) = &point.vectors {
-            if let Some(opts) = &vectors.vectors_options {
-                // Check if this is the vector variant we expect
-                match opts {
-                    &qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(ref v) => {
-                        // Check dimensions
-                        if v.data.len() != 1024 {
-                            // Expected dimension for E5 embeddings
-                            info!(
-                                "Vector for article {} has wrong dimensions: {}",
-                                article_id,
-                                v.data.len()
-                            );
-                            return Ok(false);
-                        }
-
-                        // Check for zero magnitude
-                        let magnitude = v.data.iter().map(|x| x * x).sum::<f32>().sqrt();
-                        if magnitude < 0.001 {
-                            info!(
-                                "Vector for article {} has near-zero magnitude: {}",
-                                article_id, magnitude
-                            );
-                            return Ok(false);
-                        }
-
-                        // Check for NaN values
-                        if v.data.iter().any(|x| x.is_nan()) {
-                            info!("Vector for article {} contains NaN values", article_id);
-                            return Ok(false);
-                        }
-
-                        // Vector looks valid
-                        return Ok(true);
-                    }
-                    _ => {
-                        info!("Vector for article {} has unexpected format", article_id);
-                        return Ok(false);
-                    }
-                }
-            }
+    match argus::get_article_vector_from_qdrant(article_id).await {
+        Ok(_) => {
+            // Vector was successfully retrieved and validated
+            info!("Article {} has a valid vector", article_id);
+            Ok(true)
+        }
+        Err(e) => {
+            info!("Vector validation failed for article {}: {}", article_id, e);
+            Ok(false)
         }
     }
-
-    // No vector found or structure is unexpected
-    info!("No valid vector found for article {}", article_id);
-    Ok(false)
 }
 
 // Verify similarity calculation works between two articles
-async fn verify_similarity(
-    dummy_vector: &Vec<f32>,
-    _article_id1: i64,
-    article_id2: i64,
-) -> Result<f32> {
-    // We need to add this function to ensure the calculation works properly between our articles
-    let similarity = argus::vector::calculate_vector_similarity(dummy_vector, article_id2)
-        .await
-        .context("Failed to calculate similarity")?;
+async fn verify_similarity(article_id1: i64, article_id2: i64) -> Result<f32> {
+    // Get both vectors
+    let vec1 = argus::get_article_vector_from_qdrant(article_id1).await?;
+    let vec2 = argus::get_article_vector_from_qdrant(article_id2).await?;
+
+    // Calculate direct similarity
+    let similarity = argus::calculate_direct_similarity(&vec1, &vec2)?;
 
     Ok(similarity)
 }

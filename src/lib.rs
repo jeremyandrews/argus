@@ -16,6 +16,9 @@ pub mod slack;
 pub mod util;
 pub mod vector;
 
+// Re-export important vector functions for easy access
+pub use vector::{calculate_direct_similarity, get_article_vector_from_qdrant};
+
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
 use serde::Serialize;

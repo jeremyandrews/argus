@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use argus::db::Database;
 use argus::entity::matching::calculate_entity_similarity;
-use argus::vector::calculate_vector_similarity;
-use argus::vector::get_article_entities;
+use argus::{
+    calculate_direct_similarity, get_article_vector_from_qdrant, vector::get_article_entities,
+};
 use std::env;
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -119,9 +120,30 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Calculate vector similarity
-    let dummy_vector = vec![0.0; 1024]; // This is a dummy vector, the calculation will use actual vectors from DB
-    let vector_similarity = match calculate_vector_similarity(&dummy_vector, target_id).await {
+    // Calculate vector similarity using actual vectors
+    let source_vector = match get_article_vector_from_qdrant(source_id).await {
+        Ok(vector) => vector,
+        Err(e) => {
+            error!(
+                "Failed to get vector for source article {}: {}",
+                source_id, e
+            );
+            return Err(e.into());
+        }
+    };
+
+    let target_vector = match get_article_vector_from_qdrant(target_id).await {
+        Ok(vector) => vector,
+        Err(e) => {
+            error!(
+                "Failed to get vector for target article {}: {}",
+                target_id, e
+            );
+            return Err(e.into());
+        }
+    };
+
+    let vector_similarity = match calculate_direct_similarity(&source_vector, &target_vector) {
         Ok(similarity) => similarity,
         Err(e) => {
             error!("Failed to calculate vector similarity: {}", e);
