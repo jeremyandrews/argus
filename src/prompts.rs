@@ -1565,7 +1565,14 @@ ENTITY EXTRACTION GUIDELINES:
    - PERSON: Individual people (politicians, executives, scientists, etc.)
    - ORGANIZATION: Companies, institutions, governments, agencies, etc.
    - LOCATION: Countries, cities, regions, landmarks, etc.
-   - EVENT: Specific happenings (elections, conferences, disasters, etc.)
+   - EVENT: Specific happenings including:
+     * Political events (elections, inaugurations, summits)
+     * Disasters/incidents (earthquakes, crashes, outages)
+     * Corporate actions (product launches, mergers, announcements)
+     * Planned occasions (conferences, ceremonies, celebrations)
+     * Recurring events (annual meetings, quarterly earnings)
+     * Military/security events (operations, attacks, deployments)
+     * Scientific milestones (discoveries, experiments, breakthroughs)
    - PRODUCT: Products, services, technologies, etc.
    - OTHER: Any other significant entities not fitting above categories
 
@@ -1610,6 +1617,22 @@ RULES:
 - For events, prioritize specificity (e.g., "2025 Paris Climate Conference" not just "conference")
 - Do not include the same entity multiple times (use the most comprehensive mention)
 - Rank importance accurately based on entity's role in the article
+
+IMPORTANT RULES FOR EVENTS:
+- When an article describes an action (launched, announced, released, introduced, etc.), 
+  especially by a company or organization, you should ALWAYS create an EVENT entity
+  that captures this action
+  
+- Format these action-oriented events as: "[Actor] [Action] [Object]"
+  Examples: "Apple iPhone 15 Launch", "NASA Mars Mission Announcement", "Amazon Kuiper Satellite Deployment"
+  
+- Even for routine business activities like product launches, these should be classified as EVENTS,
+  not just as mentions of the PRODUCT or ORGANIZATION
+
+VALIDATION CHECK:
+- If the article begins with words like "announced", "launched", "released", "introduced", "deployed", etc.,
+  or contains phrases indicating something happened (e.g., "Amazon launched satellites"),
+  make sure you have included at least one EVENT entity that captures this occurrence
 
 EXAMPLES:
 
