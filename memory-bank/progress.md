@@ -183,6 +183,12 @@ Argus is currently in active development with all major components implemented a
 - 🔄 **Entity Filtering**: Implementing search and filtering by entity
 
 ### Feature Refinement
+- ✅ **Summary Generation Improvements**: Enhanced tiny summary prompts with two key improvements:
+  - Modified prompts to avoid date-centric lead-ins (like "In April 2025...") unless dates are critical
+  - Added explicit instructions for temporal accuracy to ensure proper tense for past/present/future events
+  - Provided clear definition of "TODAY" to prevent reporting future events as if already happened
+  - Added diverse example summaries with varied opening styles (action-focused, discovery-focused, etc.)
+  - Verified changes via successful compilation and deployment
 - 🔄 **Worker Role Switching**: Optimizing the dynamic allocation between decision and analysis tasks
 - 🔄 **Quality Scoring Algorithm**: Refining source and argument quality assessment
 - 🔄 **Article Categorization**: Enhancing topic matching precision for edge cases

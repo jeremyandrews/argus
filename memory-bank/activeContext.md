@@ -16,8 +16,15 @@ The codebase demonstrates a sophisticated use of Rust with asynchronous processi
 
 Based on code review, recent development appears focused on:
 
-1. **Flexible Worker Configuration**: Supporting multiple LLM backends (Ollama, OpenAI) with detailed configuration options
-2. **Dynamic Worker Role Switching**: Enabling Analysis Workers to switch to Decision Worker roles when needed
+1. **Improved Summary Generation**: Enhanced tiny summaries with two key improvements:
+   - **Lead-in Variety**: Modified prompts to avoid always starting with "In April 2025..." unless dates are critical to understanding
+   - **Temporal Accuracy**: Added explicit instructions to maintain proper tense for events based on when they occur relative to the current date
+   - **Diverse Opening Styles**: Added examples showing different approaches to starting summaries (action-focused, discovery-focused, announcement-focused)
+   - **Date Definition**: Added clear definition of "TODAY" to avoid treating future events as if they've already happened
+   - **Examples Update**: Replaced date-centric examples with more varied alternatives that demonstrate effective non-date openings
+
+2. **Flexible Worker Configuration**: Supporting multiple LLM backends (Ollama, OpenAI) with detailed configuration options
+3. **Dynamic Worker Role Switching**: Enabling Analysis Workers to switch to Decision Worker roles when needed
 3. **Enhanced Content Analysis**: Implementing critical analysis, logical fallacy detection, and additional insights
 4. **iOS App Integration**: Building out API endpoints and push notification capabilities
 5. **Quality Metrics**: Generating source quality and argument quality scores
