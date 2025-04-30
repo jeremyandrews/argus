@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 
 /// Entity type enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -58,6 +59,27 @@ impl From<&str> for EntityType {
             "DATE" => EntityType::Date,
             _ => EntityType::Other,
         }
+    }
+}
+
+/// Error type for EntityType parsing
+#[derive(Debug, Clone)]
+pub struct EntityTypeParseError(String);
+
+impl fmt::Display for EntityTypeParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Invalid entity type: {}", self.0)
+    }
+}
+
+impl std::error::Error for EntityTypeParseError {}
+
+impl FromStr for EntityType {
+    type Err = EntityTypeParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Leverage the From<&str> implementation
+        Ok(Self::from(s))
     }
 }
 

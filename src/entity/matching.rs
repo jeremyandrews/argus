@@ -1,3 +1,4 @@
+use crate::db::Database;
 use crate::entity::types::{
     EntitySimilarityMetrics, EntityType, ExtractedEntities, ImportanceLevel,
 };
@@ -8,7 +9,140 @@ use tracing::{debug, error, info, warn};
 use super::normalizer::EntityNormalizer;
 use super::TARGET_ENTITY;
 
+/// Calculate similarity between articles based on entity overlap (async database-backed version)
+///
+/// This version uses the database-driven alias system for better entity matching.
+/// It falls back to in-memory alias maps if the database lookup fails.
+pub async fn calculate_entity_similarity_async(
+    db: &Database,
+    source_entities: &ExtractedEntities,
+    target_entities: &ExtractedEntities,
+    source_date: Option<&str>,
+    target_date: Option<&str>,
+) -> anyhow::Result<EntitySimilarityMetrics> {
+    // Create normalizer for entity comparisons
+    let normalizer = EntityNormalizer::new();
+
+    // Log detailed information about the entities we're comparing
+    info!(
+        target: TARGET_ENTITY,
+        "Calculating entity similarity between source ({} entities) and target ({} entities) with database-backed aliases",
+        source_entities.entities.len(), target_entities.entities.len()
+    );
+
+    let mut metrics = EntitySimilarityMetrics::new();
+
+    // 1. Calculate basic entity overlap
+    metrics.entity_overlap_count =
+        count_entity_overlap_async(db, source_entities, target_entities, &normalizer).await?;
+
+    // Log entity type breakdown for source and target
+    info!(
+        target: TARGET_ENTITY,
+        "Source entity types: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+        source_entities.get_entities_by_type(EntityType::Person).len(),
+        source_entities.get_entities_by_type(EntityType::Organization).len(),
+        source_entities.get_entities_by_type(EntityType::Location).len(),
+        source_entities.get_entities_by_type(EntityType::Event).len()
+    );
+
+    info!(
+        target: TARGET_ENTITY,
+        "Target entity types: PERSON={}, ORGANIZATION={}, LOCATION={}, EVENT={}",
+        target_entities.get_entities_by_type(EntityType::Person).len(),
+        target_entities.get_entities_by_type(EntityType::Organization).len(),
+        target_entities.get_entities_by_type(EntityType::Location).len(),
+        target_entities.get_entities_by_type(EntityType::Event).len()
+    );
+
+    // 2. Calculate type-specific similarity scores
+    metrics.person_overlap = calculate_type_similarity_async(
+        db,
+        source_entities,
+        target_entities,
+        EntityType::Person,
+        &normalizer,
+    )
+    .await?;
+
+    metrics.organization_overlap = calculate_type_similarity_async(
+        db,
+        source_entities,
+        target_entities,
+        EntityType::Organization,
+        &normalizer,
+    )
+    .await?;
+
+    metrics.location_overlap = calculate_type_similarity_async(
+        db,
+        source_entities,
+        target_entities,
+        EntityType::Location,
+        &normalizer,
+    )
+    .await?;
+
+    metrics.event_overlap = calculate_type_similarity_async(
+        db,
+        source_entities,
+        target_entities,
+        EntityType::Event,
+        &normalizer,
+    )
+    .await?;
+
+    metrics.product_overlap = calculate_type_similarity_async(
+        db,
+        source_entities,
+        target_entities,
+        EntityType::Product,
+        &normalizer,
+    )
+    .await?;
+
+    // 3. Calculate primary entity overlap count
+    metrics.primary_overlap_count =
+        count_primary_overlap_async(db, source_entities, target_entities, &normalizer).await?;
+
+    // 4. Calculate temporal proximity (if dates available)
+    metrics.temporal_proximity = calculate_temporal_proximity(
+        source_entities.event_date.as_deref().or(source_date),
+        target_entities.event_date.as_deref().or(target_date),
+    );
+
+    // 5. Calculate combined score from individual metrics
+    metrics.calculate_combined_score();
+
+    debug!(
+        target: TARGET_ENTITY,
+        "Entity similarity metrics (database-backed): overlap_count={}, primary_overlap={}, person={:.2}, org={:.2}, location={:.2}, event={:.2}, product={:.2}, temporal={:.2}, combined={:.2}",
+        metrics.entity_overlap_count,
+        metrics.primary_overlap_count,
+        metrics.person_overlap,
+        metrics.organization_overlap,
+        metrics.location_overlap,
+        metrics.event_overlap,
+        metrics.product_overlap,
+        metrics.temporal_proximity,
+        metrics.combined_score
+    );
+
+    // Critical error if we have overlapping entities but zero score
+    if metrics.entity_overlap_count > 0 && metrics.combined_score == 0.0 {
+        error!(
+            target: TARGET_ENTITY,
+            "CRITICAL ERROR: Entity similarity calculation produced zero score despite {} overlapping entities",
+            metrics.entity_overlap_count
+        );
+    }
+
+    Ok(metrics)
+}
+
 /// Calculate similarity between articles based on entity overlap
+///
+/// This is the synchronous version that uses only the in-memory alias maps
 pub fn calculate_entity_similarity(
     source_entities: &ExtractedEntities,
     target_entities: &ExtractedEntities,
@@ -404,4 +538,181 @@ fn parse_date(date_str: &str) -> Option<NaiveDate> {
     }
 
     None
+}
+
+//
+// Async database-backed versions of entity matching helper functions
+//
+
+/// Count how many entities overlap between two articles (async database-backed version)
+async fn count_entity_overlap_async(
+    db: &Database,
+    source_entities: &ExtractedEntities,
+    target_entities: &ExtractedEntities,
+    normalizer: &EntityNormalizer,
+) -> anyhow::Result<usize> {
+    let mut overlap_count = 0;
+
+    // For each source entity, check if there's a matching target entity
+    for source_entity in &source_entities.entities {
+        for target_entity in &target_entities.entities {
+            // Entities must be of the same type OR compatible types
+            if source_entity.entity_type == target_entity.entity_type
+                || source_entity
+                    .entity_type
+                    .is_compatible_with(&target_entity.entity_type)
+            {
+                // Check if names match using the normalizer with database backing
+                let name_match = normalizer
+                    .async_names_match(
+                        db,
+                        &source_entity.normalized_name,
+                        &target_entity.normalized_name,
+                        source_entity.entity_type, // Use source type for matching rules
+                    )
+                    .await?;
+
+                if name_match {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Cross-type match (DB-backed): source={}({:?}), target={}({:?})",
+                        source_entity.name, source_entity.entity_type,
+                        target_entity.name, target_entity.entity_type,
+                    );
+                    overlap_count += 1;
+                    break; // Count each source entity only once
+                }
+            }
+        }
+    }
+
+    Ok(overlap_count)
+}
+
+/// Calculate similarity score for a specific entity type (async database-backed version)
+async fn calculate_type_similarity_async(
+    db: &Database,
+    source_entities: &ExtractedEntities,
+    target_entities: &ExtractedEntities,
+    entity_type: EntityType,
+    normalizer: &EntityNormalizer,
+) -> anyhow::Result<f32> {
+    // Get entities of the specified type
+    let source_type_entities = source_entities.get_entities_by_type(entity_type);
+    let target_type_entities = target_entities.get_entities_by_type(entity_type);
+
+    // Empty sets edge case
+    if source_type_entities.is_empty() || target_type_entities.is_empty() {
+        return Ok(0.0);
+    }
+
+    // Weights by importance
+    const PRIMARY_WEIGHT: f32 = 1.0;
+    const SECONDARY_WEIGHT: f32 = 0.6;
+    const MENTIONED_WEIGHT: f32 = 0.3;
+
+    // Calculate weighted overlap score
+    let mut overlap_score = 0.0;
+    let mut matched_target_indices = HashSet::new();
+
+    // For each source entity, find the best matching target entity
+    for source_entity in &source_type_entities {
+        let source_weight = match source_entity.importance {
+            ImportanceLevel::Primary => PRIMARY_WEIGHT,
+            ImportanceLevel::Secondary => SECONDARY_WEIGHT,
+            ImportanceLevel::Mentioned => MENTIONED_WEIGHT,
+        };
+
+        // Find best matching target entity that hasn't been matched yet
+        for (target_idx, target_entity) in target_type_entities.iter().enumerate() {
+            // Skip already matched target entities
+            if matched_target_indices.contains(&target_idx) {
+                continue;
+            }
+
+            // Check if entities match using database-backed alias system
+            let name_match = normalizer
+                .async_names_match(
+                    db,
+                    &source_entity.normalized_name,
+                    &target_entity.normalized_name,
+                    entity_type,
+                )
+                .await?;
+
+            if name_match {
+                let target_weight = match target_entity.importance {
+                    ImportanceLevel::Primary => PRIMARY_WEIGHT,
+                    ImportanceLevel::Secondary => SECONDARY_WEIGHT,
+                    ImportanceLevel::Mentioned => MENTIONED_WEIGHT,
+                };
+
+                // Average the weights for entities that match
+                let combined_weight = (source_weight + target_weight) / 2.0;
+                overlap_score += combined_weight;
+
+                // Mark this target entity as matched
+                matched_target_indices.insert(target_idx);
+                break;
+            }
+        }
+    }
+
+    // Normalize score - divide by the theoretical maximum score if all entities matched
+    let max_possible_score =
+        (source_type_entities.len() + target_type_entities.len()) as f32 / 2.0 * PRIMARY_WEIGHT;
+    if max_possible_score > 0.0 {
+        Ok(overlap_score / max_possible_score)
+    } else {
+        Ok(0.0)
+    }
+}
+
+/// Count primary entities that overlap between articles (async database-backed version)
+async fn count_primary_overlap_async(
+    db: &Database,
+    source_entities: &ExtractedEntities,
+    target_entities: &ExtractedEntities,
+    normalizer: &EntityNormalizer,
+) -> anyhow::Result<usize> {
+    // Get primary entities
+    let source_primary = source_entities.get_primary_entities();
+    let target_primary = target_entities.get_primary_entities();
+
+    let mut overlap_count = 0;
+
+    // For each source primary entity, check if there's a matching target primary entity
+    for source_entity in &source_primary {
+        for target_entity in &target_primary {
+            // Entities must be of the same type OR compatible types
+            if source_entity.entity_type == target_entity.entity_type
+                || source_entity
+                    .entity_type
+                    .is_compatible_with(&target_entity.entity_type)
+            {
+                // Check if names match using the normalizer with database backing
+                let name_match = normalizer
+                    .async_names_match(
+                        db,
+                        &source_entity.normalized_name,
+                        &target_entity.normalized_name,
+                        source_entity.entity_type, // Use source type for matching rules
+                    )
+                    .await?;
+
+                if name_match {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Primary cross-type match (DB-backed): source={}({:?}), target={}({:?})",
+                        source_entity.name, source_entity.entity_type,
+                        target_entity.name, target_entity.entity_type,
+                    );
+                    overlap_count += 1;
+                    break; // Count each source entity only once
+                }
+            }
+        }
+    }
+
+    Ok(overlap_count)
 }

@@ -1,10 +1,11 @@
 [package]
 name = "argus"
-version = "0.12.10"
+version = "0.12.11"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
 async-openai = "0.28"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.68"
@@ -57,10 +58,6 @@ whatlang = "0.16.4"
 chrono = "0.4"
 
 [[bin]]
-name = "rss_fetcher"
-path = "src/bin/rss_fetcher.rs"
-
-[[bin]]
 name = "process_entities"
 path = "src/bin/process_entities.rs"
 
@@ -75,3 +72,7 @@ path = "src/bin/test_ollama_endpoints.rs"
 [[bin]]
 name = "test_entity_normalizer"
 path = "src/bin/test_entity_normalizer.rs"
+
+[[bin]]
+name = "manage_aliases"
+path = "src/bin/manage_aliases.rs"

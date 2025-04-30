@@ -98,6 +98,43 @@ flowchart LR
    - Deduplicates and ranks results based on combined score
    - Provides fallback patterns when one approach fails
 
+6. **Database-Driven Entity Alias System**
+   - Replaces static hardcoded aliases with dynamic database-backed approach
+   - Uses multi-tier matching strategy:
+     * Direct matching after basic normalization
+     * Database alias lookup for known entity variations
+     * Fuzzy matching with configurable thresholds as fallback
+     * Negative match checking to prevent repeated false positives
+   - Implements alias discovery through multiple sources:
+     * Pattern-based extraction from text (e.g., "X, formerly known as Y")
+     * LLM-based alias detection using specialized prompts
+     * User feedback and manual corrections
+     * Cross-article entity correlation analysis
+   - Employs learning mechanisms:
+     * Confidence scoring based on source reliability
+     * Pattern effectiveness tracking and optimization
+     * Negative learning to avoid repeated mistakes
+     * Usage statistics to prioritize common aliases
+
+   ```mermaid
+   flowchart TD
+     Input[Entity Name] --> BasicNorm[Basic Normalization]
+     BasicNorm --> Cache{Cache Lookup}
+     Cache -->|Hit| Return[Return Result]
+     
+     Cache -->|Miss| DBLookup{Database Lookup}
+     DBLookup -->|Match| ReturnDB[Return Result]
+     DBLookup -->|No Match| NegCheck{Negative Check}
+     
+     NegCheck -->|Blacklisted| ReturnNeg[Return No Match]
+     NegCheck -->|Not Blacklisted| Fuzzy{Fuzzy Matching}
+     
+     Fuzzy -->|Above Threshold| LogSuggestion[Log Suggestion]
+     LogSuggestion --> ReturnFuzzy[Return Match]
+     
+     Fuzzy -->|Below Threshold| ReturnNoMatch[Return No Match]
+   ```
+
 ### 5. Analysis Patterns
 - **Multi-Stage Analysis**: Progressive refinement of content understanding
 - **Quality Scoring**: Source quality and argument quality metrics
@@ -131,6 +168,34 @@ flowchart LR
 - **Entity Categorization**: Classification by type (PERSON, ORGANIZATION, etc.)
 - **Importance Ranking**: Determination of entity significance to article
 - **Normalization**: Standardization of entity names for matching
+
+### Entity Alias Management
+- **Single Source of Truth**: Database-driven approach for all alias operations
+- **Progressive Matching Fallback**:
+  1. Exact match after basic normalization (fastest)
+  2. Database-driven alias lookup (reliable)
+  3. Fuzzy matching with configurable thresholds (flexible)
+  4. Pattern-based matching for specific entity types (specialized)
+- **Confidence Scoring System**:
+  - Source-based weighting (admin > user feedback > pattern > LLM)
+  - Similarity-based adjustment (higher confidence for closer matches)
+  - Entity type-specific thresholds (different for person, organization, etc.)
+  - Usage-based reinforcement (frequently matched pairs gain confidence)
+- **Intelligent Discovery**:
+  - Text pattern extraction (regex-based and grammar parsing)
+  - LLM semantic analysis (specialized prompts for alias identification)
+  - Cross-article co-reference detection (statistical co-occurrence analysis)
+  - User feedback integration (corrections and suggestions)
+- **Performance Optimization**:
+  - Two-level caching (memory and disk)
+  - Alias batch processing for efficiency
+  - Strategic indexing on normalized forms
+  - Hit frequency tracking for cache optimization
+- **Administrative Workflow**:
+  - CLI tools for alias management
+  - Batch review and approval process
+  - Statistical tracking and reporting
+  - Export/import capabilities
 
 ### Data Persistence
 - **Transaction Management**: ACID compliance for critical operations

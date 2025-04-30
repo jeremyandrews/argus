@@ -57,6 +57,43 @@ Argus is currently in active development with all major components implemented a
 - ✅ **Seen Article Syncing**: Tracking of read/unread article status
 - ✅ **Device Management**: Device token registration and tracking
 
+## What's New
+
+### Database-Driven Entity Alias System (Completed)
+- ✅ **Database Schema Enhancement**: Implemented comprehensive database schema for entity aliases
+  - Added dedicated tables for entity aliases (`entity_aliases`) and negative matches (`entity_negative_matches`)
+  - Created indexing for efficient alias lookups with multiple access patterns
+  - Implemented statistics tracking via `alias_pattern_stats` table for pattern effectiveness
+  - Added review batch infrastructure with `alias_review_batches` and `alias_review_items` tables
+
+- ✅ **Pattern & LLM-Based Alias Discovery**: Built intelligent alias detection systems
+  - Implemented regex-based pattern extraction for common alias formats (e.g., "also known as", "formerly")
+  - Added validation and confidence scoring system for potential aliases
+  - Created extraction functions to identify potential aliases from article text
+  - Built configurable pattern system for easy extension
+
+- ✅ **Admin Tools & Management**: Developed utilities for alias management
+  - Created comprehensive CLI tool `manage_aliases` with commands for:
+    * Migrating static aliases to database
+    * Adding new alias pairs
+    * Testing entity name matching
+    * Creating and reviewing batches of alias suggestions
+    * Viewing system statistics
+  - Implemented approval and rejection workflows with reason tracking
+  - Added pattern performance analysis with statistics reporting
+
+- ✅ **Static-to-Dynamic Migration**: Implemented transition from hardcoded to database-driven aliases
+  - Created migration utility to import all static aliases to database
+  - Implemented backward compatibility layer to maintain existing functionality
+  - Built fallback mechanism for when database is unavailable
+  - Preserved static aliases during transition period
+
+- ✅ **Negative Learning Mechanism**: Implemented system to learn from mistakes
+  - Created infrastructure to track rejected matches in `entity_negative_matches` table
+  - Built tools for managing negative matches
+  - Implemented persistence to prevent repeated false positives
+  - Added automatic negative match creation from rejected aliases
+
 ## In Progress
 
 ### Entity Matching Improvement Plan
@@ -74,11 +111,24 @@ Argus is currently in active development with all major components implemented a
     - Added `find_articles_with_entities` to retrieve articles with entity data
     - Enhanced entity-based matching to support multiple input formats
     - Improved error handling for diagnostic operations
-- 📋 **Phase 2: Enhanced Normalization & Fuzzy Matching**
-  - 📋 **Fuzzy Name Matching**: Levenshtein distance and phonetic matching for entity names
-  - 📋 **Acronym Handling**: Detection and expansion of acronyms and abbreviations
-  - 📋 **Word Stemming**: Handling variations in entity names through stemming
-  - 📋 **Entity Aliases**: System to track and match known variations of the same entity
+- 🔄 **Phase 2: Enhanced Normalization & Fuzzy Matching**
+  - 🔄 **Fuzzy Name Matching**: Implementing advanced string similarity algorithms
+    - Adding Levenshtein distance calculation for entity name comparison
+    - Implementing phonetic matching algorithms (e.g., Soundex, Metaphone)
+    - Creating configurable matching thresholds by entity type
+  - 🔄 **Acronym Handling**: Implementing specialized acronym detection and expansion
+    - Building detection for common acronym patterns
+    - Creating database of known organization acronyms
+    - Implementing bidirectional matching (e.g., "FBI" ↔ "Federal Bureau of Investigation")
+  - 🔄 **Word Stemming**: Handling linguistic variations in entity names
+    - Implementing stemming for handling plurals and other variations
+    - Adding special case handling for titles and common prefixes
+    - Creating normalization for possessives and word order variations
+  - ✅ **Database-Driven Entity Aliases**: Implemented dynamic alias system
+    - Created comprehensive database schema for alias management
+    - Built pattern and LLM-based alias discovery
+    - Implemented negative learning to prevent false positives
+    - Added admin tools for alias management
 - 📋 **Phase 3: Parameter Optimization**
   - 📋 **Threshold Experiments**: Testing different similarity thresholds and weights
   - 📋 **Adaptive Thresholds**: Dynamic thresholds based on article characteristics
@@ -269,6 +319,7 @@ Argus is currently in active development with all major components implemented a
 - ✓ Fixed vector similarity calculation for proper article matching
 
 ### In Progress
+- ✓ Database-driven entity alias system
 - 🔄 Qdrant integration for entity-based vector search
 - 🔄 Refined article relationship detection
 - 🔄 Article clustering based on entity relationships

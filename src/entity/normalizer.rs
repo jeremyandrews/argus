@@ -6,9 +6,10 @@ use tracing::debug;
 use unicode_normalization::UnicodeNormalization;
 use whatlang::detect as detect_language;
 
-use super::aliases::{get_aliases_for_type, COMMON_VARIATIONS};
+use super::aliases::{self, get_aliases_for_type, COMMON_VARIATIONS};
 use super::types::EntityType;
 use super::TARGET_ENTITY;
+use crate::db::Database;
 
 // Thresholds for different entity types
 const PERSON_THRESHOLD: f64 = 0.90;
@@ -143,7 +144,46 @@ impl EntityNormalizer {
         normalized
     }
 
-    /// Determine if two entity names match
+    /// Determine if two entity names match (async database-backed version)
+    ///
+    /// This version first tries the database-backed alias system, then falls
+    /// back to the original fuzzy matching logic if needed.
+    pub async fn async_names_match(
+        &self,
+        db: &Database,
+        name1: &str,
+        name2: &str,
+        entity_type: EntityType,
+    ) -> anyhow::Result<bool> {
+        // Try exact match after normalization
+        let norm1 = self.normalize(name1, entity_type);
+        let norm2 = self.normalize(name2, entity_type);
+
+        if norm1 == norm2 {
+            debug!(
+                target: TARGET_ENTITY,
+                "Exact match after normalization: '{}' == '{}'", name1, name2
+            );
+            return Ok(true);
+        }
+
+        // Try database-driven approach
+        match aliases::names_match(db, name1, name2, entity_type).await {
+            Ok(result) => return Ok(result),
+            Err(err) => {
+                debug!(
+                    target: TARGET_ENTITY,
+                    "Database alias check failed, falling back to fuzzy matching: {}", err
+                );
+                // Fall through to fuzzy matching
+            }
+        }
+
+        // Fall back to the original fuzzy matching logic
+        Ok(self.fuzzy_match(&norm1, &norm2, name1, name2, entity_type))
+    }
+
+    /// Determine if two entity names match (synchronous version)
     pub fn names_match(&self, name1: &str, name2: &str, entity_type: EntityType) -> bool {
         // Try exact match after normalization
         let norm1 = self.normalize(name1, entity_type);
@@ -157,6 +197,19 @@ impl EntityNormalizer {
             return true;
         }
 
+        // Delegate to fuzzy matching helper
+        self.fuzzy_match(&norm1, &norm2, name1, name2, entity_type)
+    }
+
+    /// Helper method for fuzzy matching
+    fn fuzzy_match(
+        &self,
+        norm1: &str,
+        norm2: &str,
+        name1: &str,
+        name2: &str,
+        entity_type: EntityType,
+    ) -> bool {
         // For product/organization entities, check for substring containment
         if entity_type == EntityType::Product || entity_type == EntityType::Organization {
             // Check if shorter name is contained in longer name (case insensitive)
