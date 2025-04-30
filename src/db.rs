@@ -2511,6 +2511,13 @@ impl Database {
         alias_id: i64,
         admin_id: &str,
     ) -> Result<(), sqlx::Error> {
+        // Get source to use as pattern_id before updating
+        let source: Option<String> =
+            sqlx::query_scalar("SELECT source FROM entity_aliases WHERE id = ?")
+                .bind(alias_id)
+                .fetch_optional(&self.pool)
+                .await?;
+
         let approved_at = chrono::Utc::now().to_rfc3339();
 
         sqlx::query(
@@ -2525,6 +2532,11 @@ impl Database {
         .bind(alias_id)
         .execute(&self.pool)
         .await?;
+
+        // Update pattern stats if source is available
+        if let Some(pattern_id) = source {
+            self.increment_pattern_stat(&pattern_id, true).await?;
+        }
 
         info!(target: TARGET_DB, "Approved alias suggestion #{} by {}", alias_id, admin_id);
 
@@ -2541,7 +2553,7 @@ impl Database {
         // Get the alias details before updating
         let row = sqlx::query(
             r#"
-            SELECT canonical_name, alias_text, entity_type, entity_id
+            SELECT canonical_name, alias_text, entity_type, entity_id, source
             FROM entity_aliases
             WHERE id = ?
             "#,
@@ -2555,6 +2567,7 @@ impl Database {
             let alias_text: String = row.get("alias_text");
             let entity_type: String = row.get("entity_type");
             let entity_id: Option<i64> = row.get("entity_id");
+            let source: Option<String> = row.get("source");
 
             // Update the alias status
             sqlx::query(
@@ -2567,6 +2580,11 @@ impl Database {
             .bind(alias_id)
             .execute(&self.pool)
             .await?;
+
+            // Update pattern stats if source is available
+            if let Some(pattern_id) = source {
+                self.increment_pattern_stat(&pattern_id, false).await?;
+            }
 
             // Optionally add to negative matches if reason is "different entity"
             if reason == Some("different entity") && entity_id.is_some() {

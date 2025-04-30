@@ -45,11 +45,11 @@ enum Commands {
     /// Test if two entity names match
     Test {
         /// First entity name
-        #[arg(short, long)]
+        #[arg(short = '1', long)]
         name1: String,
 
         /// Second entity name
-        #[arg(short, long)]
+        #[arg(short = '2', long)]
         name2: String,
 
         /// Entity type (person, organization, product, location)
