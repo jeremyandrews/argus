@@ -1,19 +1,16 @@
 //! Entity alias management module
 //!
-//! This module handles the entity alias system, supporting both static and database-driven
-//! aliases. The system is transitioning from static, hardcoded aliases to a dynamic,
-//! database-driven approach. During this transition period, both systems are supported.
+//! This module handles the entity alias system using a database-driven approach.
+//! The system has migrated from static hardcoded aliases to a dynamic database system.
 //!
 //! ## Features
-//! - Backward compatibility with static aliases
 //! - Database-driven alias storage and retrieval
 //! - Negative match tracking
-//! - Support for multiple alias sources (static, pattern-based, LLM-generated, user-defined)
+//! - Support for multiple alias sources (pattern-based, LLM-generated, user-defined)
+//! - Fuzzy matching fallback for runtime decisions
 
 use super::types::EntityType;
 use crate::db::Database;
-use lazy_static::lazy_static;
-use std::collections::HashMap;
 use tracing::{debug, instrument};
 
 // Common cross-language and spelling variations for pattern-based matching
@@ -35,133 +32,48 @@ pub const ALIAS_PATTERNS: &[&str] = &[
     r#"(?i)["']?(?P<alias>.+?)["']?,?\s+now\s+(?:known\s+as\s+)?["']?(?P<canonical>.+?)["']?[,\.)]"#,
 ];
 
-// Static aliases - to be migrated to database
-// Keep for backward compatibility during migration
-lazy_static! {
-    // Person aliases
-    static ref PERSON_ALIASES: HashMap<String, String> = {
-        let mut map = HashMap::new();
-        map.insert("jeff bezos".to_string(), "jeff bezos".to_string());
-        map.insert("jeffrey bezos".to_string(), "jeff bezos".to_string());
-        map.insert("jeffrey p bezos".to_string(), "jeff bezos".to_string());
-
-        map.insert("elon musk".to_string(), "elon musk".to_string());
-        map.insert("elon r musk".to_string(), "elon musk".to_string());
-        // Add more common person aliases
-        map
-    };
-
-    // Organization aliases
-    static ref ORG_ALIASES: HashMap<String, String> = {
-        let mut map = HashMap::new();
-        map.insert("blue origin".to_string(), "blue origin".to_string());
-        map.insert("blueorigin".to_string(), "blue origin".to_string());
-
-        map.insert("spacex".to_string(), "spacex".to_string());
-        map.insert("space x".to_string(), "spacex".to_string());
-        map.insert("space exploration technologies".to_string(), "spacex".to_string());
-
-        map.insert("ula".to_string(), "united launch alliance".to_string());
-        map.insert("united launch alliance".to_string(), "united launch alliance".to_string());
-        // Add more organization aliases
-        map
-    };
-
-    // Product aliases
-    static ref PRODUCT_ALIASES: HashMap<String, String> = {
-        let mut map = HashMap::new();
-        map.insert("project kuiper".to_string(), "project kuiper".to_string());
-        map.insert("projekt kuiper".to_string(), "project kuiper".to_string());
-
-        map.insert("starlink".to_string(), "starlink".to_string());
-        map.insert("spacexs starlinks".to_string(), "starlink".to_string());
-        map.insert("spacex starlink".to_string(), "starlink".to_string());
-        map.insert("spacex's starlinks".to_string(), "starlink".to_string());
-
-        map.insert("atlas v".to_string(), "atlas v".to_string());
-        map.insert("atlas 5".to_string(), "atlas v".to_string());
-        // Add more product aliases
-        map
-    };
-
-    // Location aliases
-    static ref LOCATION_ALIASES: HashMap<String, String> = {
-        let mut map = HashMap::new();
-        map.insert("usa".to_string(), "united states".to_string());
-        map.insert("united states".to_string(), "united states".to_string());
-        map.insert("united states of america".to_string(), "united states".to_string());
-
-        // Add more location aliases
-        map
-    };
-}
-
-/// Get static aliases for a specific entity type
-///
-/// NOTE: This function is provided for backward compatibility during the migration to
-/// database-driven aliases. New code should use the database methods directly.
-///
-/// Returns a cloned HashMap of aliases for the specified entity type.
-pub fn get_aliases_for_type(entity_type: EntityType) -> HashMap<String, String> {
-    match entity_type {
-        EntityType::Person => PERSON_ALIASES.clone(),
-        EntityType::Organization => ORG_ALIASES.clone(),
-        EntityType::Product => PRODUCT_ALIASES.clone(),
-        EntityType::Location => LOCATION_ALIASES.clone(),
-        _ => HashMap::new(),
-    }
-}
-
 /// Check if two entity names are equivalent according to the alias system
 ///
-/// This is the primary interface for checking name equivalence. It will:
-/// 1. Use database-driven aliases if database is available
-/// 2. Fall back to static aliases if database check fails or is unavailable
+/// This is the primary interface for checking name equivalence. It uses
+/// the database-driven alias system and falls back to fuzzy matching if needed.
 ///
 /// It handles both directions of equivalence and normalizes names before comparison.
 #[instrument(level = "debug", skip(db, name1, name2))]
-pub async fn names_match(
+/// Database check for equivalent names
+///
+/// This function ONLY checks the database and does not use fuzzy matching.
+/// For the full matching functionality with fallbacks, use normalizer.async_names_match instead.
+pub async fn db_names_match(
     db: &Database,
     name1: &str,
     name2: &str,
     entity_type: EntityType,
 ) -> anyhow::Result<bool> {
-    // If names are identical after normalization, they match
+    // If names are identical, they match
+    if name1 == name2 {
+        return Ok(true);
+    }
+
+    // Normalize for database lookup
     let normalizer = super::normalizer::EntityNormalizer::new();
     let norm1 = normalizer.normalize(name1, entity_type);
     let norm2 = normalizer.normalize(name2, entity_type);
 
+    // If normalized forms are identical, they match
     if norm1 == norm2 {
         return Ok(true);
     }
 
-    // Try database-driven approach first
-    match db
-        .are_names_equivalent(&norm1, &norm2, &entity_type.to_string())
+    // Check database only - no fuzzy matching fallback here
+    db.are_names_equivalent(&norm1, &norm2, &entity_type.to_string())
         .await
-    {
-        Ok(result) => Ok(result),
-        Err(err) => {
-            debug!(
-                "Database alias check failed, falling back to static aliases: {}",
-                err
-            );
-
-            // Fall back to static aliases if database check fails
-            let aliases = get_aliases_for_type(entity_type);
-            let canonical1 = aliases.get(&norm1).unwrap_or(&norm1);
-            let canonical2 = aliases.get(&norm2).unwrap_or(&norm2);
-
-            Ok(canonical1 == canonical2)
-        }
-    }
+        .map_err(|e| anyhow::anyhow!("Database error: {}", e))
 }
 
 /// Get the canonical name for an entity (database-driven approach)
 ///
-/// This is the preferred way to get a canonical entity name. It will:
-/// 1. Use database-driven aliases if database is available
-/// 2. Fall back to static aliases if database check fails or is unavailable
+/// This is the preferred way to get a canonical entity name.
+/// It uses the database and falls back to returning the input if unavailable.
 #[instrument(level = "debug", skip(db, name))]
 pub async fn get_canonical_name(
     db: &Database,
@@ -171,28 +83,21 @@ pub async fn get_canonical_name(
     let normalizer = super::normalizer::EntityNormalizer::new();
     let normalized = normalizer.normalize(name, entity_type);
 
-    // Try database-driven approach first
+    // Try database-driven approach
     match db
         .get_canonical_name(&normalized, &entity_type.to_string())
         .await
     {
         Ok(Some(canonical)) => Ok(canonical),
         Ok(None) => {
-            // Fall back to static aliases if no result from database
-            let aliases = get_aliases_for_type(entity_type);
-            let canonical = aliases.get(&normalized).unwrap_or(&normalized).clone();
-            Ok(canonical)
+            // No canonical form found in database, return the normalized input
+            Ok(normalized)
         }
         Err(err) => {
-            debug!(
-                "Database canonical name lookup failed, falling back to static aliases: {}",
-                err
-            );
+            debug!("Database canonical name lookup failed: {}", err);
 
-            // Fall back to static aliases if database check fails
-            let aliases = get_aliases_for_type(entity_type);
-            let canonical = aliases.get(&normalized).unwrap_or(&normalized).clone();
-            Ok(canonical)
+            // Return the normalized input name on error but log with anyhow
+            Ok(normalized)
         }
     }
 }

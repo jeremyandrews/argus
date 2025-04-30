@@ -1,4 +1,3 @@
-use lazy_static::lazy_static;
 use rust_stemmers::{Algorithm, Stemmer};
 use std::collections::{HashMap, HashSet};
 use strsim::{jaro_winkler, levenshtein};
@@ -6,7 +5,7 @@ use tracing::debug;
 use unicode_normalization::UnicodeNormalization;
 use whatlang::detect as detect_language;
 
-use super::aliases::{self, get_aliases_for_type, COMMON_VARIATIONS};
+use super::aliases::COMMON_VARIATIONS;
 use super::types::EntityType;
 use super::TARGET_ENTITY;
 use crate::db::Database;
@@ -25,19 +24,7 @@ const LOCATION_LEVENSHTEIN: usize = 3;
 const PRODUCT_LEVENSHTEIN: usize = 3;
 const DEFAULT_LEVENSHTEIN: usize = 2;
 
-lazy_static! {
-    static ref ALIAS_MAPS: HashMap<EntityType, HashMap<String, String>> = {
-        let mut maps = HashMap::new();
-
-        // Initialize maps for each entity type
-        maps.insert(EntityType::Person, get_aliases_for_type(EntityType::Person));
-        maps.insert(EntityType::Organization, get_aliases_for_type(EntityType::Organization));
-        maps.insert(EntityType::Product, get_aliases_for_type(EntityType::Product));
-        maps.insert(EntityType::Location, get_aliases_for_type(EntityType::Location));
-
-        maps
-    };
-}
+// No longer using static alias maps, entirely database-driven
 
 pub struct EntityNormalizer {
     // Whether to use fuzzy matching as fallback
@@ -116,16 +103,7 @@ impl EntityNormalizer {
             );
         }
 
-        // Look up in alias dictionary
-        if let Some(aliases) = ALIAS_MAPS.get(&entity_type) {
-            if let Some(canonical) = aliases.get(&normalized) {
-                debug!(
-                    target: TARGET_ENTITY,
-                    "Normalized '{}' to '{}' using aliases", normalized, canonical
-                );
-                return canonical.clone();
-            }
-        }
+        // No longer looking up in static alias dictionary
 
         // Apply common variations for certain entity types
         if entity_type == EntityType::Product || entity_type == EntityType::Organization {
@@ -167,15 +145,18 @@ impl EntityNormalizer {
             return Ok(true);
         }
 
-        // Try database-driven approach
-        match aliases::names_match(db, name1, name2, entity_type).await {
-            Ok(result) => return Ok(result),
-            Err(err) => {
+        // Try database-driven approach directly
+        match db
+            .are_names_equivalent(&norm1, &norm2, &entity_type.to_string())
+            .await
+        {
+            Ok(true) => return Ok(true),
+            Ok(false) | Err(_) => {
+                // Fall through to fuzzy matching
                 debug!(
                     target: TARGET_ENTITY,
-                    "Database alias check failed, falling back to fuzzy matching: {}", err
+                    "Database alias check failed or returned false, trying fuzzy matching"
                 );
-                // Fall through to fuzzy matching
             }
         }
 
@@ -201,8 +182,14 @@ impl EntityNormalizer {
         self.fuzzy_match(&norm1, &norm2, name1, name2, entity_type)
     }
 
-    /// Helper method for fuzzy matching
-    fn fuzzy_match(
+    /// Method for fuzzy matching between two entity names
+    ///
+    /// This performs advanced string comparison using multiple techniques:
+    /// - Substring containment for organizations and products
+    /// - Special handling for acronyms
+    /// - Jaro-Winkler similarity for names
+    /// - Levenshtein edit distance for typo tolerance
+    pub fn fuzzy_match(
         &self,
         norm1: &str,
         norm2: &str,
