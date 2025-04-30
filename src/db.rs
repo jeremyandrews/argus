@@ -2268,137 +2268,20 @@ impl Database {
 
     /// Migrate static aliases to the database
     pub async fn migrate_static_aliases(&self) -> Result<usize, sqlx::Error> {
-        let mut count = 0;
+        // Static aliases have been migrated to the database and
+        // the static maps have been removed from the code.
+        // This method is now deprecated but kept for backward compatibility.
 
-        // Use a transaction for the migration
-        let mut tx = self.pool.begin().await?;
+        // Count how many static aliases are in the database
+        let existing_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM entity_aliases WHERE source = 'STATIC'")
+                .fetch_one(&self.pool)
+                .await?;
 
-        // Retrieve existing static aliases from the entity_aliases table
-        let existing_count: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*) FROM entity_aliases WHERE source = 'STATIC'
-            "#,
-        )
-        .fetch_one(&mut *tx)
-        .await?;
+        info!(target: TARGET_DB, "Found {} existing static aliases in the database", existing_count);
 
-        if existing_count > 0 {
-            info!(target: TARGET_DB, "Found {} existing static aliases in database", existing_count);
-            tx.rollback().await?;
-            return Ok(existing_count as usize);
-        }
-
-        // Get person aliases
-        count += Self::migrate_static_alias_type(
-            &mut tx,
-            self,
-            crate::entity::types::EntityType::Person,
-            "STATIC",
-            "system_migration",
-        )
-        .await?;
-
-        // Get organization aliases
-        count += Self::migrate_static_alias_type(
-            &mut tx,
-            self,
-            crate::entity::types::EntityType::Organization,
-            "STATIC",
-            "system_migration",
-        )
-        .await?;
-
-        // Get product aliases
-        count += Self::migrate_static_alias_type(
-            &mut tx,
-            self,
-            crate::entity::types::EntityType::Product,
-            "STATIC",
-            "system_migration",
-        )
-        .await?;
-
-        // Get location aliases
-        count += Self::migrate_static_alias_type(
-            &mut tx,
-            self,
-            crate::entity::types::EntityType::Location,
-            "STATIC",
-            "system_migration",
-        )
-        .await?;
-
-        // Commit the transaction
-        tx.commit().await?;
-
-        info!(target: TARGET_DB, "Migrated {} static aliases to database", count);
-        Ok(count)
-    }
-
-    /// Helper method to migrate a specific type of static aliases
-    async fn migrate_static_alias_type(
-        tx: &mut sqlx::Transaction<'_, Sqlite>,
-        _db: &Database,
-        entity_type: crate::entity::types::EntityType,
-        source: &str,
-        admin_id: &str,
-    ) -> Result<usize, sqlx::Error> {
-        let mut count = 0;
-
-        // Get the static aliases for this type from the code
-        let aliases = crate::entity::aliases::get_aliases_for_type(entity_type);
-
-        for (alias_text, canonical_name) in aliases {
-            let normalizer = crate::entity::normalizer::EntityNormalizer::new();
-            let normalized_canonical = normalizer.normalize(&canonical_name, entity_type);
-            let normalized_alias = normalizer.normalize(&alias_text, entity_type);
-
-            // Skip if normalized forms are identical
-            if normalized_canonical == normalized_alias {
-                continue;
-            }
-
-            // Try to find an entity ID for the canonical name
-            let entity_id = sqlx::query_scalar::<_, Option<i64>>(
-                r#"
-                SELECT id FROM entities 
-                WHERE normalized_name = ? AND type = ?
-                "#,
-            )
-            .bind(&normalized_canonical)
-            .bind(entity_type.to_string())
-            .fetch_optional(&mut **tx)
-            .await?;
-
-            let created_at = chrono::Utc::now().to_rfc3339();
-
-            // Insert the alias
-            let result = sqlx::query(
-                r#"
-                INSERT INTO entity_aliases
-                (entity_id, canonical_name, alias_text, normalized_canonical, normalized_alias, 
-                 entity_type, source, confidence, created_at, approved_by, approved_at, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, 'APPROVED')
-                ON CONFLICT (normalized_canonical, normalized_alias, entity_type) DO NOTHING
-                "#,
-            )
-            .bind(entity_id)
-            .bind(&canonical_name)
-            .bind(&alias_text)
-            .bind(&normalized_canonical)
-            .bind(&normalized_alias)
-            .bind(entity_type.to_string())
-            .bind(source)
-            .bind(&created_at)
-            .bind(admin_id)
-            .bind(&created_at)
-            .execute(&mut **tx)
-            .await?;
-
-            count += result.rows_affected() as usize;
-        }
-
-        Ok(count)
+        // Just return the count of existing static aliases
+        Ok(existing_count as usize)
     }
 
     /// Create a review batch for alias suggestions
