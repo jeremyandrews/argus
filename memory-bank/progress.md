@@ -81,6 +81,12 @@ Argus is currently in active development with all major components implemented a
     * Viewing system statistics
   - Implemented approval and rejection workflows with reason tracking
   - Added pattern performance analysis with statistics reporting
+  
+- ✅ **Recent Fixes to Alias System**:
+  - Fixed unused `increment_pattern_stat` function in database.rs by integrating it into both the approval and rejection workflows
+  - Fixed command line argument conflict in the Test command of the management tool (changed from -n to -1/-2 flags)
+  - Verified the expected behavior of static alias migration, confirming the low count is due to most aliases being canonical self-references
+  - Ensured pattern effectiveness metrics are now properly tracked for all alias approvals and rejections
 
 - ✅ **Static-to-Dynamic Migration**: Implemented transition from hardcoded to database-driven aliases
   - Created migration utility to import all static aliases to database
@@ -317,9 +323,11 @@ Argus is currently in active development with all major components implemented a
 - ✓ Dual-query article similarity with entity and vector matching
 - ✓ Fixed entity extraction failures in utility programs
 - ✓ Fixed vector similarity calculation for proper article matching
+- ✓ Implemented comprehensive database-driven entity alias system
+- ✓ Fixed pattern statistics collection to track pattern effectiveness
+- ✓ Enhanced CLI tool with improved interface and argument handling
 
 ### In Progress
-- ✓ Database-driven entity alias system
 - 🔄 Qdrant integration for entity-based vector search
 - 🔄 Refined article relationship detection
 - 🔄 Article clustering based on entity relationships

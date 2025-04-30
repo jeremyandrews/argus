@@ -104,6 +104,25 @@ We've implemented a comprehensive database-driven entity alias system to improve
 
 - **Admin CLI**: Created comprehensive command-line interface in `manage_aliases.rs`
 
+### Recent Fixes
+
+1. ✅ **Pattern Statistics Collection**:
+   - Fixed unused `increment_pattern_stat` function in `db.rs` by integrating it into both approval and rejection workflows
+   - Updated `approve_alias_suggestion` to retrieve the source pattern and track successful matches
+   - Updated `reject_alias_suggestion` to also track pattern rejection rates
+   - This enables performance tracking to identify which patterns generate the best alias suggestions
+
+2. ✅ **CLI Tool Argument Conflict Resolution**:
+   - Fixed command line argument conflict in the `Test` command where both `name1` and `name2` used the same `-n` flag
+   - Changed to use `-1` for the first name and `-2` for the second name to avoid conflict
+   - Improved usability of the command line interface
+
+3. ✅ **Static Alias Migration Verification**:
+   - Confirmed that the low migration count (2 static aliases) is expected behavior
+   - Many entries in the static alias maps are canonical self-references (e.g., "jeff bezos" → "jeff bezos")
+   - The migration correctly skips pairs where normalized forms are identical
+   - Only two entries had distinct normalized forms that needed migration to the database
+
 ### Benefits Delivered
 
 - **Enhanced Matching Accuracy**: Better identification of related entities through centralized alias management
