@@ -22,7 +22,7 @@ enum Commands {
     /// Add a new alias to the system
     Add {
         /// Canonical entity name
-        #[arg(short, long)]
+        #[arg(short = 'n', long)]
         canonical: String,
 
         /// Alias text to add
