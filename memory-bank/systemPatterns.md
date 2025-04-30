@@ -69,7 +69,7 @@ flowchart LR
 ### 4. Content Matching Patterns
 1. **Multi-Factor Similarity**
    - Combines vector similarity (60% weight), entity overlap (30% weight), and temporal proximity (10% weight)
-   - Enforces minimum threshold (0.75) that requires both vector similarity and entity overlap
+   - Enforces minimum threshold (0.70) that requires both vector similarity and entity overlap
    - Provides transparency with detailed similarity metrics for debugging and improvement
    - Ensures consistent weighting across all code paths
    

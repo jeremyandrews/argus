@@ -135,8 +135,8 @@ Argus is currently in active development with all major components implemented a
     - Built pattern and LLM-based alias discovery
     - Implemented negative learning to prevent false positives
     - Added admin tools for alias management
-- 📋 **Phase 3: Parameter Optimization**
-  - 📋 **Threshold Experiments**: Testing different similarity thresholds and weights
+- 🔄 **Phase 3: Parameter Optimization**
+  - ✅ **Threshold Adjustment**: Changed similarity threshold from 75% to 70% to increase match recall
   - 📋 **Adaptive Thresholds**: Dynamic thresholds based on article characteristics
   - 📋 **Type-Specific Matching**: Entity type-specific parameters and weights
 - 📋 **Phase 4: Advanced Relationship Modeling**

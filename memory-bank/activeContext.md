@@ -16,6 +16,14 @@ The codebase demonstrates a sophisticated use of Rust with asynchronous processi
 
 Based on code review, recent development appears focused on:
 
+1. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
+   - **Increased Match Recall**: Lowered the minimum combined similarity score for article matches
+   - **More Lenient Matching**: Now requires less strict vector and entity similarity
+   - **Broader Clustering**: Will create more inclusive article clusters with related content
+   - **Balance Adjustment**: Maintains the 60% vector similarity / 40% entity similarity weighting
+
+Based on code review, other recent development appears focused on:
+
 1. **Improved Summary Generation**: Enhanced tiny summaries with two key improvements:
    - **Lead-in Variety**: Modified prompts to avoid always starting with "In April 2025..." unless dates are critical to understanding
    - **Temporal Accuracy**: Added explicit instructions to maintain proper tense for events based on when they occur relative to the current date

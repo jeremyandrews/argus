@@ -1430,7 +1430,7 @@ pub async fn get_similar_articles_with_entities(
     }
 
     // Track near-miss matches for diagnostic purposes
-    let similarity_threshold = 0.75;
+    let similarity_threshold = 0.70;
     let mut near_misses = Vec::new();
 
     // Apply minimum combined threshold (0.75) and filter out self-matches
