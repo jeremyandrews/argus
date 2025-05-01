@@ -46,37 +46,29 @@ Argus is currently in active development with all major components implemented a
 - ✅ **Vector Integration**: Enhanced vector payloads with entity IDs and temporal data
 - ✅ **Similarity Algorithms**: Created enhanced match detection with weighted scoring across multiple dimensions
 
-### Notification Systems
-- ✅ **Slack Integration**: Formatting and delivery of notifications to Slack channels
-- ✅ **iOS Push Notifications**: Integration with Apple Push Notification service
-- ✅ **R2 Content Storage**: Content upload to Cloudflare R2 for app access
-
-### API & Mobile Integration
-- ✅ **Authentication System**: JWT-based authentication for mobile clients
-- ✅ **Topic Subscription**: User subscription management for topics
-- ✅ **Seen Article Syncing**: Tracking of read/unread article status
-- ✅ **Device Management**: Device token registration and tracking
-
-## What's New
-
-### Database-Driven Entity Alias System (Completed)
+### Database-Driven Entity Alias System
 - ✅ **Database Schema Enhancement**: Implemented comprehensive database schema for entity aliases
   - Added dedicated tables for entity aliases (`entity_aliases`) and negative matches (`entity_negative_matches`)
   - Created indexing for efficient alias lookups with multiple access patterns
   - Implemented statistics tracking via `alias_pattern_stats` table for pattern effectiveness
   - Added review batch infrastructure with `alias_review_batches` and `alias_review_items` tables
 
+- ✅ **Multi-Tier Matching Strategy**:
+  - Implemented direct matching after basic normalization (fastest)
+  - Created database-driven alias lookup for known entity variations (reliable)
+  - Enhanced fuzzy matching with configurable thresholds (flexible)
+  - Added pattern-based matching for specific entity types (specialized)
+
 - ✅ **Pattern & LLM-Based Alias Discovery**: Built intelligent alias detection systems
   - Implemented regex-based pattern extraction for common alias formats (e.g., "also known as", "formerly")
   - Added validation and confidence scoring system for potential aliases
   - Created extraction functions to identify potential aliases from article text
   - Built configurable pattern system for easy extension
-  - **NEW**: Integrated automatic alias discovery in the analysis pipeline for both life safety and topic-based articles
 
 - ✅ **Performance Optimization**: Enhanced alias system performance
-  - **NEW**: Implemented thread-safe caching layer with time-based expiration for frequently accessed aliases
-  - **NEW**: Optimized alias lookups with three-tier approach: exact match → cache → database → fuzzy matching
-  - **NEW**: Added eviction policies to maintain cache size and performance over time
+  - Implemented thread-safe caching layer with time-based expiration for frequently accessed aliases
+  - Optimized alias lookups with three-tier approach: exact match → cache → database → fuzzy matching
+  - Added eviction policies to maintain cache size and performance over time
 
 - ✅ **Admin Tools & Management**: Developed utilities for alias management
   - Created comprehensive CLI tool `manage_aliases` with commands for:
@@ -88,67 +80,47 @@ Argus is currently in active development with all major components implemented a
   - Implemented approval and rejection workflows with reason tracking
   - Added pattern performance analysis with statistics reporting
   
-- ✅ **Recent Fixes to Alias System**:
-  - Fixed unused `increment_pattern_stat` function in database.rs by integrating it into both the approval and rejection workflows
-  - Fixed command line argument conflict in the Test command of the management tool (changed from -n to -1/-2 flags)
-  - Verified the expected behavior of static alias migration, confirming the low count is due to most aliases being canonical self-references
-  - Ensured pattern effectiveness metrics are now properly tracked for all alias approvals and rejections
-
-- ✅ **Static-to-Dynamic Migration**: Implemented transition from hardcoded to database-driven aliases
-  - Created migration utility to import all static aliases to database
-  - Implemented backward compatibility layer to maintain existing functionality
-  - Built fallback mechanism for when database is unavailable
-  - Preserved static aliases during transition period
-
 - ✅ **Negative Learning Mechanism**: Implemented system to learn from mistakes
   - Created infrastructure to track rejected matches in `entity_negative_matches` table
   - Built tools for managing negative matches
   - Implemented persistence to prevent repeated false positives
   - Added automatic negative match creation from rejected aliases
 
+### Notification Systems
+- ✅ **Slack Integration**: Formatting and delivery of notifications to Slack channels
+- ✅ **iOS Push Notifications**: Integration with Apple Push Notification service
+- ✅ **R2 Content Storage**: Content upload to Cloudflare R2 for app access
+
+### API & Mobile Integration
+- ✅ **Authentication System**: JWT-based authentication for mobile clients
+- ✅ **Topic Subscription**: User subscription management for topics
+- ✅ **Seen Article Syncing**: Tracking of read/unread article status
+- ✅ **Device Management**: Device token registration and tracking
+
 ## In Progress
 
-### Entity Matching Improvement Plan
-- ✅ **Phase 1: Measurement & Feedback System**
-  - ✅ **API Diagnostic Endpoint**: Added `/articles/analyze-match` endpoint to analyze specific article pairs
-    - Provides detailed vector similarity and entity overlap metrics
-    - Shows why articles do or don't match with specific scores
-    - Identifies "near misses" that fall just below matching threshold
-  - ✅ **Command-line Analysis Tools**: Created three utilities for match diagnostic:
-    - `analyze_matches`: Detailed single pair analyzer with comprehensive metrics 
-    - `batch_analyze`: Process multiple pairs with statistical analysis 
-    - `create_match_pairs`: Test dataset generator for systematic testing
-  - ✅ **Enhanced Logging**: Added logging for near-miss matches with detailed reasons
-  - ✅ **Database Support**: Extended database with helper methods to support diagnostics
-    - Added `find_articles_with_entities` to retrieve articles with entity data
-    - Enhanced entity-based matching to support multiple input formats
-    - Improved error handling for diagnostic operations
-- 🔄 **Phase 2: Enhanced Normalization & Fuzzy Matching**
-  - 🔄 **Fuzzy Name Matching**: Implementing advanced string similarity algorithms
-    - Adding Levenshtein distance calculation for entity name comparison
-    - Implementing phonetic matching algorithms (e.g., Soundex, Metaphone)
-    - Creating configurable matching thresholds by entity type
-  - 🔄 **Acronym Handling**: Implementing specialized acronym detection and expansion
-    - Building detection for common acronym patterns
-    - Creating database of known organization acronyms
-    - Implementing bidirectional matching (e.g., "FBI" ↔ "Federal Bureau of Investigation")
-  - 🔄 **Word Stemming**: Handling linguistic variations in entity names
-    - Implementing stemming for handling plurals and other variations
-    - Adding special case handling for titles and common prefixes
-    - Creating normalization for possessives and word order variations
-  - ✅ **Database-Driven Entity Aliases**: Implemented dynamic alias system
-    - Created comprehensive database schema for alias management
-    - Built pattern and LLM-based alias discovery
-    - Implemented negative learning to prevent false positives
-    - Added admin tools for alias management
-- 🔄 **Phase 3: Parameter Optimization**
-  - ✅ **Threshold Adjustment**: Changed similarity threshold from 75% to 70% to increase match recall
-  - 📋 **Adaptive Thresholds**: Dynamic thresholds based on article characteristics
-  - 📋 **Type-Specific Matching**: Entity type-specific parameters and weights
-- 📋 **Phase 4: Advanced Relationship Modeling**
-  - 📋 **Hierarchical Relationships**: Building relationships between connected entities
-  - 📋 **Relationship-Aware Matching**: Using entity relationships in matching algorithm
-  - 📋 **Contextual Importance**: Better understanding of entity importance in context
+### Parameter Optimization for Entity Matching
+- ✅ **Initial Parameter Tuning**: Changed similarity threshold from 75% to 70% to increase match recall
+- 🔄 **Systematic Threshold Testing**: Testing different similarity thresholds and weights
+  - Creating comprehensive test datasets with known matches/non-matches
+  - Developing statistical analysis for different parameter configurations
+  - Measuring precision, recall, and F1 scores for various threshold combinations
+  - Building visualization tools for parameter performance analysis
+- 🔄 **Entity Type-Specific Parameters**: Developing specialized parameters by entity type
+  - Evaluating optimal weights for person entities vs. organizations vs. locations
+  - Testing different importance levels for PRIMARY vs. SECONDARY entities
+  - Analyzing entity count impact on appropriate threshold values
+  - Developing entity type correlation metrics to understand matching patterns
+- 🔄 **Adaptive Thresholds**: Implementing dynamic thresholds based on article characteristics
+  - Creating algorithms that adjust thresholds based on entity count and distribution
+  - Developing intelligence for temporal-aware threshold adjustments
+  - Implementing confidence-weighted scoring for more reliable matches
+  - Building feedback mechanisms to refine thresholds over time
+- 🔄 **Parameter Storage & Configuration**: Creating system for parameter management
+  - Designing flexible configuration system for threshold parameters
+  - Implementing parameter versioning for testing and rollback
+  - Creating diagnostic tools to evaluate parameter effectiveness
+  - Building documentation system to track parameter changes and impacts
 
 ### Entity Extraction and Storage
 - ✅ **JSON Schema System**: Implemented JsonSchemaType enum to handle different LLM response formats
@@ -178,32 +150,13 @@ Argus is currently in active development with all major components implemented a
 - ✅ **Similarity Scoring Consistency**: Fixed inconsistency in similarity scoring that allowed articles with no entity overlap to appear in results
   - Modified scoring to apply consistent 60% weighting to vector similarity when no entity data exists
   - Updated similarity formula descriptions to accurately reflect the actual calculation
-  - Ensured articles need to share at least some entity overlap to reach the minimum threshold (0.75)
+  - Ensured articles need to share at least some entity overlap to reach the minimum threshold
   - Verified the fix ensures more semantically relevant "similar articles" results
 - ✅ **Enhanced Diagnostic Logging**: Added comprehensive logging throughout the entity matching process
   - Added detailed logging of entity extraction, entity retrieval, and entity matching steps
   - Added pre-filter and post-filter logging to show exactly which articles are being filtered out and why
   - Added verification of entity overlap in final results with error reporting if an article without entity overlap passes filtering
   - Improved transparency for debugging the entity-based article matching system
-- ✅ **Entity Retrieval Fix**: Fixed critical issue in the source entity retrieval process
-  - Enhanced `get_similar_articles_with_entities` function to track source article ID
-  - Added database verification to compare entity counts in different systems
-  - Fixed incomplete function calls in analysis_worker.rs to ensure all parameters are passed
-  - Added warning generation when entity IDs are missing or inconsistent
-  - Implemented comprehensive source entity tracing through the matching pipeline
-- ✅ **Enhanced Debug Diagnostics**: Implemented comprehensive diagnostic enhancements to troubleshoot entity matching issues
-  - Added detailed entity-by-entity comparison logs in the matching process
-  - Enhanced entity retrieval with importance level and entity type breakdowns
-  - Added SQL query diagnostics to detect date filtering issues
-  - Implemented critical error detection for date filtering problems
-  - Added sample data logging for filtered articles to identify format issues
-- ✅ **Date Comparison Fix**: Fixed critical issue with date filtering in SQL queries
-  - Identified that string comparison of RFC3339 formatted dates was failing
-  - Initial attempt to use SQLite's `datetime()` functions did not fully resolve the issue
-  - Modified SQL query to use substring comparison: `substr(a.pub_date, 1, 10) >= substr(?, 1, 10)`
-  - This extracts only the date portion (YYYY-MM-DD) from both dates, avoiding timezone complexities
-  - Verified fix with direct SQL testing showing proper date-only matching
-  - Enhanced diagnostics confirmed the root cause and solution effectiveness
 - ✅ **Date Window Approach for Related Articles**: Implemented a more robust date filtering method
   - Changed from fixed threshold date to a dynamic date window around each article's own publication date
   - Window spans from 14 days before to 1 day after the article's publication date
@@ -212,44 +165,23 @@ Argus is currently in active development with all major components implemented a
   - Added code to retrieve the source article's publication date for date window calculation
   - Enhanced logging to monitor effectiveness of the date window approach
   - Identified future cleanup needs for articles with unrealistic dates
-
-- ✅ **NULL Handling and Date Filtering Fixes**: Fixed critical bugs in data storage and retrieval
-  - Fixed `store_embedding` in vector.rs to properly handle NULL values using `Option<&str>` parameters
-  - Enhanced SQL query with COALESCE to consider both event_date and pub_date when filtering
-  - Added index on articles(pub_date) for improved query performance
-  - Modified query strategy to skip date filtering when no source date exists
-  - Fixed "unknown" string literals being stored instead of proper NULL values
-  - Implemented proper SQL substring date extraction to handle RFC3339 formatted dates consistently
-
-- ✅ **Vector Similarity Calculation Fix**: Fixed critical issue with vector similarity calculation in the article matching system
-  - Identified incorrect vector calculation in three different parts of the codebase:
-    - In diagnostic tools: Using a dummy zero vector instead of retrieving source article vectors
-    - In API code: Same issue in `app/api.rs` - using a dummy vector `&vec![0.0; 1024]` for calculations
-    - In `vector.rs`: Not properly handling self-comparisons of articles
-  - Fixed `vector.rs` to:
-    - Properly handle self-comparisons with explicit vector_score and score setting for self-comparisons
-    - Implement direct vector retrieval and comparison for entity-matched articles
-    - Use better error handling for vector calculation failures
-  - Fixed `app/api.rs` to:
-    - Retrieve vectors for both source and target articles directly from Qdrant
-    - Use common `calculate_direct_similarity` function for consistent calculation
-    - Add proper error handling with specific messages for each failure mode
-  - Leveraged common code path through lib.rs re-exports to ensure consistency
-  - The fix resulted in:
-    - Correctly calculated vector similarity scores (e.g., 92% similarity instead of 0%)
-    - Successful matches for articles that should match based on content
-    - Better error reporting when vector calculations fail
-
+- ✅ **Vector Similarity Calculation Fix**: Fixed critical issue with vector similarity calculation
+  - Fixed vector retrieval in multiple code paths to ensure consistent vector similarity results
+  - Implemented common code paths for vector operations to maintain consistency
+  - Enhanced error reporting for vector calculation failures
+  - Verified fix with test cases showing proper matching based on both vector and entity similarity
 - 🔄 **Entity-Aware Clustering**: Implementing cluster tracking based on shared entities
-- 🔄 **Qdrant Integration**: Extending vector database integration with entity data
-- 🔄 **Entity Filtering**: Implementing search and filtering by entity
+- 🔄 **Advanced Relationship Modeling**:
+  - Building hierarchical relationships between connected entities
+  - Implementing relationship-aware matching in matching algorithm
+  - Creating contextual importance understanding for entities
 
 ### Feature Refinement
 - ✅ **Summary Generation Improvements**: Enhanced tiny summary prompts with two key improvements:
-  - Modified prompts to avoid date-centric lead-ins (like "In April 2025...") unless dates are critical
-  - Added explicit instructions for temporal accuracy to ensure proper tense for past/present/future events
+  - Modified prompts to avoid date-centric lead-ins unless dates are critical
+  - Added explicit instructions for temporal accuracy to ensure proper tense for events
   - Provided clear definition of "TODAY" to prevent reporting future events as if already happened
-  - Added diverse example summaries with varied opening styles (action-focused, discovery-focused, etc.)
+  - Added diverse example summaries with varied opening styles
   - Verified changes via successful compilation and deployment
 - 🔄 **Worker Role Switching**: Optimizing the dynamic allocation between decision and analysis tasks
 - 🔄 **Quality Scoring Algorithm**: Refining source and argument quality assessment
@@ -268,6 +200,19 @@ Argus is currently in active development with all major components implemented a
 - 🔄 **Deployment Automation**: Streamlining production deployment
 
 ## Planned Features
+
+### Entity Matching Enhancement (Next Phase)
+- 📋 **Entity-Aware Clustering**: Move beyond pairwise matching to true clustering
+  - Implementation of cluster tracking based on shared entities
+  - Development of hierarchical relationships between connected entities
+  - Creation of algorithms for cluster management and maintenance
+  - Support for multi-hop relationships between articles
+
+- 📋 **Advanced Relationship Modeling**: Create deeper entity relationship models
+  - Build hierarchical relationships between entities (company subsidiaries, geographic containment)
+  - Develop temporal awareness for entity relationships (acquisitions, name changes)
+  - Implement transitive matching (if A matches B and B matches C, consider A and C related)
+  - Create entity relationship graphs for visualization and analysis
 
 ### Content Enhancement
 - 📋 **Vector Database Advanced Features**: Utilizing Qdrant filters and advanced query capabilities
@@ -332,17 +277,21 @@ Argus is currently in active development with all major components implemented a
 - ✓ Implemented comprehensive database-driven entity alias system
 - ✓ Fixed pattern statistics collection to track pattern effectiveness
 - ✓ Enhanced CLI tool with improved interface and argument handling
+- ✓ Initial parameter tuning (lowered threshold from 75% to 70%)
 
 ### In Progress
+- 🔄 Parameter optimization for entity matching
+- 🔄 Entity type-specific weighting and threshold development
+- 🔄 Adaptive threshold algorithm implementation
 - 🔄 Qdrant integration for entity-based vector search
 - 🔄 Refined article relationship detection
-- 🔄 Article clustering based on entity relationships
-- 🔄 Domain-specific entity extraction refinement
+- 🔄 Parameter performance measurement and optimization
 
 ### Next Targets
-- 🎯 Complete integration of entity-based clustering
+- 🎯 Complete parameter optimization for entity matching
+- 🎯 Implement entity-aware clustering with shared entity tracking
 - 🎯 Optimize entity extraction quality and performance
 - 🎯 Implement entity-based search functionality
-- 🎯 Enhanced error handling and system resilience
-- 🎯 Expanded testing infrastructure
+- 🎯 Enhance error handling and system resilience
+- 🎯 Expand testing infrastructure
 - 🎯 Deployment automation improvements

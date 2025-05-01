@@ -40,48 +40,103 @@ Based on code review, other recent development appears focused on:
 7. **Enhanced LLM Error Logging**: Improved connection identification in error logs to pinpoint failing LLM instances
 8. **Article ID Exposure**: Added article IDs to R2 JSON files for enabling matching feedback from iOS app
 
-## Current Enhancement Project: Database-Driven Entity Alias System
+## Current Enhancement Project: Parameter Optimization for Entity Matching
 
-We've implemented a comprehensive database-driven entity alias system to improve entity name matching and article clustering. This represents a significant architectural enhancement that moves from static, hard-coded aliases to a dynamic, database-backed approach that can learn and improve over time.
+After successfully implementing the database-driven entity alias system, we're now focusing on parameter optimization to improve article clustering accuracy. This represents the next phase in our entity matching improvement plan, which aims to fine-tune the matching algorithm for better recall while maintaining precision.
 
-### Implementation Progress
+### Implementation Status
 
-1. ✅ **Database Schema Enhancement**:
+1. ✅ **Database-Driven Entity Alias System** (Completed):
    - Added dedicated tables for entity aliases (`entity_aliases`) and negative matches (`entity_negative_matches`)
    - Implemented comprehensive indexing for efficient alias lookups
    - Added tracking for alias performance and confidence levels via `alias_pattern_stats` table
-   - Created schema for review batches with `alias_review_batches` and `alias_review_items` tables
+   - Created batch review infrastructure with `alias_review_batches` and `alias_review_items` tables
+   - Implemented pattern-based alias discovery with configurable regex patterns
+   - Created comprehensive CLI tools for alias management
+   - Built negative learning system to prevent repeated false positives
 
-2. ✅ **Pattern & LLM-Based Alias Discovery**:
-   - Implemented regex-based pattern extraction for common alias formats with configurable patterns:
-     ```rust
-     r#"(?i)(?P<canonical>.+?),?\s+(?:also\s+)?(?:known|called)\s+as\s+["']?(?P<alias>.+?)["']?[,\.)]"#
-     ```
-   - Added pattern extraction function for automatic alias detection in articles
-   - Built pattern statistics tracking to measure effectiveness
-   - Implemented confidence scoring for discovered aliases
+2. ✅ **Initial Parameter Tuning** (Completed): 
+   - Lowered the article similarity threshold from 75% to 70% to increase match recall
+   - Maintained the weighting ratio of 60% vector similarity / 40% entity-based similarity
+   - Verified improved matching with test datasets while monitoring false positive rates
 
-3. ✅ **Admin Tools & Management**:
-   - Created comprehensive CLI tool `manage_aliases` with subcommands:
-     - `migrate`: Move static aliases to database
-     - `add`: Add new alias pairs
-     - `test`: Test if two entity names match
-     - `create-review-batch`: Create review batches
-     - `review-batch`: Interactive review of suggested aliases
-     - `stats`: View alias system statistics
-   - Implemented approval and rejection workflows with reason tracking
+3. 🔄 **Advanced Parameter Optimization** (In Progress):
+   - **Systematic Threshold Testing**: Evaluating different threshold combinations against test datasets
+   - **Entity Type Weighting**: Developing entity type-specific parameters (person, organization, location, event)
+   - **Adaptive Thresholds**: Creating algorithms that adjust thresholds based on article characteristics
+   - **Confidence-Based Scoring**: Implementing weighted matches based on confidence levels
 
-4. ✅ **Static-to-Dynamic Migration**:
-   - Implemented migration utility to move existing static aliases to database
-   - Created backward compatibility layer to maintain existing functionality
-   - Built fallback mechanism when database is unavailable
-   - Preserved static aliases during transition period
+### Core Components
 
-5. ✅ **Negative Learning Mechanism**:
-   - Added infrastructure to track rejected matches in `entity_negative_matches` table
-   - Implemented persistence to prevent repeated false positives
-   - Created automatic negative match creation from rejected aliases
-   - Incorporated negative match checking in alias matching algorithm
+- **Diagnostic Tooling**: Using our comprehensive diagnostic tools to measure effectiveness:
+  ```rust
+  // analyze_matches: Detailed single pair analyzer
+  // batch_analyze: Statistical analysis of multiple article pairs
+  // create_match_pairs: Test dataset generator
+  ```
+
+- **Similarity Calculation**: Enhancement of the multi-factor similarity calculation:
+  ```rust
+  pub async fn calculate_entity_similarity_async(
+      db: &Database,
+      source_entities: &ExtractedEntities,
+      target_entities: &ExtractedEntities,
+      source_date: Option<&str>,
+      target_date: Option<&str>,
+  ) -> anyhow::Result<EntitySimilarityMetrics>
+  ```
+
+- **Matching Algorithm**: Refined threshold and weighting system:
+  ```rust
+  // Entity-specific weighting
+  metrics.person_overlap = calculate_type_similarity_async(
+      db,
+      source_entities,
+      target_entities,
+      EntityType::Person,
+      &normalizer,
+  ).await?;
+
+  // Combined score calculation with weighted components
+  metrics.calculate_combined_score();
+  ```
+
+### Implementation Plan
+
+1. **Analysis of Current Performance**:
+   - Using diagnostic tools to generate baseline statistics on article matching
+   - Identifying patterns in false negatives (missed matches) and false positives
+   - Creating targeted test datasets for systematic evaluation
+
+2. **Entity Type-Specific Optimization**:
+   - Evaluating different weights for each entity type (person, organization, location, event)
+   - Determining optimal similarity thresholds for each entity type
+   - Creating separate parameters for primary versus secondary entity importance
+
+3. **Adaptive Threshold Implementation**:
+   - Developing algorithms that adjust similarity thresholds based on:
+     * Total number of entities in source and target articles
+     * Distribution of entity types
+     * Presence of high-confidence entities
+     * Temporal proximity between articles
+
+4. **Parameter Validation and Tuning**:
+   - Systematic testing with large datasets (1000+ article pairs)
+   - Measuring precision and recall across different parameter configurations
+   - Optimizing for maximum F1 score (balanced precision and recall)
+   - Implementing the optimal parameter set based on validation results
+
+### Expected Benefits
+
+- **Improved Match Recall**: Better identification of related articles through optimized thresholds
+- **Reduced False Positives**: More precise matching to avoid incorrect connections
+- **Content-Adaptive Matching**: Tailored parameters based on article and entity characteristics
+- **Measurable Performance**: Clear metrics for matching accuracy and tuning effectiveness
+- **Transparent Decision-Making**: Detailed explanations for why articles do or don't match
+
+## Previous Enhancement Project: Database-Driven Entity Alias System
+
+We've implemented a comprehensive database-driven entity alias system to improve entity name matching and article clustering. This represents a significant architectural enhancement that moves from static, hard-coded aliases to a dynamic, database-backed approach that can learn and improve over time.
 
 ### Core Components
 
@@ -112,25 +167,6 @@ We've implemented a comprehensive database-driven entity alias system to improve
 
 - **Admin CLI**: Created comprehensive command-line interface in `manage_aliases.rs`
 
-### Recent Fixes
-
-1. ✅ **Pattern Statistics Collection**:
-   - Fixed unused `increment_pattern_stat` function in `db.rs` by integrating it into both approval and rejection workflows
-   - Updated `approve_alias_suggestion` to retrieve the source pattern and track successful matches
-   - Updated `reject_alias_suggestion` to also track pattern rejection rates
-   - This enables performance tracking to identify which patterns generate the best alias suggestions
-
-2. ✅ **CLI Tool Argument Conflict Resolution**:
-   - Fixed command line argument conflict in the `Test` command where both `name1` and `name2` used the same `-n` flag
-   - Changed to use `-1` for the first name and `-2` for the second name to avoid conflict
-   - Improved usability of the command line interface
-
-3. ✅ **Static Alias Migration Verification**:
-   - Confirmed that the low migration count (2 static aliases) is expected behavior
-   - Many entries in the static alias maps are canonical self-references (e.g., "jeff bezos" → "jeff bezos")
-   - The migration correctly skips pairs where normalized forms are identical
-   - Only two entries had distinct normalized forms that needed migration to the database
-
 ### Benefits Delivered
 
 - **Enhanced Matching Accuracy**: Better identification of related entities through centralized alias management
@@ -139,7 +175,7 @@ We've implemented a comprehensive database-driven entity alias system to improve
 - **Pattern Tracking**: Pattern effectiveness statistics for optimizing future alias discovery
 - **Backward Compatibility**: Ensures consistent behavior while transitioning to the new system
 
-## Previous Enhancement Project: Entity-Based Article Clustering
+## Entity-Based Article Clustering
 
 We've implemented a comprehensive entity-based system to improve article clustering and similarity matching with the following approach:
 
@@ -174,56 +210,9 @@ We've implemented a comprehensive entity-based system to improve article cluster
    - Enhancing vector search with entity-aware filtering
    - Improving result ranking with multi-factor scoring
 
-### Core Components
-- **Entity Module**: New component for entity extraction, storage, and matching
-- **Relational Schema**: Properly normalized database design for entity relationships
-- **Enhanced Similarity Algorithm**: Combined vector and entity-based matching
-- **Cluster Management**: Tools for creating and maintaining article clusters
-
-### Implementation Progress
-1. ✅ Database schema extensions for entity storage - Added all required tables and indexes in db.rs
-2. ✅ Entity extraction using LLM with structured prompts - Implemented entity_extraction_prompt in prompts.rs
-3. ✅ Entity normalization and relationship mapping - Created entity management functions in db.rs
-4. ✅ Integration with analysis pipeline - Added entity extraction to the analysis workflow in analysis_worker.rs
-5. ✅ Support for event dates - Added event_date field to articles table for temporal matching
-6. ✅ Entity importance classification - Implemented PRIMARY/SECONDARY/MENTIONED ranking
-7. ✅ Entity module organization - Created specialized module with types, extraction, matching, and repository components
-8. ✅ Vector database integration - Added entity IDs and event dates to vector embeddings
-9. ✅ Multi-dimensional similarity - Implemented algorithms combining vector similarity, entity overlap, and temporal proximity
-
 ### Most Recent Fix: Vector Similarity Calculation Fix
 
 We've identified and fixed a critical issue in the vector similarity calculation that was causing articles to incorrectly fail to match:
-
-**Root Cause Analysis**
-- Vector similarity was being calculated incorrectly in three different parts of the codebase:
-  - In diagnostic tools (`analyze_matches.rs` and `batch_analyze.rs`): Using a dummy zero vector instead of retrieving the source article's actual vector
-  - In API code (`app/api.rs`): Same issue - using a dummy vector `&vec![0.0; 1024]` for calculations
-  - In the entity-based search code path in `vector.rs`: Not properly handling self-comparisons
-
-- The impact of these issues:
-  - Vector similarity was coming back as 0.0 rather than the actual value (which was often 0.9+ for related articles)
-  - Since vector similarity is weighted at 60% in the final score, this prevented matches even when entity similarity was high
-  - The error was consistent across both diagnostic and production code
-  - Error logs showed: `ERROR vector: Failed to calculate vector similarity for article 21235787`
-
-**Fix Implementation**
-1. ✅ **Fixed src/vector.rs**:
-   - Updated the `get_similar_articles_with_entities` function to properly handle self-comparisons and explicitly set vector_score and score for self-comparisons
-   - Modified calculation of vector similarity for entity-matched articles to use proper vector retrieval and direct comparison
-   - Enhanced error handling to provide better diagnostics when vector calculations fail
-
-2. ✅ **Fixed src/app/api.rs**:
-   - Replaced the dummy vector approach with proper retrieval of both article vectors
-   - Implemented direct vector comparison using the common `calculate_direct_similarity` function
-   - Added proper error handling with specific error messages for each failure mode
-
-3. ✅ **Leveraged Common Code Path**:
-   - Utilized re-exported functions in lib.rs to ensure consistent vector handling across the codebase:
-   ```rust
-   pub use vector::{calculate_direct_similarity, get_article_vector_from_qdrant};
-   ```
-   - This ensures all code paths use the same vector retrieval and comparison logic
 
 **Results**
 - Articles now match correctly when they have both high vector similarity and sufficient entity overlap
@@ -239,12 +228,12 @@ We've identified and fixed a critical issue in the vector similarity calculation
 
 ## Active Work Areas
 
-### Entity Alias System Enhancement
-- **Database Schema Design**: Creating comprehensive schema for alias management
-- **Pattern Extraction**: Building pattern-based alias discovery systems
-- **LLM Integration**: Leveraging language models for alias detection
-- **Admin Tooling**: Developing CLI utilities for alias management
-- **Static-to-Dynamic Migration**: Moving from hardcoded to database-driven approach
+### Parameter Optimization
+- **Systematic Testing**: Evaluating different threshold combinations against test datasets
+- **Adaptive Thresholds**: Creating algorithms that adjust thresholds based on article characteristics
+- **Entity Type Weighting**: Fine-tuning the importance of different entity types in matching
+- **Confidence-Based Scoring**: Weighting matches by confidence level
+- **Performance Metrics**: Tracking precision and recall statistics for different parameter sets
 
 ### LLM Integration Enhancements
 - **Fallback Handling**: Implementing graceful fallback between different LLM providers
@@ -273,18 +262,21 @@ We've identified and fixed a critical issue in the vector similarity calculation
 
 Based on codebase analysis, likely next steps include:
 
-1. **Complete Entity Alias System**: Implement automatic alias discovery during article analysis with the following approach:
-   - **Integrate Pattern-Based Discovery**: Connect the existing `extract_potential_aliases()` function to the analysis pipeline
-   - **Track Alias Usage**: Add functionality to record when aliases are used in entity matching
-   - **Implement Cache Layer**: Create a caching mechanism for frequently accessed aliases to improve performance
-   - **Enhance Review Tools**: Add usage statistics and more context to the review interface
-2. **Vector Database Integration**: Exploring deeper integration with Qdrant for semantic search
-3. **Enhanced Metrics**: Improving system health and performance monitoring
-4. **Testing Infrastructure**: Expanding automated testing for reliability
-5. **Topic Management**: Building tools for better topic configuration and management
-6. **User Preference Refinement**: Further customization of notification preferences
-7. **Content Filtering Improvements**: Refining relevance detection and quality assessment
-8. **Entity Matching Feedback**: Analyzing user feedback on missed matches to improve the algorithm
+1. **Complete Parameter Optimization**: Finish systematic testing and implement optimal parameter configuration for entity matching.
+   - Implement adaptive thresholds based on article characteristics
+   - Develop entity type-specific weights for enhanced matching
+   - Create and validate test datasets for comprehensive evaluation
+
+2. **Entity-Aware Clustering**: Move beyond pairwise matching to true clustering.
+   - Implement cluster tracking based on shared entities
+   - Develop hierarchical relationships between connected entities
+   - Create algorithms for cluster management and maintenance
+
+3. **Vector Database Integration**: Exploring deeper integration with Qdrant for semantic search
+4. **Enhanced Metrics**: Improving system health and performance monitoring
+5. **Testing Infrastructure**: Expanding automated testing for reliability
+6. **Topic Management**: Building tools for better topic configuration and management
+7. **User Preference Refinement**: Further customization of notification preferences
 
 ## Active Decisions
 
@@ -292,10 +284,11 @@ Based on codebase analysis, likely next steps include:
 - **Database Scaling**: Evaluating whether SQLite will remain sufficient or if migration to PostgreSQL will be needed
 - **Deployment Model**: Determining the optimal deployment strategy for production environments
 - **Worker Distribution**: Finalizing approach to worker allocation and load balancing
-- **Entity Alias Architecture**: Deciding on the best approach for transitioning to database-driven aliases
+- **Parameter Optimization Strategy**: Deciding between manual tuning and algorithmic optimization approaches
+- **Adaptive Threshold Implementation**: Determining the factors that should influence dynamic thresholds
 
 ### Feature Decisions
-- **Topic Configuration**: Determining the best approach for managing and updating topic definitions
+- **Entity Type Importance**: Determining optimal weights for different entity types in matching
 - **Quality Thresholds**: Setting appropriate thresholds for content quality assessment
 - **Notification Frequency**: Balancing notification volume to avoid overwhelming users
 - **Entity Matching Feedback**: Establishing a process for incorporating user feedback on missed matches
@@ -306,7 +299,7 @@ Based on codebase analysis, likely next steps include:
 - **Caching Strategy**: Determining what and how to cache for performance optimization
 - **Error Handling**: Standardizing approach to error recovery and system resilience
 - **Vector Similarity Calculation**: Refining methods for calculating and comparing vector embeddings
-- **Alias Cache Design**: Implementing effective caching for database aliases to maintain performance
+- **Parameter Storage**: Deciding how to store and manage matching parameters (config files vs. database)
 
 ## Integration Requirements
 

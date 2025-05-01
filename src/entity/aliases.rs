@@ -263,6 +263,7 @@ impl AliasCache {
 ///
 /// Uses a set of regex patterns to identify potential aliases in text.
 /// Returns a vector of (canonical, alias, entity_type, confidence) tuples.
+/// Includes validation to prevent article content from being treated as entities.
 #[instrument(level = "debug", skip(text))]
 pub fn extract_potential_aliases(
     text: &str,
@@ -277,6 +278,21 @@ pub fn extract_potential_aliases(
         .filter_map(|p| Regex::new(p).ok())
         .collect();
 
+    // Maximum allowed length for entity names to prevent matching full paragraphs
+    const MAX_ENTITY_LENGTH: usize = 100;
+
+    // Maximum number of words for a valid entity
+    const MAX_ENTITY_WORDS: usize = 10;
+
+    // Minimum entity word length - entities typically aren't very short words
+    const MIN_WORD_LENGTH: usize = 2;
+
+    // Patterns that suggest passage/article content rather than entity names
+    const PASSAGE_INDICATORS: [&str; 10] = [
+        " the ", " and ", " that ", " with ", " for ", " this ", " from ", " have ", " are ",
+        " they ",
+    ];
+
     // Apply each pattern
     for pattern in patterns {
         for cap in pattern.captures_iter(text) {
@@ -288,6 +304,60 @@ pub fn extract_potential_aliases(
 
                 // Skip if canonical and alias are the same or too short
                 if canonical == alias || canonical.len() < 2 || alias.len() < 2 {
+                    continue;
+                }
+
+                // Validate entity length - reject overly long entities
+                if canonical.len() > MAX_ENTITY_LENGTH || alias.len() > MAX_ENTITY_LENGTH {
+                    debug!(
+                        target: super::TARGET_ENTITY,
+                        "Rejecting potential alias due to excessive length: '{}' ↔ '{}'",
+                        if canonical.len() > 30 { canonical[..27].to_string() + "..." } else { canonical.to_string() },
+                        if alias.len() > 30 { alias[..27].to_string() + "..." } else { alias.to_string() }
+                    );
+                    continue;
+                }
+
+                // Validate word count - entities typically don't have many words
+                let canonical_words = canonical.split_whitespace().count();
+                let alias_words = alias.split_whitespace().count();
+                if canonical_words > MAX_ENTITY_WORDS || alias_words > MAX_ENTITY_WORDS {
+                    debug!(
+                        target: super::TARGET_ENTITY,
+                        "Rejecting potential alias due to excessive word count ({}, {}): '{}' ↔ '{}'",
+                        canonical_words, alias_words,
+                        if canonical.len() > 30 { canonical[..27].to_string() + "..." } else { canonical.to_string() },
+                        if alias.len() > 30 { alias[..27].to_string() + "..." } else { alias.to_string() }
+                    );
+                    continue;
+                }
+
+                // Validate that it's not a passage by checking common sentence indicators
+                let lowercase_canonical = canonical.to_lowercase();
+                let lowercase_alias = alias.to_lowercase();
+
+                if PASSAGE_INDICATORS.iter().any(|&indicator| {
+                    lowercase_canonical.contains(indicator) || lowercase_alias.contains(indicator)
+                }) {
+                    debug!(
+                        target: super::TARGET_ENTITY,
+                        "Rejecting potential alias that appears to be article content: '{}' ↔ '{}'",
+                        if canonical.len() > 30 { canonical[..27].to_string() + "..." } else { canonical.to_string() },
+                        if alias.len() > 30 { alias[..27].to_string() + "..." } else { alias.to_string() }
+                    );
+                    continue;
+                }
+
+                // Check for sentence-like structures (multiple words with punctuation)
+                if (lowercase_canonical.contains('.') && lowercase_canonical.contains(' '))
+                    || (lowercase_alias.contains('.') && lowercase_alias.contains(' '))
+                {
+                    debug!(
+                        target: super::TARGET_ENTITY,
+                        "Rejecting potential alias with sentence structure: '{}' ↔ '{}'",
+                        if canonical.len() > 30 { canonical[..27].to_string() + "..." } else { canonical.to_string() },
+                        if alias.len() > 30 { alias[..27].to_string() + "..." } else { alias.to_string() }
+                    );
                     continue;
                 }
 
@@ -306,8 +376,28 @@ pub fn extract_potential_aliases(
                     }
                 });
 
-                // Assign confidence based on pattern quality
-                // Could be refined with better heuristics
+                // Check if words are meaningful enough to be entities
+                // Some entities like people and organizations typically have longer words
+                if inferred_type == EntityType::Person || inferred_type == EntityType::Organization
+                {
+                    let has_meaningful_words = canonical
+                        .split_whitespace()
+                        .any(|word| word.len() >= MIN_WORD_LENGTH)
+                        && alias
+                            .split_whitespace()
+                            .any(|word| word.len() >= MIN_WORD_LENGTH);
+
+                    if !has_meaningful_words {
+                        debug!(
+                            target: super::TARGET_ENTITY,
+                            "Rejecting potential alias with insufficient word length: '{}' ↔ '{}'",
+                            canonical, alias
+                        );
+                        continue;
+                    }
+                }
+
+                // Assign confidence based on pattern quality and validation
                 let confidence = 0.8; // High initial confidence for pattern-based extraction
 
                 results.push((

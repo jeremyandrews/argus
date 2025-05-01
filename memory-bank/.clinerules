@@ -28,6 +28,55 @@
 - Quality scoring uses a three-tier system (1-3) for quick assessment
 - Insights go beyond article content to provide deeper context
 
+## Entity Matching & Alias System
+- The entity matching system uses a multi-factor approach with configurable parameters:
+  - Vector similarity has 60% weight in the final score
+  - Entity overlap has 30% weight (with type-specific subscores)
+  - Temporal proximity has 10% weight
+  - The current threshold for article matches is 70% (reduced from 75%)
+  - This means articles must share entities to match, as vector similarity alone maxes at 60%
+
+- Entity type-specific thresholds are used for fuzzy matching:
+  - Person entities: 0.90 Jaro-Winkler threshold, 2 max Levenshtein distance
+  - Organization entities: 0.85 Jaro-Winkler threshold, 3 max Levenshtein distance
+  - Location entities: 0.85 Jaro-Winkler threshold, 3 max Levenshtein distance
+  - Product entities: 0.80 Jaro-Winkler threshold, 3 max Levenshtein distance
+  - These thresholds are defined as constants in normalizer.rs
+
+- Special case handling is implemented for specific entity types:
+  - Acronym detection for organizations (e.g., "FBI" matching "Federal Bureau of Investigation")
+  - Substring matching for products and organizations (e.g., "iPhone" matching "Apple iPhone 15")
+  - Token-based verification to prevent partial matches (e.g., "App" shouldn't match "Apple")
+  - Common variation substitution (e.g., "center" ↔ "centre", "organization" ↔ "organisation")
+
+- The entity alias system follows a multi-tier matching strategy:
+  1. Basic normalization (case folding, whitespace normalization, etc.)
+  2. Exact match after normalization (fastest)
+  3. Cache lookup with time-based expiration (optimized performance)
+  4. Database alias lookup (reliable for known aliases)
+  5. Fuzzy matching fallback (for unknown aliases)
+  6. Negative match checking (to prevent repeated false positives)
+
+- Parameter optimization strategies based on our testing:
+  - Entity type weights should reflect their importance in different domains
+  - Primary entities should have more impact than secondary or mentioned entities
+  - Temporal proximity should have lower weight but can be a useful tiebreaker
+  - Thresholds should be optimized based on precision/recall tradeoffs
+  - Adaptive thresholds work better than fixed thresholds for diverse content
+
+- Pattern-based alias discovery uses configurable regex patterns:
+  - "X, also known as Y" pattern: `(?P<canonical>.+?),?\s+(?:also\s+)?(?:known|called)\s+as\s+["']?(?P<alias>.+?)["']?[,\.)]`
+  - "X (formerly Y)" pattern: `(?P<canonical>.+?)\s+\((?:a\.?k\.?a\.?|formerly)\s+["']?(?P<alias>.+?)["']?\)`
+  - "Y, now known as X" pattern: `["']?(?P<alias>.+?)["']?,?\s+now\s+(?:known\s+as\s+)?["']?(?P<canonical>.+?)["']?[,\.)]`
+  - These patterns are defined in aliases.rs and can be extended
+
+- Alias system performance optimizations:
+  - Thread-safe caching layer uses DashMap for concurrent access
+  - Cache entries include timestamps for time-based expiration (default: 10 minutes)
+  - Size-based eviction policy prevents unbounded memory growth (default: 10,000 entries)
+  - Cache key normalization ensures consistent lookups (alphabetical ordering of names)
+  - The cache is a global singleton accessed through AliasCache::instance()
+
 ## LLM JSON Response Handling
 - The system uses a structured approach to handle different JSON response formats from LLMs
 - The `JsonSchemaType` enum defines supported schema types (EntityExtraction, ThreatLocation, Generic)
@@ -156,6 +205,28 @@
 - Similar articles should never appear in results unless they meet both the threshold (0.75+) and have entity overlap
 - Enhanced diagnostic logging has been added for entity extraction, entity matching, and similarity scoring to help troubleshoot issues
 
+## Date Handling in SQLite
+- RFC3339 formatted dates require special handling in SQLite queries:
+  - Direct string comparison can fail due to timezone and formatting variations
+  - INCORRECT: `WHERE a.pub_date > ?` directly comparing RFC3339 strings
+  - CORRECT: `WHERE substr(a.pub_date, 1, 10) >= substr(?, 1, 10)` comparing just the date portion
+
+- Best Practices for Date Filtering:
+  - Extract just the date portion (YYYY-MM-DD) using substring operations
+  - Use date windows rather than fixed thresholds (e.g., 14 days before to 1 day after)
+  - When both event_date and pub_date exist, use COALESCE:
+    ```sql
+    WHERE COALESCE(date(substr(a.event_date,1,10)), date(substr(a.pub_date,1,10))) 
+          BETWEEN date(substr(?,1,10), '-14 days') AND date(substr(?,1,10), '+1 day')
+    ```
+  - Add proper indexes for date fields: `CREATE INDEX IF NOT EXISTS articles_pub_date ON articles(pub_date)`
+  - Always handle NULL values properly with IS NULL checks or COALESCE
+
+- Date Parameters in Function Calls:
+  - Use Option<&str> for date parameters to properly handle NULL values
+  - INCORRECT: `store_embedding(conn, &id, &embedding, "unknown", "unknown", &entity_ids)`
+  - CORRECT: `store_embedding(conn, &id, &embedding, pub_date.as_deref(), event_date.as_deref(), &entity_ids)`
+
 ## Application Conventions
 - iOS app relies on push notifications with payload size limits
 - Detailed content is stored in R2 and linked in notifications
@@ -183,28 +254,6 @@
   - Used to identify the language of article content
   - Helps apply appropriate language-specific processing rules
   - Minimum confidence threshold should be 0.8 for language detection
-
-## Date Handling in SQLite
-- RFC3339 formatted dates require special handling in SQLite queries:
-  - Direct string comparison can fail due to timezone and formatting variations
-  - INCORRECT: `WHERE a.pub_date > ?` directly comparing RFC3339 strings
-  - CORRECT: `WHERE substr(a.pub_date, 1, 10) >= substr(?, 1, 10)` comparing just the date portion
-
-- Best Practices for Date Filtering:
-  - Extract just the date portion (YYYY-MM-DD) using substring operations
-  - Use date windows rather than fixed thresholds (e.g., 14 days before to 1 day after)
-  - When both event_date and pub_date exist, use COALESCE:
-    ```sql
-    WHERE COALESCE(date(substr(a.event_date,1,10)), date(substr(a.pub_date,1,10))) 
-          BETWEEN date(substr(?,1,10), '-14 days') AND date(substr(?,1,10), '+1 day')
-    ```
-  - Add proper indexes for date fields: `CREATE INDEX IF NOT EXISTS articles_pub_date ON articles(pub_date)`
-  - Always handle NULL values properly with IS NULL checks or COALESCE
-
-- Date Parameters in Function Calls:
-  - Use Option<&str> for date parameters to properly handle NULL values
-  - INCORRECT: `store_embedding(conn, &id, &embedding, "unknown", "unknown", &entity_ids)`
-  - CORRECT: `store_embedding(conn, &id, &embedding, pub_date.as_deref(), event_date.as_deref(), &entity_ids)`
 
 ## Cloud Storage Integration
 - **AWS SDK Configuration**:
