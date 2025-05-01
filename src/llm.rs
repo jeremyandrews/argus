@@ -129,7 +129,7 @@ pub async fn generate_llm_response(
 
                 let options = GenerationOptions::default()
                     .temperature(params.temperature)
-                    .num_ctx(CONTEXT_WINDOW);
+                    .num_ctx(CONTEXT_WINDOW.into());
                 request.options = Some(options);
 
                 // Log detailed request information
