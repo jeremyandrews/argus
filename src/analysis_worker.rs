@@ -738,6 +738,52 @@ async fn process_analysis_item(
                                         article_id, ids.len()
                                     );
                                     entity_ids = Some(ids);
+
+                                    // NEW CODE: Extract potential aliases from article text
+                                    let alias_extraction_start = Instant::now();
+                                    let potential_aliases =
+                                        crate::entity::aliases::extract_potential_aliases(
+                                            &article_text,
+                                            None, // Let the function infer entity types
+                                        );
+
+                                    info!(
+                                        "Extracted {} potential aliases in {:?}",
+                                        potential_aliases.len(),
+                                        alias_extraction_start.elapsed()
+                                    );
+
+                                    // Store each potential alias in the database
+                                    for (canonical, alias, entity_type, confidence) in
+                                        potential_aliases
+                                    {
+                                        match crate::entity::aliases::add_alias(
+                                            &db,
+                                            None, // No entity_id until approved
+                                            &canonical,
+                                            &alias,
+                                            entity_type,
+                                            "pattern", // Source is pattern-based extraction
+                                            confidence,
+                                        )
+                                        .await
+                                        {
+                                            Ok(alias_id) => {
+                                                if alias_id > 0 {
+                                                    debug!(
+                                                                "Added potential alias: '{}' ↔ '{}' ({:?}) with confidence {:.2}",
+                                                                canonical, alias, entity_type, confidence
+                                                            );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                debug!(
+                                                    "Failed to add potential alias: {} ↔ {} - {:?}",
+                                                    canonical, alias, e
+                                                );
+                                            }
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     error!(
@@ -1036,6 +1082,50 @@ async fn process_analysis_item(
                                                 article_id, ids.len()
                                             );
                                             entity_ids = Some(ids);
+
+                                            // NEW CODE: Extract potential aliases from article text for matched topics
+                                            let alias_extraction_start = Instant::now();
+                                            let potential_aliases =
+                                                crate::entity::aliases::extract_potential_aliases(
+                                                    &article_text,
+                                                    None, // Let the function infer entity types
+                                                );
+
+                                            info!(
+                                                "Extracted {} potential aliases in {:?}",
+                                                potential_aliases.len(),
+                                                alias_extraction_start.elapsed()
+                                            );
+
+                                            // Store each potential alias in the database
+                                            for (canonical, alias, entity_type, confidence) in
+                                                potential_aliases
+                                            {
+                                                match crate::entity::aliases::add_alias(
+                                                    &db,
+                                                    None, // No entity_id until approved
+                                                    &canonical,
+                                                    &alias,
+                                                    entity_type,
+                                                    "pattern", // Source is pattern-based extraction
+                                                    confidence,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(alias_id) => {
+                                                        if alias_id > 0 {
+                                                            debug!(
+                                                                "Added potential alias: '{}' ↔ '{}' ({:?}) with confidence {:.2}",
+                                                                canonical, alias, entity_type, confidence
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        debug!("Failed to add potential alias: {} ↔ {} - {:?}", 
+                                                              canonical, alias, e);
+                                                    }
+                                                }
+                                            }
                                         }
                                         Err(e) => {
                                             error!(

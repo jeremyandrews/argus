@@ -273,7 +273,11 @@ We've identified and fixed a critical issue in the vector similarity calculation
 
 Based on codebase analysis, likely next steps include:
 
-1. **Complete Entity Alias System**: Finish implementing the database-driven alias system
+1. **Complete Entity Alias System**: Implement automatic alias discovery during article analysis with the following approach:
+   - **Integrate Pattern-Based Discovery**: Connect the existing `extract_potential_aliases()` function to the analysis pipeline
+   - **Track Alias Usage**: Add functionality to record when aliases are used in entity matching
+   - **Implement Cache Layer**: Create a caching mechanism for frequently accessed aliases to improve performance
+   - **Enhance Review Tools**: Add usage statistics and more context to the review interface
 2. **Vector Database Integration**: Exploring deeper integration with Qdrant for semantic search
 3. **Enhanced Metrics**: Improving system health and performance monitoring
 4. **Testing Infrastructure**: Expanding automated testing for reliability

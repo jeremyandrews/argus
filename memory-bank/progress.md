@@ -71,6 +71,12 @@ Argus is currently in active development with all major components implemented a
   - Added validation and confidence scoring system for potential aliases
   - Created extraction functions to identify potential aliases from article text
   - Built configurable pattern system for easy extension
+  - **NEW**: Integrated automatic alias discovery in the analysis pipeline for both life safety and topic-based articles
+
+- ✅ **Performance Optimization**: Enhanced alias system performance
+  - **NEW**: Implemented thread-safe caching layer with time-based expiration for frequently accessed aliases
+  - **NEW**: Optimized alias lookups with three-tier approach: exact match → cache → database → fuzzy matching
+  - **NEW**: Added eviction policies to maintain cache size and performance over time
 
 - ✅ **Admin Tools & Management**: Developed utilities for alias management
   - Created comprehensive CLI tool `manage_aliases` with commands for:

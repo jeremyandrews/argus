@@ -8,10 +8,14 @@
 //! - Negative match tracking
 //! - Support for multiple alias sources (pattern-based, LLM-generated, user-defined)
 //! - Fuzzy matching fallback for runtime decisions
+//! - Cache layer for frequently accessed aliases
 
 use super::types::EntityType;
 use crate::db::Database;
-use tracing::{debug, instrument};
+use dashmap::DashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tracing::{debug, info, instrument};
 
 // Common cross-language and spelling variations for pattern-based matching
 pub const COMMON_VARIATIONS: &[(&str, &str)] = &[
@@ -130,6 +134,129 @@ pub async fn add_alias(
         .await?;
 
     Ok(result)
+}
+
+/// Cache entry for alias matches with timestamp for TTL
+struct CacheEntry {
+    is_match: bool,
+    timestamp: Instant,
+}
+
+/// Global alias cache to reduce database queries
+#[derive(Clone)]
+pub struct AliasCache {
+    // Key is (normalized_name1, normalized_name2, entity_type_str)
+    cache: Arc<DashMap<(String, String, String), CacheEntry>>,
+    ttl: Duration,
+    max_size: usize,
+}
+
+impl AliasCache {
+    /// Create a new alias cache with specified TTL and max size
+    pub fn new(ttl_seconds: u64, max_size: usize) -> Self {
+        Self {
+            cache: Arc::new(DashMap::new()),
+            ttl: Duration::from_secs(ttl_seconds),
+            max_size,
+        }
+    }
+
+    /// Get a global singleton instance of the cache
+    pub fn instance() -> &'static AliasCache {
+        use once_cell::sync::Lazy;
+        static INSTANCE: Lazy<AliasCache> = Lazy::new(|| {
+            // Default: 10 minute TTL, 10,000 max entries
+            AliasCache::new(600, 10_000)
+        });
+        &INSTANCE
+    }
+
+    /// Try to get a value from the cache
+    pub fn get(&self, name1: &str, name2: &str, entity_type: &str) -> Option<bool> {
+        // Create a canonical key with names in sorted order for consistent lookups
+        let key = Self::make_key(name1, name2, entity_type);
+
+        // Check if entry exists and is not expired
+        if let Some(entry) = self.cache.get(&key) {
+            if entry.timestamp.elapsed() < self.ttl {
+                return Some(entry.is_match);
+            } else {
+                // Remove expired entry
+                self.cache.remove(&key);
+            }
+        }
+        None
+    }
+
+    /// Add or update a value in the cache
+    pub fn insert(&self, name1: &str, name2: &str, entity_type: &str, is_match: bool) {
+        // Ensure we don't exceed max size by removing random entries if needed
+        if self.cache.len() >= self.max_size {
+            // Simple strategy: remove ~10% of entries when full
+            let to_remove = self.max_size / 10;
+            let mut removed = 0;
+
+            let expired_keys: Vec<_> = self
+                .cache
+                .iter()
+                .filter(|entry| entry.timestamp.elapsed() > self.ttl)
+                .map(|entry| entry.key().clone())
+                .take(to_remove)
+                .collect();
+
+            for key in expired_keys {
+                self.cache.remove(&key);
+                removed += 1;
+            }
+
+            // If we still need to remove more, take random entries
+            if removed < to_remove {
+                let random_keys: Vec<_> = self
+                    .cache
+                    .iter()
+                    .map(|entry| entry.key().clone())
+                    .take(to_remove - removed)
+                    .collect();
+
+                for key in random_keys {
+                    self.cache.remove(&key);
+                }
+            }
+        }
+
+        // Insert new entry
+        let key = Self::make_key(name1, name2, entity_type);
+        self.cache.insert(
+            key,
+            CacheEntry {
+                is_match,
+                timestamp: Instant::now(),
+            },
+        );
+    }
+
+    /// Clear the entire cache
+    pub fn clear(&self) {
+        self.cache.clear();
+        info!("Alias cache cleared");
+    }
+
+    /// Make a consistent cache key by ordering name1 and name2 alphabetically
+    fn make_key(name1: &str, name2: &str, entity_type: &str) -> (String, String, String) {
+        if name1 <= name2 {
+            (
+                name1.to_string(),
+                name2.to_string(),
+                entity_type.to_string(),
+            )
+        } else {
+            (
+                name2.to_string(),
+                name1.to_string(),
+                entity_type.to_string(),
+            )
+        }
+    }
 }
 
 /// Extract potential aliases from text using patterns

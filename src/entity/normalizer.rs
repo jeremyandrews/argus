@@ -5,7 +5,7 @@ use tracing::debug;
 use unicode_normalization::UnicodeNormalization;
 use whatlang::detect as detect_language;
 
-use super::aliases::COMMON_VARIATIONS;
+use super::aliases::{AliasCache, COMMON_VARIATIONS};
 use super::types::EntityType;
 use super::TARGET_ENTITY;
 use crate::db::Database;
@@ -122,10 +122,10 @@ impl EntityNormalizer {
         normalized
     }
 
-    /// Determine if two entity names match (async database-backed version)
+    /// Determine if two entity names match (async database-backed version with caching)
     ///
-    /// This version first tries the database-backed alias system, then falls
-    /// back to the original fuzzy matching logic if needed.
+    /// This version first checks the cache, then tries the database-backed alias system,
+    /// and finally falls back to the original fuzzy matching logic if needed.
     pub async fn async_names_match(
         &self,
         db: &Database,
@@ -145,23 +145,53 @@ impl EntityNormalizer {
             return Ok(true);
         }
 
-        // Try database-driven approach directly
+        let entity_type_str = entity_type.to_string();
+
+        // Check cache first
+        let cache = AliasCache::instance();
+        if let Some(is_match) = cache.get(&norm1, &norm2, &entity_type_str) {
+            debug!(
+                target: TARGET_ENTITY,
+                "Cache hit for '{}' and '{}' ({:?}): match={}",
+                name1, name2, entity_type, is_match
+            );
+            return Ok(is_match);
+        }
+
+        let result: bool;
+
+        // Try database-driven approach if not in cache
         match db
-            .are_names_equivalent(&norm1, &norm2, &entity_type.to_string())
+            .are_names_equivalent(&norm1, &norm2, &entity_type_str)
             .await
         {
-            Ok(true) => return Ok(true),
-            Ok(false) | Err(_) => {
+            Ok(true) => {
+                // Cache the positive match result
+                cache.insert(&norm1, &norm2, &entity_type_str, true);
+                return Ok(true);
+            }
+            Ok(false) => {
                 // Fall through to fuzzy matching
                 debug!(
                     target: TARGET_ENTITY,
-                    "Database alias check failed or returned false, trying fuzzy matching"
+                    "Database returned no match for '{}' and '{}'", name1, name2
                 );
+                result = self.fuzzy_match(&norm1, &norm2, name1, name2, entity_type);
+            }
+            Err(e) => {
+                // Database error, try fuzzy matching
+                debug!(
+                    target: TARGET_ENTITY,
+                    "Database error when matching '{}' and '{}': {}", name1, name2, e
+                );
+                result = self.fuzzy_match(&norm1, &norm2, name1, name2, entity_type);
             }
         }
 
-        // Fall back to the original fuzzy matching logic
-        Ok(self.fuzzy_match(&norm1, &norm2, name1, name2, entity_type))
+        // Cache the result (could be from fuzzy matching)
+        cache.insert(&norm1, &norm2, &entity_type_str, result);
+
+        Ok(result)
     }
 
     /// Determine if two entity names match (synchronous version)
