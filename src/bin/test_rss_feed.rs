@@ -74,6 +74,15 @@ async fn main() -> Result<()> {
                 );
             }
 
+            // Print HTTP headers if any
+            if !result.headers.is_empty() {
+                println!("\n{}", "HTTP Headers".bright_blue());
+                println!("{}", "─".repeat(80).dimmed());
+                for (name, value) in &result.headers {
+                    println!("{}: {}", name.bright_magenta(), value);
+                }
+            }
+
             // Print entries found
             println!(
                 "{}: {}",

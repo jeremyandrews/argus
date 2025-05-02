@@ -33,6 +33,7 @@ pub struct TestRssFeedResult {
     pub decoded_preview: Option<String>,
     pub entries_found: usize,
     pub detected_encoding: Option<String>,
+    pub headers: Vec<(String, String)>,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub entries: Vec<EntryInfo>,
@@ -163,6 +164,7 @@ pub async fn test_rss_feed(url: &str, db: Option<&Database>) -> Result<TestRssFe
         decoded_preview: None,
         entries_found: 0,
         detected_encoding: None,
+        headers: Vec::new(),
         errors: Vec::new(),
         warnings: Vec::new(),
         entries: Vec::new(),
@@ -221,6 +223,15 @@ pub async fn test_rss_feed(url: &str, db: Option<&Database>) -> Result<TestRssFe
 
     result.content_type = content_type.clone();
 
+    // Extract HTTP headers
+    for (name, value) in response.headers() {
+        if let Ok(value_str) = value.to_str() {
+            result
+                .headers
+                .push((name.to_string(), value_str.to_string()));
+        }
+    }
+
     // Get the raw bytes
     let bytes = match response.bytes().await {
         Ok(b) => b,
@@ -239,40 +250,71 @@ pub async fn test_rss_feed(url: &str, db: Option<&Database>) -> Result<TestRssFe
 
     // Try different decompression methods until one works
     let decompressed_bytes = {
+        // Check content-encoding header for compression info
+        let content_encoding = result
+            .headers
+            .iter()
+            .find(|(name, _)| name.to_lowercase() == "content-encoding")
+            .map(|(_, value)| value.to_lowercase());
+
+        // If Brotli compressed (content-encoding: br)
+        if content_encoding.as_deref() == Some("br") {
+            let mut decoded = Vec::new();
+            let mut reader = brotli::Decompressor::new(&bytes[..], 4096);
+            if reader.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                result
+                    .warnings
+                    .push("Content was Brotli compressed".to_string());
+                decoded
+            } else {
+                // If Brotli decompression failed, fall back to other methods
+                result
+                    .warnings
+                    .push("Brotli decompression failed, trying other methods".to_string());
+                try_other_decompressions(&bytes, &mut result)
+            }
+        } else {
+            // Try other decompression methods
+            try_other_decompressions(&bytes, &mut result)
+        }
+    };
+
+    // Helper function to try various decompression methods
+    fn try_other_decompressions(bytes: &[u8], result: &mut TestRssFeedResult) -> Vec<u8> {
         // First try gzip
-        let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut decoder = flate2::read::GzDecoder::new(bytes);
         let mut decoded = Vec::new();
         if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
             result
                 .warnings
                 .push("Content was gzip compressed".to_string());
-            decoded
-        } else {
-            // Try zlib
-            let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
-            let mut decoded = Vec::new();
-            if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-                result
-                    .warnings
-                    .push("Content was zlib compressed".to_string());
-                decoded
-            } else {
-                // Try deflate
-                let mut decoder = flate2::read::DeflateDecoder::new(&bytes[..]);
-                let mut decoded = Vec::new();
-                if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-                    result
-                        .warnings
-                        .push("Content was deflate compressed".to_string());
-                    decoded
-                } else {
-                    // If no decompression worked, use original bytes
-                    result.warnings.push("No compression detected".to_string());
-                    bytes.to_vec()
-                }
-            }
+            return decoded;
         }
-    };
+
+        // Try zlib
+        let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+        let mut decoded = Vec::new();
+        if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+            result
+                .warnings
+                .push("Content was zlib compressed".to_string());
+            return decoded;
+        }
+
+        // Try deflate
+        let mut decoder = flate2::read::DeflateDecoder::new(bytes);
+        let mut decoded = Vec::new();
+        if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+            result
+                .warnings
+                .push("Content was deflate compressed".to_string());
+            return decoded;
+        }
+
+        // If no decompression worked, use original bytes
+        result.warnings.push("No compression detected".to_string());
+        bytes.to_vec()
+    }
 
     // Try to convert to UTF-8 string
     let body = match String::from_utf8(decompressed_bytes.clone()) {
@@ -630,7 +672,13 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                         .map(|s| s.to_lowercase());
 
                     if response.status().is_success() {
-                        // Get the raw bytes first
+                        // Extract the content encoding before consuming the response
+                        let content_encoding = response.headers()
+                            .get(reqwest::header::CONTENT_ENCODING)
+                            .and_then(|value| value.to_str().ok())
+                            .map(|s| s.to_lowercase());
+
+                        // Get the raw bytes next (this consumes the response)
                         let bytes = match response.bytes().await {
                             Ok(b) => b,
                             Err(err) => {
@@ -643,34 +691,56 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
 
                         // Try different decompression methods until one works
                         let decompressed_bytes = {
-                            // First try gzip
-                            let mut decoder = flate2::read::GzDecoder::new(&bytes[..]);
-                            let mut decoded = Vec::new();
-                            if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-                                debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with gzip from {}", rss_url);
-                                decoded
-                            } else {
-                                // Try zlib
-                                let mut decoder = flate2::read::ZlibDecoder::new(&bytes[..]);
+                            // Use the previously extracted content encoding
+
+                            // If Brotli compressed (content-encoding: br)
+                            if content_encoding.as_deref() == Some("br") {
                                 let mut decoded = Vec::new();
-                                if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with zlib from {}", rss_url);
+                                let mut reader = brotli::Decompressor::new(&bytes[..], 4096);
+                                if reader.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with brotli from {}", rss_url);
                                     decoded
                                 } else {
-                                    // Try deflate
-                                    let mut decoder = flate2::read::DeflateDecoder::new(&bytes[..]);
-                                    let mut decoded = Vec::new();
-                                    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-                                        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with deflate from {}", rss_url);
-                                        decoded
-                                    } else {
-                                        // If no decompression worked, use original bytes
-                                        debug!(target: TARGET_WEB_REQUEST, "No decompression method worked for {}, using original bytes", rss_url);
-                                        bytes.to_vec()
-                                    }
+                                    // If Brotli decompression failed, fall back to other methods
+                                    debug!(target: TARGET_WEB_REQUEST, "Brotli decompression failed for {}, trying other methods", rss_url);
+                                    try_decompressions(&bytes, rss_url)
                                 }
+                            } else {
+                                // Try other decompression methods
+                                try_decompressions(&bytes, rss_url)
                             }
                         };
+
+// Helper function to try various decompression methods
+fn try_decompressions(bytes: &[u8], rss_url: &str) -> Vec<u8> {
+    // First try gzip
+    let mut decoder = flate2::read::GzDecoder::new(bytes);
+    let mut decoded = Vec::new();
+    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with gzip from {}", rss_url);
+        return decoded;
+    }
+
+    // Try zlib
+    let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+    let mut decoded = Vec::new();
+    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with zlib from {}", rss_url);
+        return decoded;
+    }
+
+    // Try deflate
+    let mut decoder = flate2::read::DeflateDecoder::new(bytes);
+    let mut decoded = Vec::new();
+    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with deflate from {}", rss_url);
+        return decoded;
+    }
+
+    // If no decompression worked, use original bytes
+    debug!(target: TARGET_WEB_REQUEST, "No decompression method worked for {}, using original bytes", rss_url);
+    bytes.to_vec()
+}
 
                         // Check if the decompressed data looks like XML
                         if let Ok(text) = String::from_utf8(decompressed_bytes.clone()) {

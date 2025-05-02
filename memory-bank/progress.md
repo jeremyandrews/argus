@@ -14,6 +14,8 @@ Argus is currently in active development with all major components implemented a
 
 ### Content Processing
 - ✅ **RSS Feed Parsing**: Reliable fetching and parsing of feeds in multiple formats
+- ✅ **RSS Diagnostic Tool**: Specialized `test_rss_feed` binary for troubleshooting feed loading issues
+- ✅ **Multi-Format Compression Support**: Support for Brotli, gzip, zlib, and deflate compressed content
 - ✅ **Content Extraction**: Article extraction from web pages using readability
 - ✅ **Duplicate Detection**: Content deduplication through hash-based comparison
 - ✅ **Queue Management**: Database-backed queues for reliable content processing

@@ -16,7 +16,15 @@ The codebase demonstrates a sophisticated use of Rust with asynchronous processi
 
 Based on code review, recent development appears focused on:
 
-1. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
+1. **RSS Feed Diagnostic Tool and Brotli Compression Support**:
+   - **Created RSS Diagnostic Tool**: Built `test_rss_feed` binary for troubleshooting feed loading issues
+   - **Enhanced Compression Support**: Added Brotli decompression capability to RSS module
+   - **Fixed Content Loading**: Resolved issues with feeds using `content-encoding: br` 
+   - **Detailed Diagnostics**: Tool displays HTTP headers, content previews, and hex dumps for debugging
+   - **Header Analysis**: Improved header inspection to identify compression methods in use
+   - **Unified Error Reporting**: Standardized feed error reporting and diagnostics
+
+2. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
    - **Increased Match Recall**: Lowered the minimum combined similarity score for article matches
    - **More Lenient Matching**: Now requires less strict vector and entity similarity
    - **Broader Clustering**: Will create more inclusive article clusters with related content

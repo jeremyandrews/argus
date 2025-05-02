@@ -255,6 +255,38 @@
   - Helps apply appropriate language-specific processing rules
   - Minimum confidence threshold should be 0.8 for language detection
 
+## RSS Feed Diagnostics
+- The system includes a dedicated diagnostic tool for troubleshooting RSS feed loading issues:
+  - `test_rss_feed`: Command-line binary for testing RSS feed connectivity and parsing
+  - Provides detailed diagnostics about HTTP headers, compression, content type, and feed structure
+  - Shows raw content hex dumps for binary inspection of problematic feeds
+  - Displays decoded content previews for text inspection
+  - Lists successfully parsed feed entries when available
+
+- When troubleshooting feed loading issues:
+  - First check the HTTP headers - especially content-type and content-encoding
+  - Look for compression methods in use (gzip, deflate, brotli)
+  - Examine raw content hex dump for binary patterns that might indicate encoding issues
+  - Check for valid XML/RSS markers in the decoded content
+  - Review any specific errors or warnings reported by the diagnostic tool
+
+- Common RSS feed loading issues to watch for:
+  - Brotli compression (content-encoding: br) - now supported but was previously a problem
+  - Invalid UTF-8 encoding in content, especially after decompression
+  - Malformed XML that doesn't meet RSS/Atom format requirements
+  - Non-standard character encodings (requiring specific decoding)
+  - Content-type mismatches (reported as application/xml but actually binary data)
+  - Mixed content issues (partial XML with binary segments)
+
+- Best practices for RSS feed diagnostics:
+  - Use `test_rss_feed <url>` to diagnose any feed loading issues
+  - Always check both raw and decoded content previews
+  - Compare HTTP headers against actual content to identify mismatches
+  - For compression issues, look for content-encoding headers
+  - For encoding issues, check charset parameter in content-type
+  - When adding feed support, consider all four compression types (gzip, zlib, deflate, brotli)
+  - Use diagnostic tool output to guide targeted fixes in the RSS module
+
 ## Cloud Storage Integration
 - **AWS SDK Configuration**:
   - aws-config (v1.1.7): Used with behavior-version-latest feature for modern API behavior
