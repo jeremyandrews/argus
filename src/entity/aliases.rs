@@ -31,9 +31,24 @@ pub const COMMON_VARIATIONS: &[(&str, &str)] = &[
 
 // Common patterns for extracting aliases
 pub const ALIAS_PATTERNS: &[&str] = &[
-    r#"(?i)(?P<canonical>.+?),?\s+(?:also\s+)?(?:known|called)\s+as\s+["']?(?P<alias>.+?)["']?[,\.)]"#,
-    r#"(?i)(?P<canonical>.+?)\s+\((?:a\.?k\.?a\.?|formerly)\s+["']?(?P<alias>.+?)["']?\)"#,
-    r#"(?i)["']?(?P<alias>.+?)["']?,?\s+now\s+(?:known\s+as\s+)?["']?(?P<canonical>.+?)["']?[,\.)]"#,
+    // Entity X, also known as Y - limits entity to 100 chars without newlines, prefers capitalized words
+    r#"(?i)(?P<canonical>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n]),?\s+(?:also\s+)?(?:known|called|referred\s+to)\s+as\s+["']?(?P<alias>[A-Z][^,\.\(\)\n]{0,98}[^,\.\(\)\s\n])["']?(?:[,\.\)]|$)"#,
+    // Entity X (aka/formerly Y) - stricter boundary conditions
+    r#"(?i)(?P<canonical>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n])\s+\((?:a\.?k\.?a\.?|formerly|previously|originally|né[e]?)\s+["']?(?P<alias>[^,\.\(\)\n]{2,100}?)["']?\)"#,
+    // Y, now known as X
+    r#"(?i)["']?(?P<alias>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n])["']?,?\s+now\s+(?:known\s+as\s+)?["']?(?P<canonical>[^,\.\(\)\n]{2,100}?)["']?(?:[,\.\)]|$)"#,
+    // X, which rebranded as Y
+    r#"(?i)(?P<canonical>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n]),?\s+which\s+(?:rebranded|renamed)\s+(?:itself\s+)?(?:as|to)\s+["']?(?P<alias>[^,\.\(\)\n]{2,100}?)["']?(?:[,\.\)]|$)"#,
+    // X (full name Y)
+    r#"(?i)(?P<alias>[A-Z][^,\.\(\)\n]{0,20}[^,\.\(\)\s\n])\s+\((?:full\s+name|real\s+name|birth\s+name)\s+["']?(?P<canonical>[^,\.\(\)\n]{2,100}?)["']?\)"#,
+    // Company acquisition pattern
+    r#"(?i)(?P<canonical>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n]),?\s+(?:which|that)\s+(?:acquired|bought|purchased)\s+["']?(?P<alias>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n])["']?(?:[,\.\)]|$)"#,
+    // Person title pattern (more specific for people)
+    r#"(?i)(?P<canonical>[A-Z][a-zA-Z\-\'\s]{2,50}),?\s+(?:(?:the|a)\s+)?(?:CEO|founder|president|director|chairman|head|leader)\s+of\s+["']?(?P<alias>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n])["']?(?:[,\.\)]|$)"#,
+    // Parent company relationship pattern
+    r#"(?i)(?P<canonical>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n]),?\s+(?:which|that)\s+is\s+(?:the\s+)?(?:parent|holding)\s+company\s+of\s+["']?(?P<alias>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n])["']?(?:[,\.\)]|$)"#,
+    // Founder/created by pattern
+    r#"(?i)(?P<alias>[A-Z][^,\.\(\)\n]{1,98}[^,\.\(\)\s\n]),?\s+(?:which|that)\s+was\s+(?:founded|created|started)\s+by\s+["']?(?P<canonical>[A-Z][a-zA-Z\-\'\s]{2,50})["']?(?:[,\.\)]|$)"#,
 ];
 
 /// Check if two entity names are equivalent according to the alias system
