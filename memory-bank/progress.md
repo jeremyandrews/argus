@@ -101,6 +101,39 @@ Argus is currently in active development with all major components implemented a
 
 ## In Progress
 
+### Article Clustering System
+- ✅ **Database Schema Implementation**:
+  - Created dedicated article_clusters table for cluster management
+  - Implemented article_cluster_mappings table for article-cluster relationships
+  - Added user_cluster_preferences table for personalized user experience
+  - Created comprehensive indexing for efficient queries
+  - Added fields for importance scoring, summary management, and timeline events
+  
+- ✅ **Migration & Utility Tools**:
+  - Created migrate_cluster_schema.rs for safe database schema updates
+  - Implemented cluster_articles.rs for batch processing of existing articles
+  - Added database version tracking for schema changes
+  - Built functionality for article assignment to clusters
+
+- ✅ **Integration with Analysis Pipeline**:
+  - Enhanced analysis_worker.rs to assign articles to clusters during processing
+  - Implemented automatic cluster summary generation
+  - Added calculation of cluster significance scores
+  - Integrated clustering with existing entity extraction
+  - Built seamless workflow for new and existing articles
+
+- 🔄 **Enhanced User Experience**:
+  - Developing user interface elements for cluster browsing
+  - Implementing cluster subscription management
+  - Creating personalized importance rankings
+  - Building notification preferences for clusters
+
+- 🔄 **Advanced Cluster Features**:
+  - Designing timeline generation for evolving stories
+  - Developing algorithms for dynamic cluster merging and splitting
+  - Implementing trend detection based on cluster growth
+  - Creating visualization capabilities for cluster relationships
+
 ### Parameter Optimization for Entity Matching
 - ✅ **Initial Parameter Tuning**: Changed similarity threshold from 75% to 70% to increase match recall
 - 🔄 **Systematic Threshold Testing**: Testing different similarity thresholds and weights

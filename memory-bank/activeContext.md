@@ -16,7 +16,16 @@ The codebase demonstrates a sophisticated use of Rust with asynchronous processi
 
 Based on code review, recent development appears focused on:
 
-1. **RSS Feed Diagnostic Tool and Brotli Compression Support**:
+1. **Browser Emulation for RSS Feeds**:
+   - **Implemented Fallback Mechanism**: Added browser header emulation for RSS feeds that reject standard HTTP clients
+   - **Firefox Header Emulation**: Uses specific headers like Sec-Fetch-* and custom User-Agent to bypass server restrictions
+   - **Two-Step Request Process**: First attempts with standard headers, then tries browser emulation if that fails
+   - **Unified Implementation**: Same code handles both test and production environments
+   - **Automatic Detection**: No manual configuration needed for problematic feeds
+   - **Diagnostic Logging**: Added logging to track which feeds require browser emulation
+   - **Fixed Specific Issues**: Resolved timeout problems with feeds like cyber.gov.au that require browser-like headers
+
+2. **RSS Feed Diagnostic Tool and Brotli Compression Support**:
    - **Created RSS Diagnostic Tool**: Built `test_rss_feed` binary for troubleshooting feed loading issues
    - **Enhanced Compression Support**: Added Brotli decompression capability to RSS module
    - **Fixed Content Loading**: Resolved issues with feeds using `content-encoding: br` 
@@ -24,7 +33,7 @@ Based on code review, recent development appears focused on:
    - **Header Analysis**: Improved header inspection to identify compression methods in use
    - **Unified Error Reporting**: Standardized feed error reporting and diagnostics
 
-2. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
+3. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
    - **Increased Match Recall**: Lowered the minimum combined similarity score for article matches
    - **More Lenient Matching**: Now requires less strict vector and entity similarity
    - **Broader Clustering**: Will create more inclusive article clusters with related content
@@ -48,9 +57,116 @@ Based on code review, other recent development appears focused on:
 7. **Enhanced LLM Error Logging**: Improved connection identification in error logs to pinpoint failing LLM instances
 8. **Article ID Exposure**: Added article IDs to R2 JSON files for enabling matching feedback from iOS app
 
-## Current Enhancement Project: Parameter Optimization for Entity Matching
+## Current Enhancement Project: Article Clustering System
 
-After successfully implementing the database-driven entity alias system, we're now focusing on parameter optimization to improve article clustering accuracy. This represents the next phase in our entity matching improvement plan, which aims to fine-tune the matching algorithm for better recall while maintaining precision.
+After successfully implementing the database-driven entity alias system and optimizing entity matching parameters, we're now implementing a comprehensive article clustering system. This enables Argus to group related articles together, providing users with a cohesive view of developing stories and topics.
+
+### Implementation Status
+
+1. ✅ **Database Schema** (Completed):
+   - Created dedicated tables for article clusters and mappings
+   - Implemented user preference tracking for clusters
+   - Established importance scoring system for clusters
+   - Added summary versioning and update tracking
+   - Implemented proper indexing for query optimization
+
+2. ✅ **Migration Utilities** (Completed):
+   - Created migration script for safe database schema updates
+   - Implemented cluster processing for existing articles
+   - Added version tracking for database schema changes
+   - Ensured backward compatibility with existing functionality
+
+3. ✅ **Worker Integration** (Completed):
+   - Enhanced analysis workers to assign articles to clusters during processing
+   - Implemented automatic summary generation for clusters
+   - Added calculation of cluster significance scores based on article quantity and quality
+   - Integrated seamlessly with the existing entity extraction pipeline
+
+4. 🔄 **Advanced Clustering Features** (Planned Next):
+   - Timeline generation for evolving stories
+   - Dynamic cluster merging and splitting based on content evolution
+   - Trending topic identification based on cluster growth rates
+   - Personalized cluster recommendations based on user preferences
+
+### Core Components
+
+- **Cluster Schema**: A comprehensive database structure for managing article clusters:
+  ```sql
+  CREATE TABLE article_clusters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      creation_date TEXT NOT NULL,
+      last_updated TEXT NOT NULL,
+      primary_entity_ids TEXT NOT NULL, -- JSON array of entity IDs
+      summary TEXT,
+      summary_version INTEGER NOT NULL DEFAULT 0,
+      article_count INTEGER NOT NULL DEFAULT 0,
+      importance_score REAL NOT NULL DEFAULT 0.0,
+      timeline_events TEXT, -- JSON array of timeline events
+      has_timeline INTEGER NOT NULL DEFAULT 0,
+      needs_summary_update INTEGER NOT NULL DEFAULT 0
+  );
+  ```
+
+- **Article Assignment**: Integrated directly into the analysis pipeline:
+  ```rust
+  // In analysis_worker.rs
+  match crate::clustering::assign_article_to_cluster(db, article_id).await {
+      Ok(cluster_id) => {
+          // Article was assigned to a cluster
+          // Generate or update the cluster summary
+          match crate::clustering::generate_cluster_summary(
+              db, 
+              &llm_params.llm_client, 
+              cluster_id
+          ).await {
+              // Summary was generated successfully
+          }
+      }
+  }
+  ```
+
+- **Significance Calculation**: Weighted scoring based on multiple factors:
+  ```rust
+  // Calculate importance score based on article count, quality, and recency
+  if let Ok(score) = crate::clustering::calculate_cluster_significance(
+      db, cluster_id
+  ).await {
+      // Update cluster importance score
+  }
+  ```
+
+### Benefits
+
+- **Coherent Story Tracking**: Users can follow related articles as stories develop over time
+- **Reduced Information Overload**: Similar articles are grouped together, reducing duplicate notifications
+- **Prioritized Content**: Importance scoring helps highlight the most significant developments
+- **Enhanced Search**: Clustering improves search relevance by grouping related content
+- **Contextual Understanding**: Cluster summaries provide broader context for individual articles
+- **Personalization**: User preferences for clusters enable tailored content delivery
+
+### Implementation Plan
+
+1. ✅ **Basic Clustering** (Completed):
+   - Database schema for clusters and mappings
+   - Entity-based article assignment to clusters
+   - Simple summary generation
+   - Basic importance scoring
+
+2. 🔄 **Enhanced Clustering** (In Progress):
+   - Integrating user feedback on cluster quality
+   - Refining summary generation prompts
+   - Implementing better significance scoring
+   - Testing with real-world articles
+
+3. **Advanced Features** (Planned):
+   - Timeline generation for evolving stories
+   - Dynamic cluster merging and splitting
+   - Trend detection and visualization
+   - Personalized cluster recommendations
+
+## Previous Enhancement Project: Parameter Optimization for Entity Matching
+
+After successfully implementing the database-driven entity alias system, we previously focused on parameter optimization to improve article clustering accuracy. This represented a phase in our entity matching improvement plan, which aimed to fine-tune the matching algorithm for better recall while maintaining precision.
 
 ### Implementation Status
 
@@ -285,6 +401,7 @@ Based on codebase analysis, likely next steps include:
 5. **Testing Infrastructure**: Expanding automated testing for reliability
 6. **Topic Management**: Building tools for better topic configuration and management
 7. **User Preference Refinement**: Further customization of notification preferences
+8. **RSS Feed Reliability Enhancement**: Identifying and addressing additional feed issues using diagnostic logs
 
 ## Active Decisions
 
@@ -294,6 +411,7 @@ Based on codebase analysis, likely next steps include:
 - **Worker Distribution**: Finalizing approach to worker allocation and load balancing
 - **Parameter Optimization Strategy**: Deciding between manual tuning and algorithmic optimization approaches
 - **Adaptive Threshold Implementation**: Determining the factors that should influence dynamic thresholds
+- **HTTP Client Configuration**: Balancing standard HTTP client behavior with browser emulation needs
 
 ### Feature Decisions
 - **Entity Type Importance**: Determining optimal weights for different entity types in matching
@@ -301,6 +419,7 @@ Based on codebase analysis, likely next steps include:
 - **Notification Frequency**: Balancing notification volume to avoid overwhelming users
 - **Entity Matching Feedback**: Establishing a process for incorporating user feedback on missed matches
 - **Alias Pattern Selection**: Determining which patterns are most effective for alias discovery
+- **RSS Feed Diagnostic Strategy**: Deciding how to proactively identify problematic feeds
 
 ### Technical Decisions
 - **LLM Provider Strategy**: Evaluating cost/performance tradeoffs between different LLM providers
@@ -308,6 +427,7 @@ Based on codebase analysis, likely next steps include:
 - **Error Handling**: Standardizing approach to error recovery and system resilience
 - **Vector Similarity Calculation**: Refining methods for calculating and comparing vector embeddings
 - **Parameter Storage**: Deciding how to store and manage matching parameters (config files vs. database)
+- **HTTP Client Strategy**: When to use standard vs. browser emulation for web requests
 
 ## Integration Requirements
 

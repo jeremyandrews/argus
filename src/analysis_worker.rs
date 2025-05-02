@@ -784,6 +784,66 @@ async fn process_analysis_item(
                                             }
                                         }
                                     }
+
+                                    // Assign article to a cluster
+                                    let cluster_start = Instant::now();
+                                    match crate::clustering::assign_article_to_cluster(
+                                        db, article_id,
+                                    )
+                                    .await
+                                    {
+                                        Ok(cluster_id) => {
+                                            if cluster_id > 0 {
+                                                info!(
+                                                    target: TARGET_LLM_REQUEST,
+                                                    "Assigned article {} to cluster {} in {:?}",
+                                                    article_id, cluster_id, cluster_start.elapsed()
+                                                );
+
+                                                // Generate summary for the cluster
+                                                match crate::clustering::generate_cluster_summary(
+                                                    db,
+                                                    &llm_params.llm_client,
+                                                    cluster_id,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(summary) => {
+                                                        info!(
+                                                            target: TARGET_LLM_REQUEST,
+                                                            "Generated summary for cluster {} (length: {})",
+                                                            cluster_id, summary.len()
+                                                        );
+
+                                                        // Update cluster significance
+                                                        if let Ok(score) = crate::clustering::calculate_cluster_significance(
+                                                            db, cluster_id
+                                                        ).await {
+                                                            info!(
+                                                                target: TARGET_LLM_REQUEST,
+                                                                "Updated significance score for cluster {}: {:.4}",
+                                                                cluster_id, score
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        error!(
+                                                            target: TARGET_LLM_REQUEST,
+                                                            "Failed to generate summary for cluster {}: {}",
+                                                            cluster_id, e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                target: TARGET_LLM_REQUEST,
+                                                "Failed to assign article {} to cluster: {}",
+                                                article_id, e
+                                            );
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     error!(
@@ -1124,6 +1184,64 @@ async fn process_analysis_item(
                                                         debug!("Failed to add potential alias: {} ↔ {} - {:?}", 
                                                               canonical, alias, e);
                                                     }
+                                                }
+                                            }
+
+                                            // Assign article to a cluster
+                                            let cluster_start = Instant::now();
+                                            match crate::clustering::assign_article_to_cluster(
+                                                db, article_id,
+                                            )
+                                            .await
+                                            {
+                                                Ok(cluster_id) => {
+                                                    if cluster_id > 0 {
+                                                        info!(
+                                                            target: TARGET_LLM_REQUEST,
+                                                            "Assigned article {} to cluster {} in {:?}",
+                                                            article_id, cluster_id, cluster_start.elapsed()
+                                                        );
+
+                                                        // Generate summary for the cluster
+                                                        match crate::clustering::generate_cluster_summary(
+                                                            db,
+                                                            &llm_params_clone.llm_client,
+                                                            cluster_id
+                                                        ).await {
+                                                            Ok(summary) => {
+                                                                info!(
+                                                                    target: TARGET_LLM_REQUEST,
+                                                                    "Generated summary for cluster {} (length: {})",
+                                                                    cluster_id, summary.len()
+                                                                );
+
+                                                                // Update cluster significance
+                                                                if let Ok(score) = crate::clustering::calculate_cluster_significance(
+                                                                    db, cluster_id
+                                                                ).await {
+                                                                    info!(
+                                                                        target: TARGET_LLM_REQUEST,
+                                                                        "Updated significance score for cluster {}: {:.4}",
+                                                                        cluster_id, score
+                                                                    );
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                error!(
+                                                                    target: TARGET_LLM_REQUEST,
+                                                                    "Failed to generate summary for cluster {}: {}",
+                                                                    cluster_id, e
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    error!(
+                                                        target: TARGET_LLM_REQUEST,
+                                                        "Failed to assign article {} to cluster: {}",
+                                                        article_id, e
+                                                    );
                                                 }
                                             }
                                         }

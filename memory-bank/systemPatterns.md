@@ -151,6 +151,45 @@ flowchart LR
 
 ## Key Implementation Patterns
 
+### Article Clustering System
+- **Clustering Strategy**: Entity-centric approach to grouping related articles
+  ```mermaid
+  flowchart TD
+    A[New Article] --> B[Entity Extraction]
+    B --> C{Find Matching Cluster}
+    C -->|Match Found| D[Add to Existing Cluster]
+    C -->|No Match| E[Create New Cluster]
+    D --> F[Update Cluster Summary]
+    E --> F
+    F --> G[Calculate Importance Score]
+    G --> H[Update User Preferences]
+  ```
+
+- **Storage Architecture**:
+  - `article_clusters`: Central table for cluster metadata, summaries, and metrics
+  - `article_cluster_mappings`: Many-to-many relationships between articles and clusters
+  - `user_cluster_preferences`: User-specific settings for cluster interactions
+  - Comprehensive indexing for optimized query performance
+
+- **Integration Patterns**:
+  - In-line clustering during article analysis
+  - Batch processing for historical articles
+  - Automatic summary generation using existing LLM infrastructure
+  - Importance scoring based on multiple factors (article count, quality, recency)
+  - Enhanced article worker to handle all clustering operations
+
+- **Core Operations**:
+  - **Cluster Assignment**: Identifying the best cluster for an article based on entity overlap
+  - **Summary Generation**: Creating cohesive summaries across multiple related articles
+  - **Significance Calculation**: Weighted scoring to prioritize important clusters
+  - **User Preference Management**: Tracking user interactions with specific clusters
+
+- **Query Optimization**:
+  - Strategic indexing on frequently queried fields
+  - Batch operations for efficiency
+  - Query caching for repeated operations
+  - Optimized join patterns for related data retrieval
+
 ### Worker Management
 - **Startup Sequence**: Orderly initialization of system components
 - **Worker Configuration**: Environment-based configuration

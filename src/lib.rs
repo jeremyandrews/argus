@@ -3,6 +3,7 @@ pub mod app {
     pub mod api;
     pub mod util;
 }
+pub mod clustering;
 pub mod db;
 pub mod decision_worker;
 pub mod entity;
