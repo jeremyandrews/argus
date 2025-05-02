@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use encoding_rs;
 use feed_rs::parser;
 use flate2;
-use reqwest::cookie::Jar;
+use reqwest::{cookie::Jar, header};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read};
 use std::sync::Arc;
@@ -49,6 +49,127 @@ pub struct EntryInfo {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 const MAX_RETRIES: usize = 3;
+
+// Create a client with either standard or browser emulation settings
+fn create_http_client(browser_emulation: bool) -> Result<reqwest::Client> {
+    let cookie_store = Jar::default();
+    let builder = reqwest::Client::builder()
+        .cookie_store(true)
+        .cookie_provider(Arc::new(cookie_store))
+        .gzip(true)
+        .redirect(reqwest::redirect::Policy::default());
+
+    // Add browser-specific settings if needed
+    if browser_emulation {
+        debug!(target: TARGET_WEB_REQUEST, "Creating browser emulation HTTP client");
+    } else {
+        debug!(target: TARGET_WEB_REQUEST, "Creating standard HTTP client");
+    }
+
+    builder
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build HTTP client: {}", e))
+}
+
+// Attempt to fetch a URL with fallback to browser emulation if standard fetch fails
+async fn fetch_with_fallback(url: &str) -> Result<(reqwest::Response, bool)> {
+    // Try standard client first
+    debug!(target: TARGET_WEB_REQUEST, "Attempting standard request to {}", url);
+
+    let standard_client = create_http_client(false)?;
+    let standard_result = timeout(
+        REQUEST_TIMEOUT,
+        standard_client
+            .get(url)
+            .header(header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header(header::ACCEPT, "application/feed+json, application/json, application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9")
+            .header(header::ACCEPT_ENCODING, "gzip, deflate, br")
+            .send(),
+    ).await;
+
+    match standard_result {
+        Ok(Ok(resp)) if resp.status().is_success() => {
+            debug!(target: TARGET_WEB_REQUEST, "Standard request to {} succeeded", url);
+            return Ok((resp, false));
+        }
+        _ => {
+            debug!(target: TARGET_WEB_REQUEST, "Standard request to {} failed, trying browser emulation", url);
+
+            // Create error result in case both attempts fail
+            let mut error_result = TestRssFeedResult {
+                status: RssFeedStatus::RequestFailed,
+                content_type: None,
+                raw_preview: None,
+                decoded_preview: None,
+                entries_found: 0,
+                detected_encoding: None,
+                headers: Vec::new(),
+                errors: Vec::new(),
+                warnings: Vec::new(),
+                entries: Vec::new(),
+            };
+
+            match standard_result {
+                Ok(Ok(resp)) => {
+                    error_result.status = RssFeedStatus::RequestFailed;
+                    error_result
+                        .errors
+                        .push(format!("HTTP error: {}", resp.status()));
+                }
+                Ok(Err(err)) => {
+                    error_result.status = RssFeedStatus::RequestFailed;
+                    error_result.errors.push(format!("Request failed: {}", err));
+                }
+                Err(_) => {
+                    error_result.status = RssFeedStatus::RequestTimeout;
+                    error_result.errors.push(format!(
+                        "Request timed out after {} seconds",
+                        REQUEST_TIMEOUT.as_secs()
+                    ));
+                }
+            }
+
+            // Try with browser emulation
+            let browser_client = create_http_client(true)?;
+            match timeout(
+                REQUEST_TIMEOUT,
+                browser_client
+                    .get(url)
+                    .header(header::USER_AGENT, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:138.0) Gecko/20100101 Firefox/138.0")
+                    .header(header::ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    .header(header::ACCEPT_LANGUAGE, "en-US,en;q=0.5")
+                    .header(header::ACCEPT_ENCODING, "gzip, deflate, br, zstd")
+                    .header("DNT", "1")
+                    .header("Upgrade-Insecure-Requests", "1")
+                    .header("Connection", "keep-alive")
+                    .header("Sec-Fetch-Dest", "document")
+                    .header("Sec-Fetch-Mode", "navigate")
+                    .header("Sec-Fetch-Site", "none")
+                    .header("Sec-Fetch-User", "?1")
+                    .header("Priority", "u=0, i")
+                    .header("TE", "trailers")
+                    .send(),
+            ).await {
+                Ok(Ok(resp)) if resp.status().is_success() => {
+                    info!(target: TARGET_WEB_REQUEST, "Browser emulation request to {} succeeded", url);
+                    return Ok((resp, true));
+                }
+                Ok(Ok(resp)) => {
+                    error_result.errors.push(format!("Browser emulation HTTP error: {}", resp.status()));
+                    return Err(anyhow::anyhow!("Both standard and browser emulation requests failed"));
+                }
+                Ok(Err(err)) => {
+                    error_result.errors.push(format!("Browser emulation request failed: {}", err));
+                    return Err(anyhow::anyhow!("Both standard and browser emulation requests failed"));
+                }
+                Err(_) => {
+                    error_result.errors.push(format!("Browser emulation request timed out after {} seconds", REQUEST_TIMEOUT.as_secs()));
+                    return Err(anyhow::anyhow!("Both standard and browser emulation requests failed"));
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct JsonFeed {
@@ -177,41 +298,21 @@ pub async fn test_rss_feed(url: &str, db: Option<&Database>) -> Result<TestRssFe
         return Ok(result);
     }
 
-    // Create HTTP client
-    let cookie_store = Jar::default();
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .cookie_provider(Arc::new(cookie_store))
-        .gzip(true)
-        .redirect(reqwest::redirect::Policy::default())
-        .build()?;
-
-    // Attempt to fetch the RSS feed
-    let response = match timeout(REQUEST_TIMEOUT, client.get(url)
-        .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .header(reqwest::header::ACCEPT, "application/feed+json, application/json, application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9")
-        .header(reqwest::header::ACCEPT_ENCODING, "gzip, deflate, br")
-        .send()).await {
-        Ok(Ok(resp)) => resp,
-        Ok(Err(err)) => {
+    // Use the fetch_with_fallback function to attempt the request
+    let (response, browser_emulation_used) = match fetch_with_fallback(url).await {
+        Ok((resp, used_emulation)) => (resp, used_emulation),
+        Err(err) => {
             result.status = RssFeedStatus::RequestFailed;
-            result.errors.push(format!("Request failed: {}", err));
-            return Ok(result);
-        },
-        Err(_) => {
-            result.status = RssFeedStatus::RequestTimeout;
-            result.errors.push(format!("Request timed out after {} seconds", REQUEST_TIMEOUT.as_secs()));
+            result
+                .errors
+                .push(format!("All request attempts failed: {}", err));
             return Ok(result);
         }
     };
 
-    // Process response status
-    if !response.status().is_success() {
-        result.status = RssFeedStatus::RequestFailed;
-        result
-            .errors
-            .push(format!("HTTP error: {}", response.status()));
-        return Ok(result);
+    // Add a warning if browser emulation was used
+    if browser_emulation_used {
+        result.warnings.push("Request succeeded using browser emulation (Firefox headers) after standard request failed.".to_string());
     }
 
     // Extract content type
@@ -330,7 +431,7 @@ pub async fn test_rss_feed(url: &str, db: Option<&Database>) -> Result<TestRssFe
                 if let Some(ref ct_str) = content_type {
                     if let Some(charset) = ct_str
                         .split(';')
-                        .find(|part| part.trim().to_lowercase().starts_with("charset="))
+                        .find(|part: &&str| part.trim().to_lowercase().starts_with("charset="))
                         .and_then(|charset| charset.split('=').nth(1))
                     {
                         result.detected_encoding = Some(charset.trim().to_string());
@@ -369,7 +470,7 @@ pub async fn test_rss_feed(url: &str, db: Option<&Database>) -> Result<TestRssFe
             if let Some(ref ct_str) = content_type {
                 if let Some(charset) = ct_str
                     .split(';')
-                    .find(|part| part.trim().to_lowercase().starts_with("charset="))
+                    .find(|part: &&str| part.trim().to_lowercase().starts_with("charset="))
                     .and_then(|charset| charset.split('=').nth(1))
                 {
                     result.detected_encoding = Some(charset.trim().to_string());
@@ -625,14 +726,6 @@ pub async fn rss_loop(rss_urls: Vec<String>) -> Result<()> {
 }
 
 async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
-    let cookie_store = Jar::default();
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .cookie_provider(Arc::new(cookie_store))
-        .gzip(true)
-        .redirect(reqwest::redirect::Policy::default())
-        .build()?;
-
     for rss_url in rss_urls {
         if rss_url.trim().is_empty() {
             debug!(target: TARGET_WEB_REQUEST, "Skipping empty RSS URL");
@@ -656,14 +749,17 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
             }
 
             debug!(target: TARGET_WEB_REQUEST, "Loading RSS feed from {}", rss_url);
-            match timeout(REQUEST_TIMEOUT, client.get(rss_url)
-                .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header(reqwest::header::ACCEPT, "application/feed+json, application/json, application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9")
-                .header(reqwest::header::ACCEPT_ENCODING, "gzip, deflate, br")
-                .send()).await
-            {
-                Ok(Ok(response)) => {
-                    debug!(target: TARGET_WEB_REQUEST, "Response Content-Type: {:?}", response.headers().get(reqwest::header::CONTENT_TYPE));
+
+            // Use the fetch_with_fallback function to attempt the request
+            match fetch_with_fallback(rss_url).await {
+                Ok((response, browser_emulation_used)) => {
+                    // Log if browser emulation was used
+                    if browser_emulation_used {
+                        info!(target: TARGET_WEB_REQUEST, "Browser emulation was required for {}", rss_url);
+                    }
+
+                    debug!(target: TARGET_WEB_REQUEST, "Response Content-Type: {:?}", 
+                           response.headers().get(reqwest::header::CONTENT_TYPE));
 
                     let content_type = response
                         .headers()
@@ -673,7 +769,8 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
 
                     if response.status().is_success() {
                         // Extract the content encoding before consuming the response
-                        let content_encoding = response.headers()
+                        let content_encoding = response
+                            .headers()
                             .get(reqwest::header::CONTENT_ENCODING)
                             .and_then(|value| value.to_str().ok())
                             .map(|s| s.to_lowercase());
@@ -682,7 +779,8 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                         let bytes = match response.bytes().await {
                             Ok(b) => b,
                             Err(err) => {
-                                error!(target: TARGET_WEB_REQUEST, "Failed to read response bytes from {}: {}", rss_url, err);
+                                error!(target: TARGET_WEB_REQUEST,
+                                       "Failed to read response bytes from {}: {}", rss_url, err);
                                 attempts += 1;
                                 sleep(RETRY_DELAY).await;
                                 continue;
@@ -690,318 +788,360 @@ async fn process_rss_urls(rss_urls: &Vec<String>, db: &Database) -> Result<()> {
                         };
 
                         // Try different decompression methods until one works
-                        let decompressed_bytes = {
-                            // Use the previously extracted content encoding
-
-                            // If Brotli compressed (content-encoding: br)
-                            if content_encoding.as_deref() == Some("br") {
-                                let mut decoded = Vec::new();
-                                let mut reader = brotli::Decompressor::new(&bytes[..], 4096);
-                                if reader.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-                                    debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with brotli from {}", rss_url);
-                                    decoded
-                                } else {
-                                    // If Brotli decompression failed, fall back to other methods
-                                    debug!(target: TARGET_WEB_REQUEST, "Brotli decompression failed for {}, trying other methods", rss_url);
-                                    try_decompressions(&bytes, rss_url)
-                                }
+                        let decompressed_bytes = if content_encoding.as_deref() == Some("br") {
+                            let mut decoded = Vec::new();
+                            let mut reader = brotli::Decompressor::new(&bytes[..], 4096);
+                            if reader.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed brotli content from {}", rss_url);
+                                decoded
                             } else {
-                                // Try other decompression methods
+                                debug!(target: TARGET_WEB_REQUEST, "Brotli decompression failed for {}, trying other methods", rss_url);
                                 try_decompressions(&bytes, rss_url)
                             }
+                        } else {
+                            try_decompressions(&bytes, rss_url)
                         };
 
-// Helper function to try various decompression methods
-fn try_decompressions(bytes: &[u8], rss_url: &str) -> Vec<u8> {
-    // First try gzip
-    let mut decoder = flate2::read::GzDecoder::new(bytes);
-    let mut decoded = Vec::new();
-    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with gzip from {}", rss_url);
-        return decoded;
-    }
-
-    // Try zlib
-    let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-    let mut decoded = Vec::new();
-    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with zlib from {}", rss_url);
-        return decoded;
-    }
-
-    // Try deflate
-    let mut decoder = flate2::read::DeflateDecoder::new(bytes);
-    let mut decoded = Vec::new();
-    if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
-        debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with deflate from {}", rss_url);
-        return decoded;
-    }
-
-    // If no decompression worked, use original bytes
-    debug!(target: TARGET_WEB_REQUEST, "No decompression method worked for {}, using original bytes", rss_url);
-    bytes.to_vec()
-}
-
-                        // Check if the decompressed data looks like XML
-                        if let Ok(text) = String::from_utf8(decompressed_bytes.clone()) {
-                            if text.contains("<?xml") || text.contains("<rss") || text.contains("<feed") {
-                                debug!(target: TARGET_WEB_REQUEST, "Found XML markers in decompressed data from {}", rss_url);
+                        // Function to try various decompression methods
+                        fn try_decompressions(bytes: &[u8], rss_url: &str) -> Vec<u8> {
+                            // First try gzip
+                            let mut decoder = flate2::read::GzDecoder::new(bytes);
+                            let mut decoded = Vec::new();
+                            if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with gzip from {}", rss_url);
+                                return decoded;
                             }
+
+                            // Try zlib
+                            let mut decoder = flate2::read::ZlibDecoder::new(bytes);
+                            let mut decoded = Vec::new();
+                            if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with zlib from {}", rss_url);
+                                return decoded;
+                            }
+
+                            // Try deflate
+                            let mut decoder = flate2::read::DeflateDecoder::new(bytes);
+                            let mut decoded = Vec::new();
+                            if decoder.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+                                debug!(target: TARGET_WEB_REQUEST, "Successfully decompressed with deflate from {}", rss_url);
+                                return decoded;
+                            }
+
+                            // If no decompression worked, use original bytes
+                            debug!(target: TARGET_WEB_REQUEST, "No decompression method worked for {}, using original bytes", rss_url);
+                            bytes.to_vec()
                         }
 
-                        // Add debug logging to see what we got after decompression
-                        if let Ok(preview) = String::from_utf8(decompressed_bytes[..20.min(decompressed_bytes.len())].to_vec()) {
-                            debug!(target: TARGET_WEB_REQUEST, "Decompressed data preview for {}: {}", rss_url, preview);
-                        }
-
-                        let body = match String::from_utf8(decompressed_bytes.clone()) {
+                        // Convert to UTF-8 string
+                        match String::from_utf8(decompressed_bytes.clone()) {
                             Ok(text) => {
-                                if text.starts_with("<?xml") || text.contains("<rss") || text.contains("<feed") {
-                                    text
-                                } else {
-                                    // Try to detect encoding from content-type header
-                                    if let Some(ref ct_str) = content_type {
-                                        if let Some(charset) = ct_str.split(';')
-                                            .find(|part| part.trim().to_lowercase().starts_with("charset="))
-                                            .and_then(|charset| charset.split('=').nth(1))
-                                        {
-                                            if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
-                                                let (decoded, _, _) = encoding.decode(&decompressed_bytes);
-                                                decoded.into_owned()
-                                            } else {
-                                                text
-                                            }
-                                        } else {
-                                            text
-                                        }
-                                    } else {
-                                        text
-                                    }
+                                if text.starts_with("<?xml")
+                                    || text.contains("<rss")
+                                    || text.contains("<feed")
+                                {
+                                    debug!(target: TARGET_WEB_REQUEST, "Found XML markers in decompressed data from {}", rss_url);
                                 }
-                            }
-                            Err(_) => {
-                                // Convert to hex representation for logging if it contains non-printable characters
-                                let hex_preview = decompressed_bytes.iter()
-                                    .take(20)
-                                    .map(|b| format!("{:02x}", b))
-                                    .collect::<Vec<_>>()
-                                    .join(" ");
-                                error!(
-                                    target: TARGET_WEB_REQUEST,
-                                    "Response from {} contains invalid UTF-8. First 20 bytes: {}",
-                                    rss_url,
-                                    hex_preview
-                                );
-                                if let Some(ref ct_str) = content_type {
-                                    if let Some(charset) = ct_str.split(';')
-                                        .find(|part| part.trim().to_lowercase().starts_with("charset="))
-                                        .and_then(|charset| charset.split('=').nth(1))
-                                    {
-                                        if let Some(encoding) = encoding_rs::Encoding::for_label(charset.trim().as_bytes()) {
-                                            let (decoded, _, _) = encoding.decode(&decompressed_bytes);
-                                            decoded.into_owned()
-                                        } else {
-                                            attempts += 1;
-                                            sleep(RETRY_DELAY).await;
-                                            continue;
-                                        }
-                                    } else {
-                                        attempts += 1;
-                                        sleep(RETRY_DELAY).await;
-                                        continue;
-                                    }
-                                } else {
-                                    attempts += 1;
-                                    sleep(RETRY_DELAY).await;
-                                    continue;
-                                }
-                            }
-                        };
 
-                        match content_type.as_deref() {
-                            Some(ct) if ct.contains("json") => {
-                                match serde_json::from_str::<JsonFeed>(&body) {
-                                    Ok(feed) => {
-                                        for item in feed.items {
-                                            if let Some(article_url) = item.url.or(item.id).map(|s| s.to_string()) {
-                                                let pub_date = item.date_published.map(|d| {
-                                                    if let Some(dt) = parse_date(&d) {
-                                                        dt.to_rfc3339()
-                                                    } else {
-                                                        d.to_string()
-                                                    }
-                                                });
-
-                                                let is_old = if let Some(pub_date_str) = &pub_date {
-                                                    if let Some(pub_date_dt) = parse_date(pub_date_str) {
-                                                        Utc::now().signed_duration_since(pub_date_dt) > ChronoDuration::weeks(1)
-                                                    } else {
-                                                        false
-                                                    }
-                                                } else {
-                                                    false
-                                                };
-
-                                                if is_old {
-                                                    debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
-                                                    if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref(), None).await {
-                                                        error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
-                                                    }
-                                                    continue;
-                                                }
-
-                                                match db.add_to_queue(&article_url, item.title.as_deref(), pub_date.as_deref()).await {
-                                                    Ok(true) => {
-                                                        new_articles_count += 1;
-                                                        debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
-                                                    }
-                                                    Ok(false) => {
-                                                        debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
-                                                    }
-                                                    Err(err) => {
-                                                        error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    Err(err) => {
-                                        error!(target: TARGET_WEB_REQUEST, "Failed to parse JSON feed from {}: {}", rss_url, err);
-                                        attempts += 1;
-                                        sleep(RETRY_DELAY).await;
-                                        continue;
-                                    }
-                                }
-                            }
-                            _ => {
-                                let reader = io::Cursor::new(&body);
-                                match parser::parse(reader) {
-                                    Ok(feed) => {
-                                        for entry in feed.entries {
-                                            if let Some(article_url) = entry.links.first().map(|link| link.href.clone()) {
-                                                let article_title = entry.title.clone().map(|t| t.content);
-                                                let pub_date = entry.published.map(|d| d.to_rfc3339());
-
-                                                let is_old = if let Some(pub_date_str) = &pub_date {
-                                                    if let Some(pub_date_dt) = parse_date(pub_date_str) {
-                                                        Utc::now().signed_duration_since(pub_date_dt) > ChronoDuration::weeks(1)
-                                                    } else {
-                                                        false
-                                                    }
-                                                } else {
-                                                    false
-                                                };
-
-                                                if is_old {
-                                                    debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
-                                                    if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref(), None).await {
-                                                        error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
-                                                    }
-                                                    continue;
-                                                }
-
-                                                match db.add_to_queue(&article_url, article_title.as_deref(), pub_date.as_deref()).await {
-                                                    Ok(true) => {
-                                                        new_articles_count += 1;
-                                                        debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
-                                                    }
-                                                    Ok(false) => {
-                                                        debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
-                                                    }
-                                                    Err(err) => {
-                                                        error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        if new_articles_count > 0 {
-                                            info!(target: TARGET_WEB_REQUEST, "Processed RSS feed: {} - {} new articles added", rss_url, new_articles_count);
-                                        } else {
-                                            debug!(target: TARGET_WEB_REQUEST, "Processed RSS feed: {} - No new articles added", rss_url);
-                                        }
-
-                                        break;
-                                    }
-                                    Err(first_err) => {
-                                        // Try cleaning the XML first
-                                        let cleaned_xml = cleanup_xml(&body);
-                                        // Check if it looks like RSS/Atom
-                                        if cleaned_xml.contains("<rss") || cleaned_xml.contains("<feed") {
-                                            let reader = io::Cursor::new(cleaned_xml);
-                                            match parser::parse(reader) {
-                                                Ok(feed) => {
-                                                    for entry in feed.entries {
-                                                        if let Some(article_url) = entry.links.first().map(|link| link.href.clone()) {
-                                                            let article_title = entry.title.clone().map(|t| t.content);
-                                                            let pub_date = entry.published.map(|d| d.to_rfc3339());
-
-                                                            let is_old = if let Some(pub_date_str) = &pub_date {
-                                                                if let Some(pub_date_dt) = parse_date(pub_date_str) {
-                                                                    Utc::now().signed_duration_since(pub_date_dt) > ChronoDuration::weeks(1)
+                                // Process different formats based on content type
+                                match content_type.as_deref() {
+                                    Some(ct) if ct.contains("json") => {
+                                        // Parse as JSON feed
+                                        match serde_json::from_str::<JsonFeed>(&text) {
+                                            Ok(feed) => {
+                                                for item in feed.items {
+                                                    if let Some(article_url) =
+                                                        item.url.or(item.id).map(|s| s.to_string())
+                                                    {
+                                                        let pub_date =
+                                                            item.date_published.map(|d| {
+                                                                if let Some(dt) = parse_date(&d) {
+                                                                    dt.to_rfc3339()
                                                                 } else {
-                                                                    false
+                                                                    d.to_string()
                                                                 }
+                                                            });
+
+                                                        let is_old = if let Some(pub_date_str) =
+                                                            &pub_date
+                                                        {
+                                                            if let Some(pub_date_dt) =
+                                                                parse_date(pub_date_str)
+                                                            {
+                                                                Utc::now().signed_duration_since(
+                                                                    pub_date_dt,
+                                                                ) > ChronoDuration::weeks(1)
                                                             } else {
                                                                 false
-                                                            };
-
-                                                            if is_old {
-                                                                debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
-                                                                if let Err(err) = db.add_article(&article_url, false, None, None, None, None, None, None, pub_date.as_deref(), None).await {
-                                                                    error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
-                                                                }
-                                                                continue;
                                                             }
+                                                        } else {
+                                                            false
+                                                        };
 
-                                                            match db.add_to_queue(&article_url, article_title.as_deref(), pub_date.as_deref()).await {
-                                                                Ok(true) => {
-                                                                    new_articles_count += 1;
-                                                                    debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
-                                                                }
-                                                                Ok(false) => {
-                                                                    debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
-                                                                }
-                                                                Err(err) => {
-                                                                    error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
-                                                                }
+                                                        if is_old {
+                                                            debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
+                                                            if let Err(err) = db
+                                                                .add_article(
+                                                                    &article_url,
+                                                                    false,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    pub_date.as_deref(),
+                                                                    None,
+                                                                )
+                                                                .await
+                                                            {
+                                                                error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
+                                                            }
+                                                            continue;
+                                                        }
+
+                                                        match db
+                                                            .add_to_queue(
+                                                                &article_url,
+                                                                item.title.as_deref(),
+                                                                pub_date.as_deref(),
+                                                            )
+                                                            .await
+                                                        {
+                                                            Ok(true) => {
+                                                                new_articles_count += 1;
+                                                                debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
+                                                            }
+                                                            Ok(false) => {
+                                                                debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
+                                                            }
+                                                            Err(err) => {
+                                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
                                                             }
                                                         }
                                                     }
-                                                    break;
                                                 }
-                                                Err(second_err) => {
+                                                break;
+                                            }
+                                            Err(err) => {
+                                                error!(target: TARGET_WEB_REQUEST, "Failed to parse JSON feed from {}: {}", rss_url, err);
+                                                attempts += 1;
+                                                sleep(RETRY_DELAY).await;
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // Parse as XML (RSS/Atom)
+                                        let reader = io::Cursor::new(&text);
+                                        match parser::parse(reader) {
+                                            Ok(feed) => {
+                                                for entry in feed.entries {
+                                                    if let Some(article_url) = entry
+                                                        .links
+                                                        .first()
+                                                        .map(|link| link.href.clone())
+                                                    {
+                                                        let article_title =
+                                                            entry.title.clone().map(|t| t.content);
+                                                        let pub_date =
+                                                            entry.published.map(|d| d.to_rfc3339());
+
+                                                        let is_old = if let Some(pub_date_str) =
+                                                            &pub_date
+                                                        {
+                                                            if let Some(pub_date_dt) =
+                                                                parse_date(pub_date_str)
+                                                            {
+                                                                Utc::now().signed_duration_since(
+                                                                    pub_date_dt,
+                                                                ) > ChronoDuration::weeks(1)
+                                                            } else {
+                                                                false
+                                                            }
+                                                        } else {
+                                                            false
+                                                        };
+
+                                                        if is_old {
+                                                            debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
+                                                            if let Err(err) = db
+                                                                .add_article(
+                                                                    &article_url,
+                                                                    false,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    None,
+                                                                    pub_date.as_deref(),
+                                                                    None,
+                                                                )
+                                                                .await
+                                                            {
+                                                                error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
+                                                            }
+                                                            continue;
+                                                        }
+
+                                                        match db
+                                                            .add_to_queue(
+                                                                &article_url,
+                                                                article_title.as_deref(),
+                                                                pub_date.as_deref(),
+                                                            )
+                                                            .await
+                                                        {
+                                                            Ok(true) => {
+                                                                new_articles_count += 1;
+                                                                debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
+                                                            }
+                                                            Ok(false) => {
+                                                                debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
+                                                            }
+                                                            Err(err) => {
+                                                                error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                if new_articles_count > 0 {
+                                                    info!(target: TARGET_WEB_REQUEST, "Processed RSS feed: {} - {} new articles added", rss_url, new_articles_count);
+                                                } else {
+                                                    debug!(target: TARGET_WEB_REQUEST, "Processed RSS feed: {} - No new articles added", rss_url);
+                                                }
+
+                                                break;
+                                            }
+                                            Err(first_err) => {
+                                                // Try cleaning the XML first
+                                                let cleaned_xml = cleanup_xml(&text);
+
+                                                // Check if it looks like RSS/Atom
+                                                if cleaned_xml.contains("<rss")
+                                                    || cleaned_xml.contains("<feed")
+                                                {
+                                                    let reader = io::Cursor::new(cleaned_xml);
+                                                    match parser::parse(reader) {
+                                                        Ok(feed) => {
+                                                            for entry in feed.entries {
+                                                                if let Some(article_url) = entry
+                                                                    .links
+                                                                    .first()
+                                                                    .map(|link| link.href.clone())
+                                                                {
+                                                                    let article_title = entry
+                                                                        .title
+                                                                        .clone()
+                                                                        .map(|t| t.content);
+                                                                    let pub_date = entry
+                                                                        .published
+                                                                        .map(|d| d.to_rfc3339());
+
+                                                                    let is_old = if let Some(
+                                                                        pub_date_str,
+                                                                    ) = &pub_date
+                                                                    {
+                                                                        if let Some(pub_date_dt) =
+                                                                            parse_date(pub_date_str)
+                                                                        {
+                                                                            Utc::now().signed_duration_since(pub_date_dt) > ChronoDuration::weeks(1)
+                                                                        } else {
+                                                                            false
+                                                                        }
+                                                                    } else {
+                                                                        false
+                                                                    };
+
+                                                                    if is_old {
+                                                                        debug!(target: TARGET_WEB_REQUEST, "Skipping analysis for old article: {} ({:?})", article_url, pub_date);
+                                                                        if let Err(err) = db
+                                                                            .add_article(
+                                                                                &article_url,
+                                                                                false,
+                                                                                None,
+                                                                                None,
+                                                                                None,
+                                                                                None,
+                                                                                None,
+                                                                                None,
+                                                                                pub_date.as_deref(),
+                                                                                None,
+                                                                            )
+                                                                            .await
+                                                                        {
+                                                                            error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
+                                                                        }
+                                                                        continue;
+                                                                    }
+
+                                                                    match db
+                                                                        .add_to_queue(
+                                                                            &article_url,
+                                                                            article_title
+                                                                                .as_deref(),
+                                                                            pub_date.as_deref(),
+                                                                        )
+                                                                        .await
+                                                                    {
+                                                                        Ok(true) => {
+                                                                            new_articles_count += 1;
+                                                                            debug!(target: TARGET_WEB_REQUEST, "Added article to queue: {}", article_url);
+                                                                        }
+                                                                        Ok(false) => {
+                                                                            debug!(target: TARGET_WEB_REQUEST, "Article already in queue or processed: {}", article_url);
+                                                                        }
+                                                                        Err(err) => {
+                                                                            error!(target: TARGET_WEB_REQUEST, "Failed to add article to queue: {}", err);
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            break;
+                                                        }
+                                                        Err(second_err) => {
+                                                            error!(
+                                                                target: TARGET_WEB_REQUEST,
+                                                                "Failed to parse feed from {} after cleanup. First error: {}. Second error: {}",
+                                                                rss_url,
+                                                                first_err,
+                                                                second_err
+                                                            );
+                                                            attempts += 1;
+                                                            sleep(RETRY_DELAY).await;
+                                                            continue;
+                                                        }
+                                                    }
+                                                } else {
+                                                    let preview = if text.chars().all(|c| {
+                                                        c.is_ascii_graphic() || c.is_whitespace()
+                                                    }) {
+                                                        text.chars().take(100).collect::<String>()
+                                                    } else {
+                                                        "[binary data]".to_string()
+                                                    };
                                                     error!(
                                                         target: TARGET_WEB_REQUEST,
-                                                        "Failed to parse feed from {} after cleanup. First error: {}. Second error: {}",
+                                                        "Feed from {} doesn't appear to be RSS or Atom. Content preview: {}",
                                                         rss_url,
-                                                        first_err,
-                                                        second_err
+                                                        preview
                                                     );
                                                     attempts += 1;
                                                     sleep(RETRY_DELAY).await;
                                                     continue;
                                                 }
                                             }
-                                        } else {
-                                            let preview = if body.chars().all(|c| c.is_ascii_graphic() || c.is_whitespace()) {
-                                                body.chars().take(100).collect::<String>()
-                                            } else {
-                                                "[binary data]".to_string()
-                                            };
-                                            error!(
-                                                target: TARGET_WEB_REQUEST,
-                                                "Feed from {} doesn't appear to be RSS or Atom. Content preview: {}",
-                                                rss_url,
-                                                preview
-                                            );
-                                            attempts += 1;
-                                            sleep(RETRY_DELAY).await;
-                                            continue;
                                         }
                                     }
                                 }
+                            }
+                            Err(_) => {
+                                error!(target: TARGET_WEB_REQUEST, "Failed to decode content as UTF-8 from {}", rss_url);
+                                attempts += 1;
+                                sleep(RETRY_DELAY).await;
+                                continue;
                             }
                         }
                     } else {
@@ -1011,14 +1151,8 @@ fn try_decompressions(bytes: &[u8], rss_url: &str) -> Vec<u8> {
                         continue;
                     }
                 }
-                Ok(Err(err)) => {
+                Err(err) => {
                     error!(target: TARGET_WEB_REQUEST, "Request to {} failed: {}", rss_url, err);
-                    attempts += 1;
-                    sleep(RETRY_DELAY).await;
-                    continue;
-                }
-                Err(_) => {
-                    error!(target: TARGET_WEB_REQUEST, "Request to {} timed out", rss_url);
                     attempts += 1;
                     sleep(RETRY_DELAY).await;
                     continue;
