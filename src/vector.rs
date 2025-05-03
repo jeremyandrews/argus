@@ -711,7 +711,7 @@ async fn get_articles_by_entities(
     limit: u64,
     source_article_id: Option<i64>,
 ) -> Result<Vec<ArticleMatch>> {
-    let db = crate::db::Database::instance().await;
+    let db = crate::db::core::Database::instance().await;
 
     // Get the source article's publication date if we have a source article ID
     let source_date = if let Some(id) = source_article_id {
@@ -933,7 +933,7 @@ pub async fn calculate_vector_similarity(embedding: &Vec<f32>, article_id: i64) 
 pub async fn get_article_entities(
     article_id: i64,
 ) -> Result<Option<crate::entity::ExtractedEntities>> {
-    let db = crate::db::Database::instance().await;
+    let db = crate::db::core::Database::instance().await;
 
     // Get article's date information
     let (_pub_date, event_date) = db.get_article_details_with_dates(article_id).await?;
@@ -971,7 +971,7 @@ pub async fn get_article_entities(
 
 /// Build an ExtractedEntities object from entity IDs
 async fn build_entities_from_ids(entity_ids: &[i64]) -> Result<crate::entity::ExtractedEntities> {
-    let db = crate::db::Database::instance().await;
+    let db = crate::db::core::Database::instance().await;
     let mut extracted = crate::entity::ExtractedEntities::new();
 
     info!(target: TARGET_VECTOR, "Building source entities from {} entity IDs with detailed tracing: {:?}", entity_ids.len(), entity_ids);
@@ -1170,7 +1170,7 @@ pub async fn get_similar_articles_with_entities(
 
         // Check if these entities exist in the database
         if let Some(id) = source_article_id {
-            let db = crate::db::Database::instance().await;
+            let db = crate::db::core::Database::instance().await;
             match sqlx::query_scalar::<_, i64>(
                 "SELECT COUNT(*) FROM article_entities WHERE article_id = ?",
             )

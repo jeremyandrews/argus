@@ -13,7 +13,7 @@ use std::{collections::HashSet, sync::Mutex};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::entity::matching::calculate_entity_similarity;
 use crate::vector::get_article_entities;
 use crate::SubscriptionsResponse;

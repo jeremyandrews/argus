@@ -4,7 +4,7 @@ pub mod app {
     pub mod util;
 }
 pub mod clustering;
-pub mod db;
+pub mod db; // Now uses the directory module structure
 pub mod decision_worker;
 pub mod entity;
 pub mod environment;

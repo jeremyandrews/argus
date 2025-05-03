@@ -5,7 +5,7 @@ use sqlx::{self, Row};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::entity::types::EntityType;
 use crate::llm::generate_llm_response;
 use crate::{LLMClient, LLMParams, WorkerDetail};

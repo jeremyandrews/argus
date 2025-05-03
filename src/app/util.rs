@@ -14,7 +14,7 @@ use tracing::{error, info};
 use url::Url;
 use uuid::Uuid;
 
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::metrics::SystemInfo;
 
 #[derive(Serialize)]

@@ -8,7 +8,7 @@ use whatlang::detect as detect_language;
 use super::aliases::{AliasCache, COMMON_VARIATIONS};
 use super::types::EntityType;
 use super::TARGET_ENTITY;
-use crate::db::Database;
+use crate::db::core::Database;
 
 // Thresholds for different entity types
 const PERSON_THRESHOLD: f64 = 0.90;

@@ -6,7 +6,7 @@ use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::app::util::send_to_app;
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::decision_worker::FeedItem;
 use crate::entity::extraction::extract_entities;
 use crate::llm::generate_llm_response;

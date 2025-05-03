@@ -11,7 +11,7 @@
 //! - Cache layer for frequently accessed aliases
 
 use super::types::EntityType;
-use crate::db::Database;
+use crate::db::core::Database;
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

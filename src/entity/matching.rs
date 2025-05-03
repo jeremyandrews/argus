@@ -1,4 +1,4 @@
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::entity::types::{
     EntitySimilarityMetrics, EntityType, ExtractedEntities, ImportanceLevel,
 };

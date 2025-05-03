@@ -11,7 +11,7 @@ use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
 use url;
 
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::TARGET_WEB_REQUEST;
 
 // Diagnostic structures for RSS feed testing

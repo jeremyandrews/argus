@@ -8,7 +8,7 @@ use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::llm::{generate_llm_response, ThreatLocationResponse};
 use crate::prompts;
 use crate::util::{parse_places_data_hierarchical, weighted_sleep};

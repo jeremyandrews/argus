@@ -1,4 +1,4 @@
-use crate::db::Database;
+use crate::db::core::Database;
 use crate::entity::types::{Entity, EntityType, ExtractedEntities, ImportanceLevel};
 use anyhow::{Context, Result};
 use serde_json::Value;
