@@ -61,6 +61,14 @@ flowchart LR
 
 ### 3. Database Patterns
 - **Central SQLite Database**: Persistent storage with structured schema
+- **Modular Organization**: Directory-based structure with domain-specific files:
+  - `core.rs`: Core database functionality and connection management
+  - `article.rs`: Article storage and retrieval operations
+  - `queue.rs`: Queue management for workers
+  - `device.rs`: Mobile device registration and notification
+  - `schema.rs`: Database schema definitions and migrations
+  - `entity/`: Submodule for entity-related database operations
+  - `cluster.rs`: Clustering operations for related articles
 - **Queue Tables**: RSS, Matched Topics, and Life Safety queues
 - **Article Storage**: Complete content with analysis metadata
 - **Entity Storage**: Named entity extraction with relationships

@@ -23,6 +23,10 @@ Based on code review, recent development appears focused on:
      - `core.rs`: Core entity database operations
      - `relation.rs`: Entity-article and inter-entity relationships
      - `alias.rs`: Entity alias management system
+   - **Cluster Submodule**: Added a new `db/cluster.rs` module to maintain proper separation of concerns:
+     - Moved database operations from `clustering.rs` to the appropriate `db` module
+     - Maintained business logic in the original `clustering.rs` file
+     - Ensured consistency with database architectural patterns
    - **Improved Code Maintainability**: Smaller, focused files that are easier to navigate and maintain
    - **Consistent Import Structure**: Standardized use of `sqlx::Row` trait throughout the codebase
    - **Compilation Fixes**: Addressed deprecated function calls in random number generation

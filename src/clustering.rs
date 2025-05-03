@@ -3,15 +3,15 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::{self, Row};
 use std::collections::HashMap;
-use tracing::{debug, info};
 
+use crate::db::cluster;
 use crate::db::core::Database;
 use crate::entity::types::EntityType;
 use crate::llm::generate_llm_response;
 use crate::{LLMClient, LLMParams, WorkerDetail};
 
 /// Minimum similarity score required to assign an article to an existing cluster
-const MIN_CLUSTER_SIMILARITY: f64 = 0.60;
+pub const MIN_CLUSTER_SIMILARITY: f64 = 0.60;
 
 /// Maximum number of articles to consider when generating a cluster summary
 const MAX_SUMMARY_ARTICLES: usize = 10;
@@ -57,289 +57,7 @@ pub struct TimelineEvent {
 /// * `Ok(cluster_id)` - The ID of the cluster the article was assigned to (0 if skipped)
 /// * `Err` - If there was an error during the process
 pub async fn assign_article_to_cluster(db: &Database, article_id: i64) -> Result<i64> {
-    // Get the article's entities
-    let entities = get_article_entities(db, article_id).await?;
-
-    // Skip articles with no primary entities
-    if entities.is_empty() {
-        debug!("Skipping article {}: no primary entities", article_id);
-        return Ok(0);
-    }
-
-    // Find the best matching cluster
-    let best_match = find_best_matching_cluster(db, &entities).await?;
-
-    let cluster_id = match best_match {
-        Some((cluster_id, similarity)) => {
-            if similarity >= MIN_CLUSTER_SIMILARITY {
-                // Assign to existing cluster
-                info!(
-                    "Assigning article {} to existing cluster {} (similarity: {:.4})",
-                    article_id, cluster_id, similarity
-                );
-
-                assign_to_cluster(db, article_id, cluster_id, similarity).await?
-            } else {
-                // Create new cluster as the similarity is below threshold
-                info!("Creating new cluster for article {}: best match similarity ({:.4}) below threshold", 
-                     article_id, similarity);
-
-                create_cluster_for_article(db, article_id, &entities).await?
-            }
-        }
-        None => {
-            // No matching clusters found, create a new one
-            info!(
-                "Creating new cluster for article {}: no existing clusters with matching entities",
-                article_id
-            );
-
-            create_cluster_for_article(db, article_id, &entities).await?
-        }
-    };
-
-    // Update the article's cluster_id
-    update_article_cluster_id(db, article_id, cluster_id).await?;
-
-    Ok(cluster_id)
-}
-
-/// Retrieves the primary entities for an article
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `article_id` - ID of the article
-///
-/// # Returns
-/// * `Ok(Vec<i64>)` - Vector of entity IDs that are PRIMARY for this article
-/// * `Err` - If there was an error during retrieval
-async fn get_article_entities(db: &Database, article_id: i64) -> Result<Vec<i64>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT entity_id FROM article_entities 
-        WHERE article_id = ? AND importance = 'PRIMARY'
-        "#,
-    )
-    .bind(article_id)
-    .fetch_all(db.pool())
-    .await?;
-
-    let entity_ids = rows
-        .iter()
-        .map(|row| row.get::<i64, _>("entity_id"))
-        .collect();
-
-    Ok(entity_ids)
-}
-
-/// Finds the best matching cluster for a set of entity IDs
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `entity_ids` - Vector of entity IDs to match against
-///
-/// # Returns
-/// * `Ok(Some((cluster_id, similarity)))` - The best matching cluster and its similarity score
-/// * `Ok(None)` - If no matching clusters were found
-/// * `Err` - If there was an error during the search
-async fn find_best_matching_cluster(
-    db: &Database,
-    entity_ids: &[i64],
-) -> Result<Option<(i64, f64)>> {
-    if entity_ids.is_empty() {
-        return Ok(None);
-    }
-
-    // Get all clusters and their primary entities
-    let clusters = get_all_clusters(db).await?;
-
-    let mut best_match: Option<(i64, f64)> = None;
-    let entity_set: std::collections::HashSet<i64> = entity_ids.iter().cloned().collect();
-
-    for cluster in clusters {
-        // Parse the primary_entity_ids JSON array
-        let cluster_entities: Vec<i64> = serde_json::from_str(&cluster.primary_entity_ids)?;
-        let cluster_entity_set: std::collections::HashSet<i64> =
-            cluster_entities.into_iter().collect();
-
-        // Calculate Jaccard similarity: |A ∩ B| / |A ∪ B|
-        let intersection = entity_set.intersection(&cluster_entity_set).count();
-        let union = entity_set.union(&cluster_entity_set).count();
-
-        if union > 0 {
-            let similarity = intersection as f64 / union as f64;
-
-            // Update best match if this is better
-            if let Some((_, best_similarity)) = best_match {
-                if similarity > best_similarity {
-                    best_match = Some((cluster.id, similarity));
-                }
-            } else {
-                best_match = Some((cluster.id, similarity));
-            }
-        }
-    }
-
-    Ok(best_match)
-}
-
-/// Gets all existing clusters from the database
-///
-/// # Arguments
-/// * `db` - Database instance
-///
-/// # Returns
-/// * `Ok(Vec<ClusterInfo>)` - Vector of cluster information
-/// * `Err` - If there was an error during retrieval
-async fn get_all_clusters(db: &Database) -> Result<Vec<ClusterInfo>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT id, primary_entity_ids FROM article_clusters
-        "#,
-    )
-    .fetch_all(db.pool())
-    .await?;
-
-    let clusters = rows
-        .iter()
-        .map(|row| ClusterInfo {
-            id: row.get("id"),
-            primary_entity_ids: row.get("primary_entity_ids"),
-        })
-        .collect();
-
-    Ok(clusters)
-}
-
-/// Simple struct to hold cluster information during matching
-struct ClusterInfo {
-    id: i64,
-    primary_entity_ids: String,
-}
-
-/// Creates a new cluster for an article
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `article_id` - ID of the article (not used in this function)
-/// * `entity_ids` - Primary entity IDs for the article
-///
-/// # Returns
-/// * `Ok(cluster_id)` - The ID of the newly created cluster
-/// * `Err` - If there was an error during creation
-async fn create_cluster_for_article(
-    db: &Database,
-    _article_id: i64,
-    entity_ids: &[i64],
-) -> Result<i64> {
-    let now = Utc::now().to_rfc3339();
-    let primary_entity_ids = serde_json::to_string(entity_ids)?;
-
-    // Create the cluster
-    let cluster_id = sqlx::query(
-        r#"
-        INSERT INTO article_clusters
-        (creation_date, last_updated, primary_entity_ids, article_count, needs_summary_update)
-        VALUES (?, ?, ?, 1, 1)
-        "#,
-    )
-    .bind(&now)
-    .bind(&now)
-    .bind(&primary_entity_ids)
-    .execute(db.pool())
-    .await?
-    .last_insert_rowid();
-
-    debug!(
-        "Created new cluster {} with {} primary entities",
-        cluster_id,
-        entity_ids.len()
-    );
-
-    Ok(cluster_id)
-}
-
-/// Assigns an article to an existing cluster
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `article_id` - ID of the article
-/// * `cluster_id` - ID of the cluster to assign to
-/// * `similarity_score` - Similarity score between the article and the cluster
-///
-/// # Returns
-/// * `Ok(cluster_id)` - The ID of the cluster the article was assigned to
-/// * `Err` - If there was an error during assignment
-async fn assign_to_cluster(
-    db: &Database,
-    article_id: i64,
-    cluster_id: i64,
-    similarity_score: f64,
-) -> Result<i64> {
-    let now = Utc::now().to_rfc3339();
-
-    // Update cluster's last_updated timestamp and increment article count
-    sqlx::query(
-        r#"
-        UPDATE article_clusters
-        SET last_updated = ?,
-            article_count = article_count + 1,
-            needs_summary_update = 1
-        WHERE id = ?
-        "#,
-    )
-    .bind(&now)
-    .bind(cluster_id)
-    .execute(db.pool())
-    .await?;
-
-    // Create article-cluster mapping
-    sqlx::query(
-        r#"
-        INSERT INTO article_cluster_mappings
-        (article_id, cluster_id, added_date, similarity_score)
-        VALUES (?, ?, ?, ?)
-        "#,
-    )
-    .bind(article_id)
-    .bind(cluster_id)
-    .bind(&now)
-    .bind(similarity_score)
-    .execute(db.pool())
-    .await?;
-
-    debug!(
-        "Assigned article {} to cluster {} with similarity {:.4}",
-        article_id, cluster_id, similarity_score
-    );
-
-    Ok(cluster_id)
-}
-
-/// Updates an article's cluster_id in the database
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `article_id` - ID of the article
-/// * `cluster_id` - ID of the cluster
-///
-/// # Returns
-/// * `Ok(())` - If the update was successful
-/// * `Err` - If there was an error during the update
-async fn update_article_cluster_id(db: &Database, article_id: i64, cluster_id: i64) -> Result<()> {
-    sqlx::query(
-        r#"
-        UPDATE articles
-        SET cluster_id = ?
-        WHERE id = ?
-        "#,
-    )
-    .bind(cluster_id)
-    .bind(article_id)
-    .execute(db.pool())
-    .await?;
-
-    Ok(())
+    cluster::assign_article_to_cluster(db, article_id).await
 }
 
 /// Gets a list of clusters that need summary updates
@@ -351,19 +69,7 @@ async fn update_article_cluster_id(db: &Database, article_id: i64, cluster_id: i
 /// * `Ok(Vec<i64>)` - Vector of cluster IDs that need summary updates
 /// * `Err` - If there was an error during retrieval
 pub async fn get_clusters_needing_summary_updates(db: &Database) -> Result<Vec<i64>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT id FROM article_clusters
-        WHERE needs_summary_update = 1
-        ORDER BY last_updated DESC
-        "#,
-    )
-    .fetch_all(db.pool())
-    .await?;
-
-    let cluster_ids = rows.iter().map(|row| row.get::<i64, _>("id")).collect();
-
-    Ok(cluster_ids)
+    cluster::get_clusters_needing_summary_updates(db).await
 }
 
 /// Generates a summary for a cluster based on its articles
@@ -726,20 +432,20 @@ pub async fn calculate_cluster_significance(db: &Database, cluster_id: i64) -> R
 
 /// Struct representing an article in a cluster
 #[allow(dead_code)]
-struct ClusterArticle {
-    id: i64,
-    title: Option<String>,
-    url: String,
-    json_data: Option<String>,
-    pub_date: Option<String>,
-    tiny_summary: Option<String>,
-    similarity_score: f64,
+pub struct ClusterArticle {
+    pub id: i64,
+    pub title: Option<String>,
+    pub url: String,
+    pub json_data: Option<String>,
+    pub pub_date: Option<String>,
+    pub tiny_summary: Option<String>,
+    pub similarity_score: f64,
 }
 
 /// Struct representing entity details
 #[allow(dead_code)]
-struct EntityDetail {
-    id: i64,
-    name: String,
-    entity_type: EntityType,
+pub struct EntityDetail {
+    pub id: i64,
+    pub name: String,
+    pub entity_type: EntityType,
 }
