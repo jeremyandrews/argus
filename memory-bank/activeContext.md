@@ -16,7 +16,19 @@ The codebase demonstrates a sophisticated use of Rust with asynchronous processi
 
 Based on code review, recent development appears focused on:
 
-1. **Browser Emulation for RSS Feeds**:
+1. **Database Module Refactoring**:
+   - **Modular Structure**: Converted monolithic `db.rs` into a directory-based module structure
+   - **Logical Organization**: Split functionality into domain-specific files (article.rs, queue.rs, device.rs, schema.rs)
+   - **Entity Submodule**: Created a dedicated `db/entity` submodule with specialized files:
+     - `core.rs`: Core entity database operations
+     - `relation.rs`: Entity-article and inter-entity relationships
+     - `alias.rs`: Entity alias management system
+   - **Improved Code Maintainability**: Smaller, focused files that are easier to navigate and maintain
+   - **Consistent Import Structure**: Standardized use of `sqlx::Row` trait throughout the codebase
+   - **Compilation Fixes**: Addressed deprecated function calls in random number generation
+   - **Warning Elimination**: Removed unused imports and properly handled unused variables
+
+2. **Browser Emulation for RSS Feeds**:
    - **Implemented Fallback Mechanism**: Added browser header emulation for RSS feeds that reject standard HTTP clients
    - **Firefox Header Emulation**: Uses specific headers like Sec-Fetch-* and custom User-Agent to bypass server restrictions
    - **Two-Step Request Process**: First attempts with standard headers, then tries browser emulation if that fails
@@ -25,7 +37,7 @@ Based on code review, recent development appears focused on:
    - **Diagnostic Logging**: Added logging to track which feeds require browser emulation
    - **Fixed Specific Issues**: Resolved timeout problems with feeds like cyber.gov.au that require browser-like headers
 
-2. **RSS Feed Diagnostic Tool and Brotli Compression Support**:
+3. **RSS Feed Diagnostic Tool and Brotli Compression Support**:
    - **Created RSS Diagnostic Tool**: Built `test_rss_feed` binary for troubleshooting feed loading issues
    - **Enhanced Compression Support**: Added Brotli decompression capability to RSS module
    - **Fixed Content Loading**: Resolved issues with feeds using `content-encoding: br` 
@@ -33,7 +45,7 @@ Based on code review, recent development appears focused on:
    - **Header Analysis**: Improved header inspection to identify compression methods in use
    - **Unified Error Reporting**: Standardized feed error reporting and diagnostics
 
-3. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
+4. **Article Matching Threshold Adjustment**: Changed the article similarity threshold from 75% to 70%:
    - **Increased Match Recall**: Lowered the minimum combined similarity score for article matches
    - **More Lenient Matching**: Now requires less strict vector and entity similarity
    - **Broader Clustering**: Will create more inclusive article clusters with related content
@@ -412,6 +424,7 @@ Based on codebase analysis, likely next steps include:
 - **Parameter Optimization Strategy**: Deciding between manual tuning and algorithmic optimization approaches
 - **Adaptive Threshold Implementation**: Determining the factors that should influence dynamic thresholds
 - **HTTP Client Configuration**: Balancing standard HTTP client behavior with browser emulation needs
+- **Code Organization**: Continuing to refine the codebase structure for maintainability and clarity
 
 ### Feature Decisions
 - **Entity Type Importance**: Determining optimal weights for different entity types in matching
@@ -428,6 +441,7 @@ Based on codebase analysis, likely next steps include:
 - **Vector Similarity Calculation**: Refining methods for calculating and comparing vector embeddings
 - **Parameter Storage**: Deciding how to store and manage matching parameters (config files vs. database)
 - **HTTP Client Strategy**: When to use standard vs. browser emulation for web requests
+- **Module Organization**: Determining the optimal structure for Rust modules to balance cohesion and coupling
 
 ## Integration Requirements
 
