@@ -10,7 +10,7 @@ use crate::db::core::Database;
 use crate::decision_worker::FeedItem;
 use crate::entity::extraction::extract_entities;
 use crate::llm::generate_llm_response;
-use crate::prompts;
+use crate::prompt;
 use crate::slack::send_to_slack;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
 use crate::vector::{
@@ -438,7 +438,7 @@ async fn process_analysis_item(
                         if let Some(regions) = countries.get(country) {
                             if let Some(cities) = regions.get(region_name) {
                                 // Validate if the region truly has a threat
-                                let region_prompt = prompts::region_threat_prompt(
+                                let region_prompt = prompt::region_threat_prompt(
                                     &article_text,
                                     region_name,
                                     country,
@@ -456,7 +456,7 @@ async fn process_analysis_item(
                                 // Parse the response for yes/no
                                 if region_response.trim().to_lowercase().starts_with("yes") {
                                     for (city_name, people) in cities.iter() {
-                                        let city_prompt = prompts::city_threat_prompt(
+                                        let city_prompt = prompt::city_threat_prompt(
                                             &article_text,
                                             city_name,
                                             region_name,
@@ -546,7 +546,7 @@ async fn process_analysis_item(
                 // Determine how it does or does not affect.
                 let how_does_it_affect = if !affected_summary.is_empty() {
                     let how_does_it_affect_prompt =
-                        prompts::how_does_it_affect_prompt(&article_text, &affected_summary);
+                        prompt::how_does_it_affect_prompt(&article_text, &affected_summary);
                     debug!(
                         "Generated how_does_it_affect prompt: {:?}",
                         how_does_it_affect_prompt
@@ -562,7 +562,7 @@ async fn process_analysis_item(
                 };
                 let why_not_affect = if !non_affected_summary.is_empty() {
                     let why_not_affect_prompt =
-                        prompts::why_not_affect_prompt(&article_text, &non_affected_summary);
+                        prompt::why_not_affect_prompt(&article_text, &non_affected_summary);
                     debug!(
                         "Generated why_not_affect prompt: {:?}",
                         why_not_affect_prompt
@@ -1520,7 +1520,7 @@ async fn process_analysis(
     }
 
     // Start with summary to establish base understanding
-    let summary_prompt = prompts::summary_prompt(article_text, pub_date);
+    let summary_prompt = prompt::summary_prompt(article_text, pub_date);
     let summary = match generate_llm_response(&summary_prompt, llm_params, worker_detail).await {
         Some(s) if !s.trim().is_empty() => s,
         _ => {
@@ -1545,7 +1545,7 @@ async fn process_analysis(
 
     // Only proceed with other analyses if we have a valid summary
     let tiny_summary = generate_llm_response(
-        &prompts::tiny_summary_prompt(&summary),
+        &prompt::tiny_summary_prompt(&summary),
         llm_params,
         worker_detail,
     )
@@ -1553,7 +1553,7 @@ async fn process_analysis(
     .unwrap_or_default();
 
     let tiny_title = generate_llm_response(
-        &prompts::tiny_title_prompt(&summary),
+        &prompt::tiny_title_prompt(&summary),
         llm_params,
         worker_detail,
     )
@@ -1562,7 +1562,7 @@ async fn process_analysis(
 
     // Critical analysis and logical fallacies need the full article text
     let critical_analysis = generate_llm_response(
-        &prompts::critical_analysis_prompt(article_text, pub_date),
+        &prompt::critical_analysis_prompt(article_text, pub_date),
         llm_params,
         worker_detail,
     )
@@ -1570,7 +1570,7 @@ async fn process_analysis(
     .unwrap_or_default();
 
     let logical_fallacies = generate_llm_response(
-        &prompts::logical_fallacies_prompt(article_text, pub_date),
+        &prompt::logical_fallacies_prompt(article_text, pub_date),
         llm_params,
         worker_detail,
     )
@@ -1579,7 +1579,7 @@ async fn process_analysis(
 
     // Source analysis needs HTML and URL
     let source_analysis = generate_llm_response(
-        &prompts::source_analysis_prompt(article_html, article_url, pub_date),
+        &prompt::source_analysis_prompt(article_html, article_url, pub_date),
         llm_params,
         worker_detail,
     )
@@ -1589,7 +1589,7 @@ async fn process_analysis(
     // Quality scores should only be generated if we have valid analyses
     let sources_quality = if !critical_analysis.is_empty() {
         generate_llm_response(
-            &prompts::sources_quality_prompt(&critical_analysis),
+            &prompt::sources_quality_prompt(&critical_analysis),
             llm_params,
             worker_detail,
         )
@@ -1602,7 +1602,7 @@ async fn process_analysis(
 
     let argument_quality = if !logical_fallacies.is_empty() {
         generate_llm_response(
-            &prompts::argument_quality_prompt(&logical_fallacies),
+            &prompt::argument_quality_prompt(&logical_fallacies),
             llm_params,
             worker_detail,
         )
@@ -1616,7 +1616,7 @@ async fn process_analysis(
     // Source type should only be generated if we have valid source analysis
     let source_type = if !source_analysis.is_empty() {
         generate_llm_response(
-            &prompts::source_type_prompt(&source_analysis, article_url),
+            &prompt::source_type_prompt(&source_analysis, article_url),
             llm_params,
             worker_detail,
         )
@@ -1631,7 +1631,7 @@ async fn process_analysis(
     // Topic relation is optional and should only be generated if we have a topic
     let relation_response = if let Some(topic) = topic {
         generate_llm_response(
-            &prompts::relation_to_topic_prompt(article_text, topic, pub_date),
+            &prompt::relation_to_topic_prompt(article_text, topic, pub_date),
             llm_params,
             worker_detail,
         )
@@ -1643,7 +1643,7 @@ async fn process_analysis(
     // Generate additional insights after other analyses are complete
     let additional_insights = if !summary.is_empty() && !critical_analysis.is_empty() {
         generate_llm_response(
-            &prompts::additional_insights_prompt(article_text, pub_date),
+            &prompt::additional_insights_prompt(article_text, pub_date),
             llm_params,
             worker_detail,
         )
@@ -1656,7 +1656,7 @@ async fn process_analysis(
     // Generate action recommendations
     let action_recommendations = if !summary.is_empty() {
         generate_llm_response(
-            &prompts::action_recommendations_prompt(article_text, pub_date),
+            &prompt::action_recommendations_prompt(article_text, pub_date),
             llm_params,
             worker_detail,
         )
@@ -1669,7 +1669,7 @@ async fn process_analysis(
     // Generate talking points
     let talking_points = if !summary.is_empty() {
         generate_llm_response(
-            &prompts::talking_points_prompt(article_text, pub_date),
+            &prompt::talking_points_prompt(article_text, pub_date),
             llm_params,
             worker_detail,
         )

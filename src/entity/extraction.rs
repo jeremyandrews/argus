@@ -1,6 +1,6 @@
 use crate::entity::types::{Entity, EntityType, ExtractedEntities, ImportanceLevel};
 use crate::llm::generate_llm_response;
-use crate::prompts;
+use crate::prompt;
 use crate::LLMParams;
 use crate::WorkerDetail;
 use anyhow::Result;
@@ -18,7 +18,7 @@ pub async fn extract_entities(
     worker_detail: &WorkerDetail,
 ) -> Result<ExtractedEntities> {
     // Set up extraction prompt
-    let entity_prompt = prompts::entity_extraction_prompt(article_text, pub_date);
+    let entity_prompt = prompt::entity_extraction_prompt(article_text, pub_date);
 
     // Enable structured JSON output mode with entity extraction schema
     llm_params.json_format = Some(crate::JsonSchemaType::EntityExtraction);

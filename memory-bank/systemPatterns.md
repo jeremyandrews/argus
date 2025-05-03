@@ -216,6 +216,38 @@ flowchart LR
 - **Importance Ranking**: Determination of entity significance to article
 - **Normalization**: Standardization of entity names for matching
 
+### Prompt Management
+- **Modular Prompt Architecture**: Directory-based organization by domain functionality
+  ```
+  src/prompt/
+  ├── mod.rs             # Central module exports
+  ├── common.rs          # Shared utilities and constants 
+  ├── summarization.rs   # Summary generation prompts
+  ├── analysis.rs        # Critical analysis prompts
+  ├── relevance.rs       # Topic relevance determination
+  ├── scoring.rs         # Quality scoring templates
+  ├── insights.rs        # Additional insights generation
+  ├── decisions.rs       # Decision-making prompt templates
+  └── entity.rs          # Entity extraction prompts
+  ```
+- **Prompt Component Pattern**: Breaking complex prompts into reusable sections
+  - **Common Components**: Shared instructions, formatting guidelines, output expectations
+  - **Domain-Specific Components**: Task-focused instructions for specialized analysis
+  - **Example-Based Learning**: Curated examples for consistent LLM responses
+  - **Constraint Expression**: Clear boundaries and limitations to guide responses
+  
+- **Prompt Versioning Strategy**:
+  - Gradual refinement based on real-world performance
+  - Backwards compatibility with existing system components
+  - Consistent naming across related prompt functions
+  - Documentation of prompt design decisions and rationales
+  
+- **Prompt Testing and Validation**:
+  - Explicit output schema validation
+  - Response consistency checking
+  - Error handling for unexpected LLM responses
+  - Performance metrics for prompt effectiveness
+
 ### Entity Alias Management
 - **Single Source of Truth**: Database-driven approach for all alias operations
 - **Progressive Matching Fallback**:

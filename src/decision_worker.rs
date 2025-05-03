@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::db::core::Database;
 use crate::llm::{generate_llm_response, ThreatLocationResponse};
-use crate::prompts;
+use crate::prompt;
 use crate::util::{parse_places_data_hierarchical, weighted_sleep};
 use crate::{LLMClient, LLMParams, WorkerDetail};
 use crate::{TARGET_DB, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
@@ -326,14 +326,14 @@ async fn check_if_threat_at_all(
     let llm_params = extract_llm_params(params);
 
     // Initial threat check
-    let threat_prompt = prompts::threat_prompt(&article_text);
+    let threat_prompt = prompt::threat_prompt(&article_text);
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking LLM if about something affecting life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
 
     if let Some(response) = generate_llm_response(&threat_prompt, &llm_params, worker_detail).await
     {
         if response.trim().to_lowercase().starts_with("yes") {
             // Confirmation check
-            let confirm_prompt = prompts::confirm_threat_prompt(&article_text);
+            let confirm_prompt = prompt::confirm_threat_prompt(&article_text);
             debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: confirming if genuine threat to life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
 
             if let Some(confirm_response) =
@@ -354,7 +354,7 @@ async fn determine_threat_location(
     worker_detail: &WorkerDetail,
 ) -> String {
     // Generate the prompt based on the article text and places hierarchy
-    let threat_locations_prompt = prompts::threat_locations(&article_text, &places);
+    let threat_locations_prompt = prompt::threat_locations(&article_text, &places);
     debug!(
         target: TARGET_LLM_REQUEST,
         "[{} {} {}]: asking LLM where threat is.",
@@ -423,13 +423,13 @@ async fn article_is_relevant(
     }
 
     // Generate summary
-    let summary_prompt = prompts::summary_prompt(article_text, pub_date);
+    let summary_prompt = prompt::summary_prompt(article_text, pub_date);
     let summary_response = generate_llm_response(&summary_prompt, &llm_params, worker_detail)
         .await
         .unwrap_or_default();
 
     // Confirm the article relevance
-    let confirm_prompt = prompts::confirm_prompt(&summary_response, topic_prompt);
+    let confirm_prompt = prompt::confirm_prompt(&summary_response, topic_prompt);
     if let Some(confirm_response) =
         generate_llm_response(&confirm_prompt, &llm_params, worker_detail).await
     {
@@ -453,7 +453,7 @@ async fn process_topics(
     worker_detail: &WorkerDetail,
 ) {
     // Early check to filter promotional content
-    let promo_check_prompt = prompts::filter_promotional_content(article_text);
+    let promo_check_prompt = prompt::filter_promotional_content(article_text);
     let llm_params = extract_llm_params(params);
     if let Some(promo_response) =
         generate_llm_response(&promo_check_prompt, &llm_params, worker_detail).await
@@ -500,7 +500,7 @@ async fn process_topics(
 
         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if about {}: {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, topic_prompt);
 
-        let yes_no_prompt = prompts::is_this_about(article_text, topic_prompt);
+        let yes_no_prompt = prompt::is_this_about(article_text, topic_prompt);
         let mut llm_params = extract_llm_params(params);
         if let Some(yes_no_response) =
             generate_llm_response(&yes_no_prompt, &llm_params, worker_detail).await

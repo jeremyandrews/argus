@@ -11,7 +11,7 @@ pub mod environment;
 pub mod llm;
 pub mod logging;
 pub mod metrics;
-pub mod prompts;
+pub mod prompt; // Now uses the directory module structure (replacing prompts.rs)
 pub mod rss;
 pub mod slack;
 pub mod util;

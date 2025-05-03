@@ -16,7 +16,24 @@ The codebase demonstrates a sophisticated use of Rust with asynchronous processi
 
 Based on code review, recent development appears focused on:
 
-1. **Database Module Refactoring**:
+1. **Prompt System Modularization**:
+   - **Module-Based Structure**: Refactored monolithic `prompts.rs` into a directory-based module structure
+   - **Logical Organization**: Split functionality into domain-specific files:
+     - `prompt/mod.rs`: Central module export managing visibility
+     - `prompt/common.rs`: Shared utilities and constants for all prompts
+     - `prompt/summarization.rs`: Summary generation prompts
+     - `prompt/analysis.rs`: Critical analysis and logical fallacy detection
+     - `prompt/relevance.rs`: Topic relevance determination prompts
+     - `prompt/scoring.rs`: Quality scoring prompts for sources and arguments
+     - `prompt/insights.rs`: Additional insights and recommendations
+     - `prompt/decisions.rs`: Decision-making prompts for threat assessment
+     - `prompt/entity.rs`: Entity extraction and processing prompts
+   - **Cleaner Imports**: Updated all references from `prompts::` to `prompt::` throughout the codebase
+   - **Better Organization**: Smaller, focused files that facilitate maintenance and future expansion
+   - **Reduced File Size**: More manageable file sizes compared to the previous monolithic approach
+   - **Improved Discoverability**: Domain-specific prompts are now easier to locate and modify
+
+2. **Database Module Refactoring**:
    - **Modular Structure**: Converted monolithic `db.rs` into a directory-based module structure
    - **Logical Organization**: Split functionality into domain-specific files (article.rs, queue.rs, device.rs, schema.rs)
    - **Entity Submodule**: Created a dedicated `db/entity` submodule with specialized files:
