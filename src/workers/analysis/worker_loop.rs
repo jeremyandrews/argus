@@ -6,7 +6,9 @@ use crate::db::core::Database;
 use crate::llm::generate_llm_response;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
 use crate::workers::common::{build_connection_info, FeedItem, ProcessItemParams};
-use crate::{FallbackConfig, LLMClient, LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
+use crate::{
+    FallbackConfig, LLMClient, LLMParams, ThinkingModelConfig, WorkerDetail, TARGET_LLM_REQUEST,
+};
 
 /// Enum to represent the current mode of the Analysis Worker
 enum Mode {
@@ -24,6 +26,7 @@ pub async fn analysis_loop(
     default_slack_channel: &str,
     temperature: f32,
     fallback: Option<FallbackConfig>,
+    thinking_config: Option<ThinkingModelConfig>,
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut llm_params = LLMParams {
@@ -32,6 +35,7 @@ pub async fn analysis_loop(
         temperature,
         require_json: None,
         json_format: None,
+        thinking_config: thinking_config.clone(),
     };
 
     let mut mode = Mode::Analysis;
@@ -92,13 +96,14 @@ pub async fn analysis_loop(
                         // Update active model to fallback model
                         worker_detail.model = fallback_config.model.to_string();
 
-                        // Update LLM params to use fallback model
+                        // Update LLM params to use fallback model (no thinking config in fallback)
                         llm_params = LLMParams {
                             llm_client: fallback_config.llm_client.clone(),
                             model: fallback_config.model.clone(),
                             temperature,
                             require_json: None,
                             json_format: None,
+                            thinking_config: None, // No thinking in fallback mode
                         };
 
                         // Wait for the new model to be operational
@@ -119,6 +124,7 @@ pub async fn analysis_loop(
                                 temperature,
                                 require_json: None,
                                 json_format: None,
+                                thinking_config: thinking_config.clone(),
                             };
                             // Give time for the original model to restore.
                             let _ =
@@ -140,13 +146,14 @@ pub async fn analysis_loop(
                             mode = Mode::Analysis;
                             fallback_start_time = None;
 
-                            // Restore original LLM params
+                            // Restore original LLM params with thinking config
                             llm_params = LLMParams {
                                 llm_client: llm_client.clone(),
                                 model: model.to_string(),
                                 temperature,
                                 require_json: None,
                                 json_format: None,
+                                thinking_config: thinking_config.clone(),
                             };
 
                             worker_detail.model = model.to_string();
@@ -223,13 +230,14 @@ pub async fn analysis_loop(
                     // Update active model to original model
                     worker_detail.model = model.to_string();
 
-                    // Restore original LLM params
+                    // Restore original LLM params with thinking config
                     llm_params = LLMParams {
                         llm_client: llm_client.clone(),
                         model: model.to_string(),
                         temperature,
                         require_json: None,
                         json_format: None,
+                        thinking_config: thinking_config.clone(),
                     };
 
                     // Wait for the original model to be operational

@@ -130,6 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         temperature,
         require_json: None,
         json_format: None,
+        thinking_config: None, // No thinking mode for entity extraction
     };
 
     let worker_detail = WorkerDetail {

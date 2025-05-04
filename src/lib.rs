@@ -56,6 +56,15 @@ pub enum JsonSchemaType {
     Generic,
 }
 
+/// Configuration for models that use thinking/reasoning capabilities
+#[derive(Clone, Debug)]
+pub struct ThinkingModelConfig {
+    pub strip_thinking_tags: bool,
+    pub top_p: f32,
+    pub top_k: i32,
+    pub min_p: f32,
+}
+
 #[derive(Clone)]
 pub struct LLMParams {
     pub llm_client: LLMClient,
@@ -63,6 +72,7 @@ pub struct LLMParams {
     pub temperature: f32,
     pub require_json: Option<bool>, // Kept for backward compatibility
     pub json_format: Option<JsonSchemaType>, // New field for specifying JSON schema type
+    pub thinking_config: Option<ThinkingModelConfig>, // Configuration for thinking models
 }
 
 // New: Struct to hold fallback configuration for Analysis Workers

@@ -29,6 +29,7 @@ Argus is currently in active development with all major components implemented a
 - ✅ **OpenAI Support**: Integration with cloud-based OpenAI models
 - ✅ **Prompt Templates**: Structured prompt system for consistent LLM interactions
 - ✅ **Model Configuration**: Flexible configuration of different models for different tasks
+- ✅ **Thinking Model Support**: Added support for reasoning models that show their thought process in <think></think> tags with special generation parameters
 
 ### Analysis & Relevance
 - ✅ **Topic Matching**: Two-stage matching for improved relevance determination
@@ -319,6 +320,7 @@ Argus is currently in active development with all major components implemented a
 - ✓ Initial parameter tuning (lowered threshold from 75% to 70%)
 - ✓ Prompt system modularization and organization
 - ✓ Vector module reorganization (split into logical submodules to improve maintainability)
+- ✓ Thinking model implementation for analysis workers with test binary
 
 ### In Progress
 - 🔄 Parameter optimization for entity matching

@@ -115,6 +115,7 @@ pub async fn generate_cluster_summary(
         temperature: 0.2,      // Lower temperature for more consistent summaries
         require_json: None,
         json_format: None,
+        thinking_config: None, // No thinking needed for cluster summaries
     };
 
     // Generate the summary

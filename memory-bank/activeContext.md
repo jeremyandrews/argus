@@ -1,6 +1,68 @@
 # Active Development Context
 
-## Current Focus: Vector Module Reorganization
+## Current Focus: Thinking Model for Analysis Workers
+
+We've implemented a new feature that allows one analysis worker to use a thinking/reasoning model. This enhancement enables more detailed and transparent analysis of articles by using a model that shows its reasoning process before providing a final answer.
+
+### Implementation Details
+
+1. **Model Configuration**: We're using the `qwen3:30b-a3b-fp16` model with specific generation parameters:
+   - Temperature = 0.6
+   - TopP = 0.95
+   - TopK = 20
+   - MinP = 0.0 (not supported in the current ollama-rs version but included for future compatibility)
+
+2. **LLM Integration Updates**:
+   - Added a `ThinkingModelConfig` struct to `lib.rs` to support reasoning models
+   - Enhanced `LLMParams` with a `thinking_config` field to indicate when thinking mode is active
+   - Implemented regex-based functionality to strip `<think>...</think>` tags from responses
+   - Updated the Ollama and OpenAI LLM clients to handle thinking model parameters
+
+3. **Worker Updates**:
+   - Modified `analysis_loop` in `workers/analysis/worker_loop.rs` to accept a `thinking_config` parameter
+   - Updated main.rs to configure the first analysis worker to use the thinking model
+   - Added appropriate logging for thinking model operations
+
+4. **Testing Infrastructure**:
+   - Created a new `test_thinking_model.rs` binary for testing the thinking model capabilities
+   - Added comprehensive error logging for thinking model testing
+
+### Using the Thinking Model
+
+- The first analysis worker (ID = 1) will automatically use the thinking model
+- Other analysis workers continue to use their standard models
+- The system strips out the thinking process (content in `<think>...</think>` tags) before using the response
+- The thinking model is not used in fallback mode (when an analysis worker acts as a decision worker)
+
+### Test Utility
+
+Use the new test utility to verify the thinking model functionality:
+
+```bash
+# Standard usage (shows only the processed response)
+cargo run --bin test_thinking_model -- -H localhost -p 11434 -m qwen3:30b-a3b-fp16 -P "Your test prompt" -T 0.6
+
+# View the raw response with thinking tags and the processed response for comparison
+cargo run --bin test_thinking_model -- -H localhost -p 11434 -m qwen3:30b-a3b-fp16 -P "Your test prompt" -T 0.6 -r
+
+# Test with JSON formatting (simple generic JSON)
+cargo run --bin test_thinking_model -- -H localhost -p 11434 -m qwen3:30b-a3b-fp16 -j -P "Extract people and organizations from this text: 'Apple CEO Tim Cook spoke at the event in San Francisco.'"
+
+# Test with specific JSON schema (entity extraction)
+cargo run --bin test_thinking_model -- -H localhost -p 11434 -m qwen3:30b-a3b-fp16 -j -s entity -P "Extract all entities from this article: 'Apple announced its new product in Cupertino yesterday.'"
+
+# Test with threat location schema
+cargo run --bin test_thinking_model -- -H localhost -p 11434 -m qwen3:30b-a3b-fp16 -j -s threat -P "Analyze this article for impacted regions: 'The hurricane warning affects coastal areas in Florida.'"
+
+# Combine raw mode with JSON (to see the thinking process for structured outputs)
+cargo run --bin test_thinking_model -- -H localhost -p 11434 -m qwen3:30b-a3b-fp16 -j -s entity -r -P "Extract all entities from this text: 'Microsoft and Google announced a partnership.'"
+```
+
+Note the usage of `-H` for host, `-p` for port, `-P` for prompt, and `-T` for temperature to avoid command-line argument conflicts. The optional `-r` flag will show the raw response with all thinking tags intact, followed by the processed response with tags stripped.
+
+This will run a simple sentiment analysis test with the thinking model and show the result after stripping thinking tags.
+
+## Previous Focus: Vector Module Reorganization
 
 We've just completed modularizing the `vector.rs` file, which was over 1,200 lines. Following the pattern established with the workers module, we've created a directory-based module structure to improve maintainability and readability.
 

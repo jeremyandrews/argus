@@ -23,6 +23,7 @@ pub fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
         temperature: params.temperature,
         require_json: None,
         json_format: None,
+        thinking_config: None, // No thinking by default in decision worker
     }
 }
 

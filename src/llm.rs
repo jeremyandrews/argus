@@ -4,6 +4,7 @@ use ollama_rs::generation::{
     options::GenerationOptions,
     parameters::{FormatType, JsonStructure},
 };
+use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -46,6 +47,39 @@ pub struct EntityItem {
     // Additional fields might be present but aren't required by the schema
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+}
+
+/// Strips <think>...</think> tags from text.
+///
+/// This function removes all content between <think> and </think> tags,
+/// which is used for thinking/reasoning models that output their reasoning
+/// inside these tags.
+///
+/// # Arguments
+///
+/// * `text` - The text from which to strip thinking tags
+///
+/// # Returns
+///
+/// A String with all thinking tags and their content removed
+fn strip_thinking_tags(text: &str) -> String {
+    // Create a regex pattern to match <think>...</think> blocks
+    // Use (?s) to make dot match newlines
+    let pattern = r"(?s)<think>.*?</think>";
+    let re = Regex::new(pattern).unwrap_or_else(|e| {
+        error!("Failed to compile thinking tags regex pattern: {}", e);
+        Regex::new(r"nevermatchanything").unwrap()
+    });
+
+    // Replace matches with empty string and trim the result
+    let result = re.replace_all(text, "").trim().to_string();
+
+    // If the result is empty after stripping, return the original text
+    if result.is_empty() {
+        return text.to_string();
+    }
+
+    result
 }
 
 fn estimate_token_count(text: &str) -> u32 {
@@ -127,10 +161,30 @@ pub async fn generate_llm_response(
                     >()));
                 }
 
-                let options = GenerationOptions::default()
-                    .temperature(params.temperature)
-                    .num_ctx(CONTEXT_WINDOW.into());
-                request.options = Some(options);
+                // Apply special thinking model configuration if present
+                if let Some(thinking_config) = &params.thinking_config {
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "[{} {} {} {}]: Configuring thinking model with topP={}, topK={}.",
+                        worker_detail.name, worker_detail.id, worker_detail.model,
+                        worker_detail.connection_info,
+                        thinking_config.top_p, thinking_config.top_k
+                    );
+
+                    // Note: min_p is not available in the current version of ollama-rs
+                    let options = GenerationOptions::default()
+                        .temperature(params.temperature)
+                        .top_p(thinking_config.top_p)
+                        .top_k(thinking_config.top_k as u32)
+                        .num_ctx(CONTEXT_WINDOW.into());
+                    request.options = Some(options);
+                } else {
+                    // Regular non-thinking model configuration
+                    let options = GenerationOptions::default()
+                        .temperature(params.temperature)
+                        .num_ctx(CONTEXT_WINDOW.into());
+                    request.options = Some(options);
+                }
 
                 // Log detailed request information
                 debug!(
@@ -152,6 +206,51 @@ pub async fn generate_llm_response(
                 match timeout(Duration::from_secs(120), ollama.generate(request)).await {
                     Ok(Ok(response)) => {
                         response_text = response.response;
+
+                        // Process thinking tags if needed
+                        if let Some(thinking_config) = &params.thinking_config {
+                            if thinking_config.strip_thinking_tags {
+                                debug!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "[{} {} {} {}]: Response contains thinking tags: {}",
+                                    worker_detail.name, worker_detail.id, worker_detail.model,
+                                    worker_detail.connection_info,
+                                    response_text.contains("<think>")
+                                );
+
+                                let original_text = response_text.clone();
+                                response_text = strip_thinking_tags(&response_text);
+
+                                if response_text != original_text {
+                                    debug!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Stripped thinking tags from response.",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info
+                                    );
+                                } else {
+                                    warn!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Expected thinking tags but none found in response.",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info
+                                    );
+                                }
+
+                                if response_text.trim().is_empty() {
+                                    error!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Empty response after stripping thinking tags.",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info
+                                    );
+                                    response_text =
+                                        "Error: Empty response after stripping thinking tags."
+                                            .to_string();
+                                }
+                            }
+                        }
+
                         debug!(
                             target: TARGET_LLM_REQUEST,
                             "[{} {} {} {}]: Ollama response: {}.",
@@ -207,6 +306,51 @@ pub async fn generate_llm_response(
                     Ok(Ok(response)) => {
                         if let Some(choice) = response.choices.first() {
                             response_text = choice.text.clone();
+
+                            // Process thinking tags if needed
+                            if let Some(thinking_config) = &params.thinking_config {
+                                if thinking_config.strip_thinking_tags {
+                                    debug!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Checking OpenAI response for thinking tags: {}",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info,
+                                        response_text.contains("<think>")
+                                    );
+
+                                    let original_text = response_text.clone();
+                                    response_text = strip_thinking_tags(&response_text);
+
+                                    if response_text != original_text {
+                                        debug!(
+                                            target: TARGET_LLM_REQUEST,
+                                            "[{} {} {} {}]: Stripped thinking tags from OpenAI response.",
+                                            worker_detail.name, worker_detail.id, worker_detail.model,
+                                            worker_detail.connection_info
+                                        );
+                                    } else {
+                                        warn!(
+                                            target: TARGET_LLM_REQUEST,
+                                            "[{} {} {} {}]: Expected thinking tags but none found in OpenAI response.",
+                                            worker_detail.name, worker_detail.id, worker_detail.model,
+                                            worker_detail.connection_info
+                                        );
+                                    }
+
+                                    if response_text.trim().is_empty() {
+                                        error!(
+                                            target: TARGET_LLM_REQUEST,
+                                            "[{} {} {} {}]: Empty OpenAI response after stripping thinking tags.",
+                                            worker_detail.name, worker_detail.id, worker_detail.model,
+                                            worker_detail.connection_info
+                                        );
+                                        response_text =
+                                            "Error: Empty response after stripping thinking tags."
+                                                .to_string();
+                                    }
+                                }
+                            }
+
                             debug!(
                                 target: TARGET_LLM_REQUEST,
                                 "[{} {} {} {}]: OpenAI response: {}.",

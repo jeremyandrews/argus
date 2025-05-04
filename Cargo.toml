@@ -73,6 +73,10 @@ name = "test_ollama_endpoints"
 path = "src/bin/test_ollama_endpoints.rs"
 
 [[bin]]
+name = "test_thinking_model"
+path = "src/bin/test_thinking_model.rs"
+
+[[bin]]
 name = "test_entity_normalizer"
 path = "src/bin/test_entity_normalizer.rs"
 

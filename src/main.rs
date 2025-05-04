@@ -23,7 +23,10 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::{FallbackConfig, LLMClient, START_TIME, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
+use argus::{
+    FallbackConfig, LLMClient, ThinkingModelConfig, START_TIME, TARGET_LLM_REQUEST,
+    TARGET_WEB_REQUEST,
+};
 
 use environment::get_env_var_as_vec;
 
@@ -333,6 +336,16 @@ async fn main() -> Result<()> {
         decision_handles.push(decision_worker_handle);
     }
 
+    // Configure thinking model for the first worker
+    let thinking_model_id = 1;
+    let thinking_model_name = "qwen3:30b-a3b-fp16".to_string();
+    let thinking_config = ThinkingModelConfig {
+        strip_thinking_tags: true,
+        top_p: 0.95,
+        top_k: 20,
+        min_p: 0.0,
+    };
+
     // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
     for worker_config in analysis_workers.into_iter() {
@@ -341,17 +354,44 @@ async fn main() -> Result<()> {
         let analysis_worker_slack_channel = slack_channel.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Analysis Worker {}", worker_config.id);
+
+        // Check if this is our designated thinking model worker
+        let is_thinking_worker = worker_config.id == thinking_model_id;
+
+        // If this is the thinking worker and we have a special model name, replace the model
+        let worker_model = if is_thinking_worker && !thinking_model_name.is_empty() {
+            info!(target: TARGET_LLM_REQUEST, "{}: Using thinking model '{}' with special parameters", thread_name, thinking_model_name);
+            thinking_model_name.clone()
+        } else {
+            worker_config.model.clone()
+        };
+
+        // Use thinking config for the first worker
+        let worker_thinking_config = if is_thinking_worker {
+            Some(thinking_config.clone())
+        } else {
+            None
+        };
+
+        // Special temperature for thinking model
+        let worker_temperature = if is_thinking_worker {
+            0.6 // Temperature=0.6 for thinking model as specified in requirements
+        } else {
+            temperature
+        };
+
         let analysis_handle = tokio::spawn(async move {
-            info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_config.model);
+            info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_model);
             match analysis_worker::analysis_loop(
                 worker_config.id,
                 &decision_worker_topics,
                 &worker_config.llm_client,
-                &worker_config.model,
+                &worker_model,
                 &analysis_worker_slack_token,
                 &analysis_worker_slack_channel,
-                temperature,
+                worker_temperature,
                 worker_config.fallback,
+                worker_thinking_config,
             )
             .await
             {
