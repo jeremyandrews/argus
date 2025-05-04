@@ -15,7 +15,7 @@ use tracing::{info, warn};
 
 use crate::db::core::Database;
 use crate::entity::matching::calculate_entity_similarity;
-use crate::vector::get_article_entities;
+use crate::vector::search::get_article_entities;
 use crate::SubscriptionsResponse;
 
 /// Represents the response for an authentication request, containing a JWT token.
@@ -216,38 +216,41 @@ async fn analyze_article_match(
     };
 
     // Step 2: Calculate vector similarity
-    let vector_similarity = match crate::vector::get_article_vector_from_qdrant(source_article_id)
-        .await
-    {
-        Ok(source_vector) => {
-            match crate::vector::get_article_vector_from_qdrant(target_article_id).await {
-                Ok(target_vector) => {
-                    match crate::vector::calculate_direct_similarity(&source_vector, &target_vector)
-                    {
-                        Ok(similarity) => similarity,
-                        Err(e) => {
-                            warn!("Failed to calculate direct vector similarity: {}", e);
-                            response.reason_for_failure =
-                                Some("Failed to calculate vector similarity".to_string());
-                            return Ok(Json(response));
+    let vector_similarity =
+        match crate::vector::storage::get_article_vector_from_qdrant(source_article_id).await {
+            Ok(source_vector) => {
+                match crate::vector::storage::get_article_vector_from_qdrant(target_article_id)
+                    .await
+                {
+                    Ok(target_vector) => {
+                        match crate::vector::similarity::calculate_direct_similarity(
+                            &source_vector,
+                            &target_vector,
+                        ) {
+                            Ok(similarity) => similarity,
+                            Err(e) => {
+                                warn!("Failed to calculate direct vector similarity: {}", e);
+                                response.reason_for_failure =
+                                    Some("Failed to calculate vector similarity".to_string());
+                                return Ok(Json(response));
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    warn!("Failed to retrieve target article vector: {}", e);
-                    response.reason_for_failure =
-                        Some("Failed to retrieve target article vector".to_string());
-                    return Ok(Json(response));
+                    Err(e) => {
+                        warn!("Failed to retrieve target article vector: {}", e);
+                        response.reason_for_failure =
+                            Some("Failed to retrieve target article vector".to_string());
+                        return Ok(Json(response));
+                    }
                 }
             }
-        }
-        Err(e) => {
-            warn!("Failed to retrieve source article vector: {}", e);
-            response.reason_for_failure =
-                Some("Failed to retrieve source article vector".to_string());
-            return Ok(Json(response));
-        }
-    };
+            Err(e) => {
+                warn!("Failed to retrieve source article vector: {}", e);
+                response.reason_for_failure =
+                    Some("Failed to retrieve source article vector".to_string());
+                return Ok(Json(response));
+            }
+        };
 
     response.vector_similarity = vector_similarity;
 

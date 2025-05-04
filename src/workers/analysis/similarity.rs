@@ -1,6 +1,8 @@
 use crate::db::core::Database;
 use crate::vector::{
-    get_article_vectors, get_similar_articles, get_similar_articles_with_entities, store_embedding,
+    embedding::get_article_vectors,
+    search::{get_similar_articles, get_similar_articles_with_entities},
+    storage::store_embedding,
 };
 use serde_json::json;
 use tokio::time::Instant;
@@ -8,7 +10,7 @@ use tracing::{debug, error, info};
 
 /// Converts an ArticleMatch and article details into a standardized JSON representation
 pub fn build_similar_article_json(
-    article: &crate::vector::ArticleMatch,
+    article: &crate::vector::types::ArticleMatch,
     json_url: Option<String>,
     title: Option<String>,
     tiny_summary: Option<String>,
