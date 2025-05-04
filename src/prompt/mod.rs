@@ -4,7 +4,7 @@ mod common;
 mod decisions;
 mod entity;
 mod insights;
-mod relevance;
+pub mod relevance;
 mod scoring;
 mod summarization;
 

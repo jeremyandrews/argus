@@ -1,11 +1,15 @@
-pub mod analysis_worker;
+pub mod workers; // New modular workers organization
+
+// Re-exports for backward compatibility
+pub use workers::analysis::worker_loop as analysis_worker;
+pub use workers::decision::worker_loop as decision_worker;
+
 pub mod app {
     pub mod api;
     pub mod util;
 }
 pub mod clustering;
 pub mod db; // Now uses the directory module structure
-pub mod decision_worker;
 pub mod entity;
 pub mod environment;
 pub mod llm;

@@ -148,7 +148,7 @@ async fn find_articles_without_clusters(
     Ok(articles)
 }
 
-async fn is_new_cluster(cluster_id: i64) -> bool {
+async fn is_new_cluster(_cluster_id: i64) -> bool {
     // Used to check if this is a newly created cluster
     // For simplicity, we'll just return true if any new cluster is created
     // In a production implementation, you might want to track this differently

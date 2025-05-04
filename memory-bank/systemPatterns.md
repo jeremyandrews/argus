@@ -1,283 +1,201 @@
-# Argus System Patterns
+# System Patterns and Architecture
 
-## Architectural Overview
-Argus employs a multi-worker processing pipeline architecture that maximizes throughput and resilience. The system comprises several specialized worker types that operate concurrently to process different stages of the content lifecycle.
+## Core Architecture
+
+Argus is a modular Rust application built around several key components:
+
+1. **RSS Fetching**: Gather news and content from configured RSS feeds
+2. **Content Processing**: Extract and analyze article content
+3. **Decision Making**: Determine relevance and priority of articles
+4. **Analysis**: Perform in-depth analysis of relevant articles
+5. **Database Storage**: Store articles, analysis results, and metadata
+6. **API Interface**: Expose results and controls to users
+
+## Worker System Architecture
+
+The worker system is a crucial component, operating with a modular pattern:
 
 ```mermaid
 flowchart TD
-    RSS[RSS Fetcher] --> Queue[(RSS Queue)]
-    Queue --> DW1[Decision Worker 1]
-    Queue --> DW2[Decision Worker 2]
-    Queue --> DWn[Decision Worker n]
+    subgraph RSS[RSS Processing]
+        RSS_Feed[RSS Feed Parsing] --> RSS_Queue[RSS Queue]
+    end
     
-    DW1 --> LifeSafety[(Life Safety Queue)]
-    DW1 --> MatchedTopics[(Matched Topics Queue)]
-    DW2 --> LifeSafety
-    DW2 --> MatchedTopics
-    DWn --> LifeSafety
-    DWn --> MatchedTopics
+    subgraph Workers[Worker System]
+        subgraph Decision[Decision Worker]
+            Worker_Loop[Worker Loop] --> Text_Extraction[Text Extraction]
+            Worker_Loop --> Threat_Assessment[Threat Assessment]
+            Worker_Loop --> Topic_Processing[Topic Processing]
+        end
+        
+        subgraph Analysis[Analysis Worker]
+            Analysis_Loop[Worker Loop] --> Processing[Processing]
+            Processing --> Quality[Quality Assessment]
+            Processing --> Entity[Entity Handling]
+            Processing --> Similarity[Similarity Analysis]
+        end
+    end
     
-    LifeSafety --> AW1[Analysis Worker 1]
-    MatchedTopics --> AW1
-    LifeSafety --> AW2[Analysis Worker 2]
-    MatchedTopics --> AW2
+    subgraph Storage[Storage]
+        DB[Database] --> Articles[Articles]
+        DB --> Entities[Entities]
+        DB --> Clusters[Clusters]
+    end
     
-    AW1 --> VS[(Vector Store)]
-    AW1 --> DB[(SQLite Database)]
-    AW1 --> ES[(Entity Store)]
-    AW2 --> VS
-    AW2 --> DB
-    AW2 --> ES
-    
-    DB --> API[API Server]
-    VS --> API
-    ES --> API
-    
-    API --> Slack[Slack Notifications]
-    API --> Mobile[Mobile App]
+    RSS_Queue --> Decision
+    Decision --> Storage
+    Decision --> Analysis
+    Analysis --> Storage
 ```
 
-## Core Design Patterns
+### Worker Module Organization
 
-### 1. Worker Pipeline Pattern
-- **Workers**: Specialized processes for specific tasks (RSS fetching, decision making, analysis)
-- **Message Queues**: Database tables functioning as work queues
-- **Concurrency**: Multiple workers processing items simultaneously
-- **Load Distribution**: Random and prioritized queue item selection
+The worker system is now organized in a modular fashion:
 
-### 2. Content Processing Pipeline
+```
+src/workers/
+├── mod.rs                 # Main module export
+├── common.rs              # Shared functionality between workers
+├── analysis/              # Analysis worker components
+│   ├── mod.rs             # Module exports
+│   ├── worker_loop.rs     # Main analysis worker loop
+│   ├── processing.rs      # Processing logic
+│   ├── quality.rs         # Quality assessment functionality
+│   ├── similarity.rs      # Similarity calculation
+│   └── entity_handling.rs # Entity extraction and processing
+└── decision/              # Decision worker components
+    ├── mod.rs             # Module exports
+    ├── worker_loop.rs     # Main decision worker loop
+    ├── processing.rs      # Processing logic
+    ├── extraction.rs      # Article text extraction
+    └── threat.rs          # Threat assessment functionality
+```
+
+#### Decision Worker Flow
+
 ```mermaid
-flowchart LR
-    Fetch[RSS Fetch] --> Extract[Content Extraction]
-    Extract --> Decide[Relevance Decision]
-    Decide --> Queue[Topic/Safety Queuing]
-    Queue --> Analyze[Deep Analysis]
-    Analyze --> Store[Database Storage]
-    Store --> EntityExtract[Entity Extraction]
-    EntityExtract --> Vector[Vector Embedding]
-    Vector --> Similar[Similarity Matching]
-    Similar --> Notify[Notification]
+flowchart TD
+    start[Start] --> loop[Main Loop]
+    loop --> rss_queue[Fetch from RSS Queue]
+    rss_queue --> check_age[Check Article Age]
+    check_age --> |Too Old| skip[Skip Article]
+    check_age --> |Recent| extract[Extract Article Text]
+    extract --> |Failed| handle_error[Record Access Error]
+    extract --> |Success| threat_check[Check for Threats]
+    threat_check --> |Is Threat| location_check[Determine Threat Location]
+    location_check --> |Specific Location| safety_queue[Add to Life Safety Queue]
+    location_check --> |No Specific Location| topic_process[Process for Topics]
+    threat_check --> |Not Threat| topic_process
+    topic_process --> promo_check[Check if Promotional]
+    promo_check --> |Is Promotional| skip_promo[Skip as Non-Relevant]
+    promo_check --> |Not Promotional| topics_loop[Loop Through Topics]
+    topics_loop --> relevance_check[Check Relevance to Topic]
+    relevance_check --> |Not Relevant| next_topic[Try Next Topic]
+    relevance_check --> |Relevant| matched_queue[Add to Matched Topics Queue]
+    topics_loop --> |No Matches| record_non_relevant[Record as Non-Relevant]
+    skip --> loop
+    handle_error --> loop
+    safety_queue --> loop
+    skip_promo --> loop
+    matched_queue --> loop
+    next_topic --> topics_loop
+    record_non_relevant --> loop
 ```
 
-### 3. Database Patterns
-- **Central SQLite Database**: Persistent storage with structured schema
-- **Modular Organization**: Directory-based structure with domain-specific files:
-  - `core.rs`: Core database functionality and connection management
-  - `article.rs`: Article storage and retrieval operations
-  - `queue.rs`: Queue management for workers
-  - `device.rs`: Mobile device registration and notification
-  - `schema.rs`: Database schema definitions and migrations
-  - `entity/`: Submodule for entity-related database operations
-  - `cluster.rs`: Clustering operations for related articles
-- **Queue Tables**: RSS, Matched Topics, and Life Safety queues
-- **Article Storage**: Complete content with analysis metadata
-- **Entity Storage**: Named entity extraction with relationships
-- **Index Optimization**: Strategic indexing for query performance
+#### Analysis Worker Flow
 
-### 4. Content Matching Patterns
-1. **Multi-Factor Similarity**
-   - Combines vector similarity (60% weight), entity overlap (30% weight), and temporal proximity (10% weight)
-   - Enforces minimum threshold (0.70) that requires both vector similarity and entity overlap
-   - Provides transparency with detailed similarity metrics for debugging and improvement
-   - Ensures consistent weighting across all code paths
-   
-2. **Vector Similarity Matching**
-   - Embeds article summaries into vector space using Qdrant
-   - Calculates cosine similarity between embeddings
-   - Retrieves vectors directly from Qdrant for comparison
-   - Handles special cases like self-comparisons with explicit logic
-   
-3. **Entity-Based Matching**
-   - Extracts named entities (people, organizations, locations, events) with structured LLM prompts
-   - Normalizes entity names for consistent matching
-   - Tracks entity importance (PRIMARY, SECONDARY, MENTIONED)
-   - Links articles sharing significant entities with importance-based weighting
-   - Performs entity type-specific scoring (person, organization, location, event)
-   
-4. **Temporal Correlation**
-   - Tracks publication dates and event dates
-   - Uses dynamic date windows for related article matching (14 days before to 1 day after)
-   - Groups content related to the same timeframe
-   - Enables chronological event tracking
-   
-5. **Dual-Query Approach**
-   - Combines entity-based and vector-based search results
-   - Ensures high recall by capturing matches from both approaches
-   - Deduplicates and ranks results based on combined score
-   - Provides fallback patterns when one approach fails
+```mermaid
+flowchart TD
+    start[Start] --> loop[Main Loop]
+    loop --> check_mode[Check Current Mode]
+    check_mode --> |Analysis Mode| try_safety[Try Life Safety Queue]
+    try_safety --> |Found Item| process_safety[Process Safety Item]
+    try_safety --> |Empty| try_topics[Try Matched Topics Queue]
+    try_topics --> |Found Item| process_topics[Process Topic Item]
+    try_topics --> |Empty| sleep[Sleep and Continue]
+    check_mode --> |Fallback Decision Mode| fetch_rss[Fetch from RSS Queue]
+    fetch_rss --> process_feed[Process Feed Item as Decision Worker]
+    process_feed --> check_duration[Check Fallback Duration]
+    check_duration --> |Expired| switch_back[Switch to Analysis Mode]
+    check_duration --> |Not Expired| loop
+    process_safety --> loop
+    process_topics --> loop
+    sleep --> check_idle[Check Idle Time]
+    check_idle --> |Idle Too Long| has_fallback[Check for Fallback Config]
+    check_idle --> |Not Idle| loop
+    has_fallback --> |Fallback Available| switch_mode[Switch to Fallback Decision Mode] 
+    has_fallback --> |No Fallback| loop
+    switch_mode --> loop
+    switch_back --> loop
+```
 
-6. **Database-Driven Entity Alias System**
-   - Replaces static hardcoded aliases with dynamic database-backed approach
-   - Uses multi-tier matching strategy:
-     * Direct matching after basic normalization
-     * Database alias lookup for known entity variations
-     * Fuzzy matching with configurable thresholds as fallback
-     * Negative match checking to prevent repeated false positives
-   - Implements alias discovery through multiple sources:
-     * Pattern-based extraction from text (e.g., "X, formerly known as Y")
-     * LLM-based alias detection using specialized prompts
-     * User feedback and manual corrections
-     * Cross-article entity correlation analysis
-   - Employs learning mechanisms:
-     * Confidence scoring based on source reliability
-     * Pattern effectiveness tracking and optimization
-     * Negative learning to avoid repeated mistakes
-     * Usage statistics to prioritize common aliases
+### Prompt System Architecture
 
-   ```mermaid
-   flowchart TD
-     Input[Entity Name] --> BasicNorm[Basic Normalization]
-     BasicNorm --> Cache{Cache Lookup}
-     Cache -->|Hit| Return[Return Result]
-     
-     Cache -->|Miss| DBLookup{Database Lookup}
-     DBLookup -->|Match| ReturnDB[Return Result]
-     DBLookup -->|No Match| NegCheck{Negative Check}
-     
-     NegCheck -->|Blacklisted| ReturnNeg[Return No Match]
-     NegCheck -->|Not Blacklisted| Fuzzy{Fuzzy Matching}
-     
-     Fuzzy -->|Above Threshold| LogSuggestion[Log Suggestion]
-     LogSuggestion --> ReturnFuzzy[Return Match]
-     
-     Fuzzy -->|Below Threshold| ReturnNoMatch[Return No Match]
-   ```
+The prompt system is organized in a modular fashion to match the workers system:
 
-### 5. Analysis Patterns
-- **Multi-Stage Analysis**: Progressive refinement of content understanding
-- **Quality Scoring**: Source quality and argument quality metrics
-- **Actionable Content**: Generating practical recommendations and discussion points
-  - *Action Recommendations*: Providing 3-5 concrete, practical steps users can take based on article content
-  - *Talking Points*: Creating 3-5 discussion-worthy topics to facilitate sharing and conversation
-- **Fallback Mechanism**: Adaptive worker behavior during idle periods
+```
+src/prompt/
+├── mod.rs               # Main module with exports
+├── analysis.rs          # Analysis-related prompts
+├── common.rs            # Common prompt utilities
+├── decisions.rs         # Decision-making prompts
+├── entity.rs            # Entity-related prompts
+├── insights.rs          # Insight generation prompts
+├── relevance.rs         # Relevance assessment prompts
+├── scoring.rs           # Quality scoring prompts
+└── summarization.rs     # Summary generation prompts
+```
 
-### 6. Notification Patterns
-- **Topic-Based Filtering**: User subscription to specific topics
-- **Priority-Based Delivery**: Life safety alerts receive highest priority
-- **Multi-Channel Distribution**: Slack and mobile application delivery
-- **Rich Content Display**: Formatted analysis with embedded metadata
+## Database Architecture
 
-## Key Implementation Patterns
+The database layer is organized as follows:
 
-### Article Clustering System
-- **Clustering Strategy**: Entity-centric approach to grouping related articles
-  ```mermaid
-  flowchart TD
-    A[New Article] --> B[Entity Extraction]
-    B --> C{Find Matching Cluster}
-    C -->|Match Found| D[Add to Existing Cluster]
-    C -->|No Match| E[Create New Cluster]
-    D --> F[Update Cluster Summary]
-    E --> F
-    F --> G[Calculate Importance Score]
-    G --> H[Update User Preferences]
-  ```
+```
+src/db/
+├── mod.rs              # Main module exports
+├── core.rs             # Core database functionality
+├── article.rs          # Article-related operations
+├── cluster.rs          # Clustering functionality
+├── device.rs           # Device management
+├── queue.rs            # Queue operations
+├── schema.rs           # Database schema
+└── entity/             # Entity subsystem
+    ├── mod.rs          # Entity module exports
+    ├── core.rs         # Core entity functionality
+    ├── alias.rs        # Entity alias handling
+    └── relation.rs     # Entity relationship handling
+```
 
-- **Storage Architecture**:
-  - `article_clusters`: Central table for cluster metadata, summaries, and metrics
-  - `article_cluster_mappings`: Many-to-many relationships between articles and clusters
-  - `user_cluster_preferences`: User-specific settings for cluster interactions
-  - Comprehensive indexing for optimized query performance
+## Entity System
 
-- **Integration Patterns**:
-  - In-line clustering during article analysis
-  - Batch processing for historical articles
-  - Automatic summary generation using existing LLM infrastructure
-  - Importance scoring based on multiple factors (article count, quality, recency)
-  - Enhanced article worker to handle all clustering operations
+The entity system handles the extraction, normalization, and relationship management of entities:
 
-- **Core Operations**:
-  - **Cluster Assignment**: Identifying the best cluster for an article based on entity overlap
-  - **Summary Generation**: Creating cohesive summaries across multiple related articles
-  - **Significance Calculation**: Weighted scoring to prioritize important clusters
-  - **User Preference Management**: Tracking user interactions with specific clusters
+```
+src/entity/
+├── mod.rs              # Main module exports
+├── aliases.rs          # Alias management
+├── extraction.rs       # Entity extraction
+├── matching.rs         # Entity matching
+├── normalizer.rs       # Entity normalization
+├── repository.rs       # Entity storage
+└── types.rs            # Entity type definitions
+```
 
-- **Query Optimization**:
-  - Strategic indexing on frequently queried fields
-  - Batch operations for efficiency
-  - Query caching for repeated operations
-  - Optimized join patterns for related data retrieval
+## Worker Communication Pattern
 
-### Worker Management
-- **Startup Sequence**: Orderly initialization of system components
-- **Worker Configuration**: Environment-based configuration
-- **Error Handling**: Graceful failure recovery with logging
-- **Retry Logic**: Exponential backoff for transient failures
+Workers communicate through the database using specialized queues:
 
-### Content Processing 
-- **URL Normalization**: Consistent handling of URLs to prevent duplicates
-- **Hash-Based Deduplication**: Content-based duplicate detection
-- **HTML Parsing**: Robust extraction of article content
-- **Quality Thresholds**: Minimum requirements for processing
+1. **RSS Queue**: Contains URLs to be processed by Decision Workers
+2. **Life Safety Queue**: Urgent items about threats requiring immediate analysis
+3. **Matched Topics Queue**: Articles matching configured topics requiring analysis
 
-### Entity Extraction
-- **Entity Recognition**: LLM-based identification of named entities
-- **Entity Categorization**: Classification by type (PERSON, ORGANIZATION, etc.)
-- **Importance Ranking**: Determination of entity significance to article
-- **Normalization**: Standardization of entity names for matching
+## Fallback Pattern
 
-### Prompt Management
-- **Modular Prompt Architecture**: Directory-based organization by domain functionality
-  ```
-  src/prompt/
-  ├── mod.rs             # Central module exports
-  ├── common.rs          # Shared utilities and constants 
-  ├── summarization.rs   # Summary generation prompts
-  ├── analysis.rs        # Critical analysis prompts
-  ├── relevance.rs       # Topic relevance determination
-  ├── scoring.rs         # Quality scoring templates
-  ├── insights.rs        # Additional insights generation
-  ├── decisions.rs       # Decision-making prompt templates
-  └── entity.rs          # Entity extraction prompts
-  ```
-- **Prompt Component Pattern**: Breaking complex prompts into reusable sections
-  - **Common Components**: Shared instructions, formatting guidelines, output expectations
-  - **Domain-Specific Components**: Task-focused instructions for specialized analysis
-  - **Example-Based Learning**: Curated examples for consistent LLM responses
-  - **Constraint Expression**: Clear boundaries and limitations to guide responses
-  
-- **Prompt Versioning Strategy**:
-  - Gradual refinement based on real-world performance
-  - Backwards compatibility with existing system components
-  - Consistent naming across related prompt functions
-  - Documentation of prompt design decisions and rationales
-  
-- **Prompt Testing and Validation**:
-  - Explicit output schema validation
-  - Response consistency checking
-  - Error handling for unexpected LLM responses
-  - Performance metrics for prompt effectiveness
+The analysis worker implements a fallback pattern that allows it to:
 
-### Entity Alias Management
-- **Single Source of Truth**: Database-driven approach for all alias operations
-- **Progressive Matching Fallback**:
-  1. Exact match after basic normalization (fastest)
-  2. Database-driven alias lookup (reliable)
-  3. Fuzzy matching with configurable thresholds (flexible)
-  4. Pattern-based matching for specific entity types (specialized)
-- **Confidence Scoring System**:
-  - Source-based weighting (admin > user feedback > pattern > LLM)
-  - Similarity-based adjustment (higher confidence for closer matches)
-  - Entity type-specific thresholds (different for person, organization, etc.)
-  - Usage-based reinforcement (frequently matched pairs gain confidence)
-- **Intelligent Discovery**:
-  - Text pattern extraction (regex-based and grammar parsing)
-  - LLM semantic analysis (specialized prompts for alias identification)
-  - Cross-article co-reference detection (statistical co-occurrence analysis)
-  - User feedback integration (corrections and suggestions)
-- **Performance Optimization**:
-  - Two-level caching (memory and disk)
-  - Alias batch processing for efficiency
-  - Strategic indexing on normalized forms
-  - Hit frequency tracking for cache optimization
-- **Administrative Workflow**:
-  - CLI tools for alias management
-  - Batch review and approval process
-  - Statistical tracking and reporting
-  - Export/import capabilities
+1. Monitor its idle time
+2. Switch to act as a Decision worker if idle too long
+3. Process RSS queue items directly during fallback mode
+4. Switch back to Analysis mode after a predetermined time
 
-### Data Persistence
-- **Transaction Management**: ACID compliance for critical operations
-- **Concurrent Access**: Safe multi-worker database operations
-- **Query Optimization**: Performance-tuned database interactions
-- **Schema Evolution**: Forward-compatible database design
+This enables efficient resource utilization when there are no analysis tasks pending.
