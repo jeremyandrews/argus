@@ -96,11 +96,11 @@ async fn test_endpoint(host: &str, port: u16) -> EndpointStatus {
 
 /// Test all Decision worker endpoints
 async fn test_decision_endpoints(
-    configs: &[(String, u16, String)],
+    configs: &[(String, u16, String, bool)],
 ) -> HashMap<String, EndpointStatus> {
     let mut results = HashMap::new();
 
-    for (host, port, _) in configs {
+    for (host, port, _, _) in configs {
         let endpoint_key = format!("{}:{}", host, port);
         let status = test_endpoint(host, *port).await;
         results.insert(endpoint_key, status);
@@ -111,18 +111,24 @@ async fn test_decision_endpoints(
 
 /// Test all Analysis worker endpoints (including fallbacks)
 async fn test_analysis_endpoints(
-    configs: &[(String, u16, String, Option<(String, u16, String)>)],
+    configs: &[(
+        String,
+        u16,
+        String,
+        bool,
+        Option<(String, u16, String, bool)>,
+    )],
 ) -> HashMap<String, EndpointStatus> {
     let mut results = HashMap::new();
 
     // Test main endpoints
-    for (host, port, _, fallback) in configs {
+    for (host, port, _, _, fallback) in configs {
         let endpoint_key = format!("{}:{}", host, port);
         let status = test_endpoint(host, *port).await;
         results.insert(endpoint_key, status);
 
         // Also test fallback endpoint if available
-        if let Some((fallback_host, fallback_port, _)) = fallback {
+        if let Some((fallback_host, fallback_port, _, _)) = fallback {
             let fallback_key = format!("{}:{} (fallback)", fallback_host, fallback_port);
             let fallback_status = test_endpoint(fallback_host, *fallback_port).await;
             results.insert(fallback_key, fallback_status);
@@ -134,7 +140,7 @@ async fn test_analysis_endpoints(
 
 /// Print report for Decision worker endpoints
 fn print_decision_report(
-    configs: &[(String, u16, String)],
+    configs: &[(String, u16, String, bool)],
     results: &HashMap<String, EndpointStatus>,
 ) {
     println!("\nDECISION WORKERS");
@@ -148,7 +154,7 @@ fn print_decision_report(
     let mut up_count = 0;
     let mut missing_models = HashMap::new();
 
-    for (host, port, expected_model) in configs {
+    for (host, port, expected_model, _no_think) in configs {
         let endpoint_key = format!("{}:{}", host, port);
 
         match results.get(&endpoint_key) {
@@ -210,7 +216,13 @@ fn print_decision_report(
 
 /// Print report for Analysis worker endpoints
 fn print_analysis_report(
-    configs: &[(String, u16, String, Option<(String, u16, String)>)],
+    configs: &[(
+        String,
+        u16,
+        String,
+        bool,
+        Option<(String, u16, String, bool)>,
+    )],
     results: &HashMap<String, EndpointStatus>,
 ) {
     println!("\nANALYSIS WORKERS");
@@ -227,7 +239,7 @@ fn print_analysis_report(
     let mut fallback_up_count = 0;
     let mut missing_models = HashMap::new();
 
-    for (host, port, expected_model, fallback) in configs {
+    for (host, port, expected_model, _no_think, fallback) in configs {
         let endpoint_key = format!("{}:{}", host, port);
         main_endpoints += 1;
 
@@ -279,7 +291,7 @@ fn print_analysis_report(
         }
 
         // Check fallback endpoint if present
-        if let Some((fallback_host, fallback_port, fallback_model)) = fallback {
+        if let Some((fallback_host, fallback_port, fallback_model, _fallback_no_think)) = fallback {
             fallback_endpoints += 1;
             let fallback_key = format!("{}:{} (fallback)", fallback_host, fallback_port);
 
@@ -343,9 +355,15 @@ fn print_analysis_report(
 
 /// Print overall summary
 fn print_summary(
-    decision_configs: &[(String, u16, String)],
+    decision_configs: &[(String, u16, String, bool)],
     decision_results: &HashMap<String, EndpointStatus>,
-    analysis_configs: &[(String, u16, String, Option<(String, u16, String)>)],
+    analysis_configs: &[(
+        String,
+        u16,
+        String,
+        bool,
+        Option<(String, u16, String, bool)>,
+    )],
     analysis_results: &HashMap<String, EndpointStatus>,
 ) {
     println!("\nOVERALL SUMMARY");
@@ -356,7 +374,7 @@ fn print_summary(
     let mut unknown_status_models: HashMap<String, Vec<String>> = HashMap::new();
 
     // Check Decision endpoints for model status
-    for (host, port, model) in decision_configs {
+    for (host, port, model, _no_think) in decision_configs {
         let endpoint_key = format!("{}:{}", host, port);
         match decision_results.get(&endpoint_key) {
             Some(EndpointStatus::Up(available_models)) => {
@@ -379,7 +397,7 @@ fn print_summary(
     }
 
     // Check Analysis endpoints for model status
-    for (host, port, model, fallback) in analysis_configs {
+    for (host, port, model, _no_think, fallback) in analysis_configs {
         let endpoint_key = format!("{}:{}", host, port);
 
         // Check main endpoint
@@ -401,7 +419,7 @@ fn print_summary(
         }
 
         // Check fallback endpoint if present
-        if let Some((fallback_host, fallback_port, fallback_model)) = fallback {
+        if let Some((fallback_host, fallback_port, fallback_model, _fallback_no_think)) = fallback {
             let fallback_key = format!("{}:{} (fallback)", fallback_host, fallback_port);
             match analysis_results.get(&fallback_key) {
                 Some(EndpointStatus::Up(available_models)) => {
@@ -437,7 +455,7 @@ fn print_summary(
         + analysis_configs.len()
         + analysis_configs
             .iter()
-            .filter_map(|(_, _, _, f)| f.as_ref())
+            .filter_map(|(_, _, _, _, f)| f.as_ref())
             .count();
     let total_up = decision_up + analysis_up;
 
@@ -524,8 +542,9 @@ async fn main() -> Result<()> {
     if decision_configs.is_empty() && analysis_configs.is_empty() {
         println!("\n⚠️ No Ollama configurations found in environment variables.");
         println!("Please set DECISION_OLLAMA_CONFIGS and/or ANALYSIS_OLLAMA_CONFIGS");
-        println!("Format: host|port|model;host|port|model;...");
-        println!("Analysis format (with optional fallback): host|port|model||fallback_host|fallback_port|fallback_model;...");
+        println!("Format: host|port|model|no_think;host|port|model|no_think;...");
+        println!("Analysis format (with optional fallback): host|port|model|no_think||fallback_host|fallback_port|fallback_model|no_think;...");
+        println!("The no_think parameter is a boolean (true/false) that controls whether /no_think is appended to prompts");
         return Ok(());
     }
 

@@ -12,7 +12,10 @@
   - Mobile application (React Native)
 
 ### External Services
-- **LLM Integration**: OpenAI API and local models via Ollama
+- **LLM Integration**: 
+  - OpenAI API for cloud-based models
+  - Local models via Ollama, with special support for:
+    - Qwen models with `/no_think` mode (disables thinking tags for direct responses)
 - **Cloud Storage**: AWS S3/Cloudflare R2 for content storage
 - **Logging**: Tracing library with structured logging
 - **Metrics**: Prometheus-compatible metrics collection

@@ -24,6 +24,7 @@ pub fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
         require_json: None,
         json_format: None,
         thinking_config: None, // No thinking by default in decision worker
+        no_think: false,       // No special no_think mode by default
     }
 }
 

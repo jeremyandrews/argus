@@ -35,7 +35,7 @@ use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 /// Process analysis worker configuration and return client and model
-fn process_analysis_worker_config(configs: &str) -> Option<(LLMClient, String)> {
+fn process_analysis_worker_config(configs: &str) -> Option<(LLMClient, String, bool)> {
     let analysis_configs = argus::process_analysis_ollama_configs(configs);
 
     if analysis_configs.is_empty() {
@@ -43,14 +43,18 @@ fn process_analysis_worker_config(configs: &str) -> Option<(LLMClient, String)> 
         return None;
     }
 
-    let (host, port, model, _) = &analysis_configs[0];
+    let (host, port, model, no_think, _fallback) = &analysis_configs[0];
 
     info!("Using analysis worker configuration with model: {}", model);
     info!("Connecting to Ollama at {}:{}", host, port);
+    if *no_think {
+        info!("No-think mode is enabled for this model");
+    }
 
     Some((
         LLMClient::Ollama(Ollama::new(host.clone(), *port)),
         model.clone(),
+        *no_think,
     ))
 }
 
@@ -109,13 +113,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let analysis_ollama_configs = env::var("ANALYSIS_OLLAMA_CONFIGS")
                 .expect("ANALYSIS_OLLAMA_CONFIGS environment variable must be set");
 
-            let (client, config_model) = process_analysis_worker_config(&analysis_ollama_configs)
-                .expect("Failed to process analysis worker configuration");
+            let (client, config_model, no_think_enabled) =
+                process_analysis_worker_config(&analysis_ollama_configs)
+                    .expect("Failed to process analysis worker configuration");
 
             // Update model if we're using default and config provides one
             if model == "llama3" {
                 info!("Using model {} from analysis configuration", config_model);
                 model = config_model;
+            }
+
+            // Set no_think flag in llm_params later
+            if no_think_enabled {
+                info!("No-think mode will be enabled for model {}", model);
             }
 
             client
@@ -124,13 +134,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Using model: {} with temperature: {}", model, temperature);
 
+    // Determine if we should use no_think mode
+    let use_no_think = env::var("ENTITY_NO_THINK")
+        .map(|v| v.to_lowercase() == "true")
+        .unwrap_or(false);
+
     let mut llm_params = LLMParams {
         llm_client,
         model: model.clone(),
         temperature,
         require_json: None,
         json_format: None,
-        thinking_config: None, // No thinking mode for entity extraction
+        thinking_config: None,  // No thinking mode for entity extraction
+        no_think: use_no_think, // Use no_think mode if configured
     };
 
     let worker_detail = WorkerDetail {

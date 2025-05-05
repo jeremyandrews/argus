@@ -38,6 +38,7 @@ struct AnalysisWorkerConfig {
     llm_client: LLMClient,
     model: String,
     fallback: Option<FallbackConfig>,
+    no_think: bool,
 }
 
 pub fn initialize_start_time() {
@@ -69,22 +70,27 @@ async fn main() -> Result<()> {
     // Process Ollama and OpenAI configs using shared functions
     fn process_ollama_configs_for_workers(
         configs: &str,
-        workers: &mut Vec<(i16, LLMClient, String)>,
+        workers: &mut Vec<(i16, LLMClient, String, bool)>,
         count: &mut i16,
     ) {
-        for (host, port, model) in argus::process_ollama_configs(configs) {
+        for (host, port, model, no_think) in argus::process_ollama_configs(configs) {
             info!(
-                "Configuring Ollama worker {} to connect to model '{}' at {}:{}",
-                *count, model, host, port
+                "Configuring Ollama worker {} to connect to model '{}' at {}:{} (no_think: {})",
+                *count, model, host, port, no_think
             );
-            workers.push((*count, LLMClient::Ollama(Ollama::new(host, port)), model));
+            workers.push((
+                *count,
+                LLMClient::Ollama(Ollama::new(host, port)),
+                model,
+                no_think,
+            ));
             *count += 1;
         }
     }
 
     fn process_openai_configs(
         configs: &str,
-        workers: &mut Vec<(i16, LLMClient, String)>,
+        workers: &mut Vec<(i16, LLMClient, String, bool)>,
         count: &mut i16,
     ) {
         for config in configs.split(';').filter(|c| !c.is_empty()) {
@@ -101,7 +107,8 @@ async fn main() -> Result<()> {
                 "Configuring OpenAI worker {} to connect to model '{}'",
                 *count, model
             );
-            workers.push((*count, LLMClient::OpenAI(client), model));
+            // OpenAI doesn't support no_think mode
+            workers.push((*count, LLMClient::OpenAI(client), model, false));
             *count += 1;
         }
     }
@@ -112,25 +119,29 @@ async fn main() -> Result<()> {
         workers: &mut Vec<AnalysisWorkerConfig>,
         count: &mut i16,
     ) {
-        for (host, port, model, fallback) in argus::process_analysis_ollama_configs(configs) {
+        for (host, port, model, no_think, fallback) in
+            argus::process_analysis_ollama_configs(configs)
+        {
             // Create main LLM client
             let main_llm_client = LLMClient::Ollama(Ollama::new(host.clone(), port));
 
             // Create fallback config if present
-            let fallback_config =
-                fallback.map(
-                    |(fallback_host, fallback_port, fallback_model)| FallbackConfig {
+            let fallback_config = fallback.map(
+                |(fallback_host, fallback_port, fallback_model, fallback_no_think)| {
+                    FallbackConfig {
                         llm_client: LLMClient::Ollama(Ollama::new(
                             fallback_host.clone(),
                             fallback_port,
                         )),
                         model: fallback_model,
-                    },
-                );
+                        no_think: fallback_no_think,
+                    }
+                },
+            );
 
             info!(
-                "Configuring Analysis worker {} to connect to model '{}' at {}:{}",
-                *count, model, host, port
+                "Configuring Analysis worker {} to connect to model '{}' at {}:{} (no_think: {})",
+                *count, model, host, port, no_think
             );
 
             workers.push(AnalysisWorkerConfig {
@@ -138,6 +149,7 @@ async fn main() -> Result<()> {
                 llm_client: main_llm_client,
                 model,
                 fallback: fallback_config,
+                no_think,
             });
             *count += 1;
         }
@@ -188,6 +200,7 @@ async fn main() -> Result<()> {
                     Some(FallbackConfig {
                         llm_client: LLMClient::OpenAI(OpenAIClient::with_config(fallback_config)),
                         model: fallback_model,
+                        no_think: false, // OpenAI doesn't support no_think mode
                     })
                 }
             } else {
@@ -203,6 +216,7 @@ async fn main() -> Result<()> {
                 llm_client: main_llm_client,
                 model: main_model,
                 fallback,
+                no_think: false, // OpenAI doesn't support no_think mode
             });
             *count += 1;
         }
@@ -304,7 +318,7 @@ async fn main() -> Result<()> {
 
     // Launch DECISION workers
     let mut decision_handles = Vec::new();
-    for (decision_id, llm_client, decision_model) in
+    for (decision_id, llm_client, decision_model, no_think) in
         decision_workers.into_iter().take(decision_worker_count)
     {
         let decision_worker_topics = topics.clone();
@@ -322,6 +336,7 @@ async fn main() -> Result<()> {
                 temperature,
                 &decision_worker_slack_token,
                 &decision_worker_slack_channel,
+                no_think,
             )
             .await
             {
@@ -396,6 +411,7 @@ async fn main() -> Result<()> {
                 worker_temperature,
                 worker_config.fallback,
                 worker_thinking_config,
+                worker_config.no_think,
             )
             .await
             {

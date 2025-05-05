@@ -27,6 +27,7 @@ pub async fn analysis_loop(
     temperature: f32,
     fallback: Option<FallbackConfig>,
     thinking_config: Option<ThinkingModelConfig>,
+    no_think: bool,
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut llm_params = LLMParams {
@@ -36,6 +37,7 @@ pub async fn analysis_loop(
         require_json: None,
         json_format: None,
         thinking_config: thinking_config.clone(),
+        no_think,
     };
 
     let mut mode = Mode::Analysis;
@@ -104,6 +106,7 @@ pub async fn analysis_loop(
                             require_json: None,
                             json_format: None,
                             thinking_config: None, // No thinking in fallback mode
+                            no_think: fallback_config.no_think,
                         };
 
                         // Wait for the new model to be operational
@@ -125,6 +128,7 @@ pub async fn analysis_loop(
                                 require_json: None,
                                 json_format: None,
                                 thinking_config: thinking_config.clone(),
+                                no_think,
                             };
                             // Give time for the original model to restore.
                             let _ =
@@ -154,6 +158,7 @@ pub async fn analysis_loop(
                                 require_json: None,
                                 json_format: None,
                                 thinking_config: thinking_config.clone(),
+                                no_think,
                             };
 
                             worker_detail.model = model.to_string();
@@ -238,6 +243,7 @@ pub async fn analysis_loop(
                         require_json: None,
                         json_format: None,
                         thinking_config: thinking_config.clone(),
+                        no_think,
                     };
 
                     // Wait for the original model to be operational

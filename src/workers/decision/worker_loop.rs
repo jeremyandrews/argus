@@ -20,6 +20,7 @@ pub async fn decision_loop(
     temperature: f32,
     slack_token: &str,
     slack_channel: &str,
+    _no_think: bool,
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut rng = StdRng::seed_from_u64(rand::random());

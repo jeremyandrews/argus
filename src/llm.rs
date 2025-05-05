@@ -134,7 +134,20 @@ pub async fn generate_llm_response(
     for retry_count in 0..max_retries {
         match &params.llm_client {
             LLMClient::Ollama(ref ollama) => {
-                let mut request = GenerationRequest::new(params.model.clone(), prompt.to_string());
+                // Determine prompt based on no_think flag
+                let actual_prompt = if params.no_think {
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "[{} {} {} {}]: Using no-think mode with '/no_think' suffix",
+                        worker_detail.name, worker_detail.id, worker_detail.model,
+                        worker_detail.connection_info
+                    );
+                    format!("{} /no_think", prompt)
+                } else {
+                    prompt.to_string()
+                };
+
+                let mut request = GenerationRequest::new(params.model.clone(), actual_prompt);
 
                 // Apply JSON formatting if specified
                 if let Some(json_type) = &params.json_format {
@@ -161,8 +174,22 @@ pub async fn generate_llm_response(
                     >()));
                 }
 
-                // Apply special thinking model configuration if present
-                if let Some(thinking_config) = &params.thinking_config {
+                // Apply model configuration based on mode
+                if params.no_think {
+                    // In no_think mode, use standard parameters
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "[{} {} {} {}]: Using standard parameters for no-think mode",
+                        worker_detail.name, worker_detail.id, worker_detail.model,
+                        worker_detail.connection_info
+                    );
+
+                    let options = GenerationOptions::default()
+                        .temperature(params.temperature)
+                        .num_ctx(CONTEXT_WINDOW.into());
+                    request.options = Some(options);
+                } else if let Some(thinking_config) = &params.thinking_config {
+                    // Regular thinking model configuration
                     debug!(
                         target: TARGET_LLM_REQUEST,
                         "[{} {} {} {}]: Configuring thinking model with topP={}, topK={}.",
@@ -207,8 +234,19 @@ pub async fn generate_llm_response(
                     Ok(Ok(response)) => {
                         response_text = response.response;
 
-                        // Process thinking tags if needed
-                        if let Some(thinking_config) = &params.thinking_config {
+                        // Handle the response based on mode
+                        if params.no_think {
+                            // For no_think mode, check for unexpected thinking tags
+                            if response_text.contains("<think>") {
+                                error!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "[{} {} {} {}]: Response contains thinking tags despite no-think mode being enabled. This indicates an issue with the model configuration.",
+                                    worker_detail.name, worker_detail.id, worker_detail.model,
+                                    worker_detail.connection_info
+                                );
+                            }
+                        } else if let Some(thinking_config) = &params.thinking_config {
+                            // Process thinking tags for normal thinking mode
                             if thinking_config.strip_thinking_tags {
                                 debug!(
                                     target: TARGET_LLM_REQUEST,

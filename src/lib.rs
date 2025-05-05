@@ -65,6 +65,28 @@ pub struct ThinkingModelConfig {
     pub min_p: f32,
 }
 
+/// Parse a model name string to detect the /no_think suffix
+///
+/// Returns a tuple containing:
+/// - The model name without the /no_think suffix
+/// - A boolean indicating if no_think mode is enabled
+///
+/// # Examples
+/// ```
+/// use argus::parse_model_name;
+/// let (model, no_think) = parse_model_name("qwen3:30b-a3b-fp16/no_think");
+/// assert_eq!(model, "qwen3:30b-a3b-fp16");
+/// assert_eq!(no_think, true);
+/// ```
+pub fn parse_model_name(model_string: &str) -> (String, bool) {
+    if model_string.ends_with("/no_think") {
+        // Remove the /no_think suffix and return true for no_think mode
+        (model_string.trim_end_matches("/no_think").to_string(), true)
+    } else {
+        (model_string.to_string(), false)
+    }
+}
+
 #[derive(Clone)]
 pub struct LLMParams {
     pub llm_client: LLMClient,
@@ -73,6 +95,7 @@ pub struct LLMParams {
     pub require_json: Option<bool>, // Kept for backward compatibility
     pub json_format: Option<JsonSchemaType>, // New field for specifying JSON schema type
     pub thinking_config: Option<ThinkingModelConfig>, // Configuration for thinking models
+    pub no_think: bool,             // Flag to indicate /no_think mode
 }
 
 // New: Struct to hold fallback configuration for Analysis Workers
@@ -80,6 +103,7 @@ pub struct LLMParams {
 pub struct FallbackConfig {
     pub llm_client: LLMClient,
     pub model: String,
+    pub no_think: bool, // Flag to indicate /no_think mode
 }
 
 #[derive(Clone, Debug)]
@@ -104,10 +128,11 @@ pub struct SubscriptionsResponse {
 /// Parses Ollama configurations from a string.
 ///
 /// The expected format is: `host|port|model;host|port|model;...`
+/// The model can include the /no_think suffix to disable thinking mode.
 ///
 /// # Returns
-/// Vec of tuples containing (host, port, model)
-pub fn process_ollama_configs(configs: &str) -> Vec<(String, u16, String)> {
+/// Vec of tuples containing (host, port, model, no_think)
+pub fn process_ollama_configs(configs: &str) -> Vec<(String, u16, String, bool)> {
     let mut results = Vec::new();
 
     for config in configs.split(';').filter(|c| !c.is_empty()) {
@@ -121,9 +146,11 @@ pub fn process_ollama_configs(configs: &str) -> Vec<(String, u16, String)> {
             error!("Invalid port in configuration: {}", parts[1]);
             11434 // Default port
         });
-        let model = parts[2].to_string();
 
-        results.push((host, port, model));
+        // Parse model name and detect no_think mode
+        let (model, no_think) = parse_model_name(parts[2]);
+
+        results.push((host, port, model, no_think));
     }
 
     results
@@ -133,12 +160,19 @@ pub fn process_ollama_configs(configs: &str) -> Vec<(String, u16, String)> {
 ///
 /// The expected format is: `host|port|model||fallback_host|fallback_port|fallback_model;...`
 /// Where the fallback part after `||` is optional.
+/// The model can include the /no_think suffix to disable thinking mode.
 ///
 /// # Returns
-/// Vec of tuples containing (host, port, model, Option<(fallback_host, fallback_port, fallback_model)>)
+/// Vec of tuples containing (host, port, model, no_think, Option<(fallback_host, fallback_port, fallback_model, fallback_no_think)>)
 pub fn process_analysis_ollama_configs(
     configs: &str,
-) -> Vec<(String, u16, String, Option<(String, u16, String)>)> {
+) -> Vec<(
+    String,
+    u16,
+    String,
+    bool,
+    Option<(String, u16, String, bool)>,
+)> {
     let mut results = Vec::new();
 
     for config in configs.split(';').filter(|c| !c.is_empty()) {
@@ -163,7 +197,9 @@ pub fn process_analysis_ollama_configs(
             error!("Invalid port in main configuration: {}", main_parts[1]);
             11434 // Default port
         });
-        let main_model = main_parts[2].to_string();
+
+        // Parse model name and detect no_think mode
+        let (main_model, main_no_think) = parse_model_name(main_parts[2]);
 
         // Process fallback configuration if present
         let fallback = if parts.len() > 1 {
@@ -183,14 +219,22 @@ pub fn process_analysis_ollama_configs(
                     );
                     11434 // Default port
                 });
-                let fallback_model = fallback_parts[2].to_string();
-                Some((fallback_host, fallback_port, fallback_model))
+
+                // Parse fallback model name and detect no_think mode
+                let (fallback_model, fallback_no_think) = parse_model_name(fallback_parts[2]);
+
+                Some((
+                    fallback_host,
+                    fallback_port,
+                    fallback_model,
+                    fallback_no_think,
+                ))
             }
         } else {
             None
         };
 
-        results.push((main_host, main_port, main_model, fallback));
+        results.push((main_host, main_port, main_model, main_no_think, fallback));
     }
 
     results

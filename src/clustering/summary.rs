@@ -65,6 +65,7 @@ pub async fn generate_cluster_summary(
         require_json: None,
         json_format: None,
         thinking_config: None, // No thinking needed for cluster summaries
+        no_think: false,       // No need for special no_think mode for summaries
     };
 
     // Generate the summary

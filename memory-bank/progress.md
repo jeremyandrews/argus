@@ -30,6 +30,7 @@ Argus is currently in active development with all major components implemented a
 - ✅ **Prompt Templates**: Structured prompt system for consistent LLM interactions
 - ✅ **Model Configuration**: Flexible configuration of different models for different tasks
 - ✅ **Thinking Model Support**: Added support for reasoning models that show their thought process in <think></think> tags with special generation parameters
+- ✅ **No-Think Mode**: Implemented `/no_think` support for Qwen models to disable thinking tags for direct responses
 
 ### Analysis & Relevance
 - ✅ **Topic Matching**: Two-stage matching for improved relevance determination
@@ -305,6 +306,7 @@ Argus is currently in active development with all major components implemented a
 - ✓ Clustering module refactoring (split into modular directory structure)
 - ✓ Created proper separation between clustering logic and database operations
 - ✓ Added testing infrastructure for clustering module
+- ✓ Added no_think mode support for Qwen models to disable thinking tags
 
 ### In Progress
 - 🔄 Parameter optimization for entity matching

@@ -45,6 +45,10 @@ struct Args {
     #[clap(long, default_value = "20")]
     top_k: i32,
 
+    /// Enable no-think mode (appends /no_think to prompt)
+    #[clap(long)]
+    no_think: bool,
+
     /// Show raw response before stripping thinking tags
     #[clap(short = 'r', long)]
     show_raw: bool,
@@ -149,7 +153,18 @@ async fn main() -> anyhow::Result<()> {
             };
         }
 
-        // Configure request similar to thinking_config
+        // Create prompt, potentially with /no_think
+        let prompt_to_use = if args.no_think {
+            info!("No-think mode enabled - appending /no_think to prompt");
+            format!("{} /no_think", args.prompt)
+        } else {
+            args.prompt.clone()
+        };
+
+        // Create fresh request with the appropriate prompt
+        let mut request = GenerationRequest::new(args.model.clone(), prompt_to_use);
+
+        // Configure options
         let options = GenerationOptions::default()
             .temperature(args.temperature)
             .top_p(args.top_p)
@@ -157,6 +172,34 @@ async fn main() -> anyhow::Result<()> {
             .num_ctx(8192);
 
         request.options = Some(options);
+
+        // Apply JSON formatting if needed
+        if args.json {
+            // We'll use the Format property directly in raw mode
+            info!("Enabling JSON format in raw mode");
+
+            // Import the necessary types just for the raw mode
+            use ollama_rs::generation::parameters::{FormatType, JsonStructure};
+
+            // Apply the correct JSON format based on schema
+            match args.schema.to_lowercase().as_str() {
+                "entity" => {
+                    info!("Using EntityExtraction JSON schema");
+                    request.format = Some(FormatType::Json);
+                }
+                "threat" => {
+                    info!("Using ThreatLocation JSON schema with structure");
+                    use argus::llm::ThreatLocationResponse;
+                    request.format = Some(FormatType::StructuredJson(JsonStructure::new::<
+                        ThreatLocationResponse,
+                    >()));
+                }
+                _ => {
+                    info!("Using Generic JSON format");
+                    request.format = Some(FormatType::Json);
+                }
+            };
+        }
 
         info!("Sending direct request to Ollama API...");
 
@@ -232,13 +275,29 @@ async fn main() -> anyhow::Result<()> {
             temperature: args.temperature,
             require_json: if args.json { Some(true) } else { None },
             json_format,
-            thinking_config: Some(ThinkingModelConfig {
-                strip_thinking_tags: true,
-                top_p: args.top_p,
-                top_k: args.top_k,
-                min_p: 0.0, // Not supported in current ollama-rs version
-            }),
+            thinking_config: if args.no_think {
+                // In no_think mode, we still need the thinking_config for compatibility
+                // but it won't actually be used
+                Some(ThinkingModelConfig {
+                    strip_thinking_tags: true,
+                    top_p: args.top_p,
+                    top_k: args.top_k,
+                    min_p: 0.0,
+                })
+            } else {
+                Some(ThinkingModelConfig {
+                    strip_thinking_tags: true,
+                    top_p: args.top_p,
+                    top_k: args.top_k,
+                    min_p: 0.0, // Not supported in current ollama-rs version
+                })
+            },
+            no_think: args.no_think, // Use the CLI arg to enable/disable no_think mode
         };
+
+        if args.no_think {
+            info!("No-think mode enabled - standard parameters will be used instead of thinking parameters");
+        }
 
         // Use standard argus LLM processing
         match argus::llm::generate_llm_response(&args.prompt, &llm_params, &worker_detail).await {
