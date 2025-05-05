@@ -29,10 +29,34 @@ We've implemented a new feature that allows one analysis worker to use a thinkin
 
 ### Using the Thinking Model
 
-- The first analysis worker (ID = 1) will automatically use the thinking model
-- Other analysis workers continue to use their standard models
-- The system strips out the thinking process (content in `<think>...</think>` tags) before using the response
-- The thinking model is not used in fallback mode (when an analysis worker acts as a decision worker)
+Previously, only the first analysis worker (ID = 1) used the thinking model. We've now implemented a global switch to enable reasoning mode for all analysis workers:
+
+- Set the `USE_REASONING_MODELS` environment variable to `true` to enable thinking mode for ALL analysis workers
+- Set it to `false` or leave it unset to disable thinking mode for ALL analysis workers
+
+When enabled, all analysis workers will use these recommended parameters:
+- Temperature = 0.6
+- TopP = 0.95
+- TopK = 20
+- MinP = 0.0
+
+These settings follow the recommended configuration for thinking models and avoid greedy decoding, which can lead to performance degradation and repetitions.
+
+The system strips out the thinking process (content in `<think>...</think>` tags) before using the response, and thinking mode is not used in fallback mode (when an analysis worker acts as a decision worker).
+
+Example usage:
+```bash
+USE_REASONING_MODELS=true ./run.sh
+```
+
+#### Implementation Details
+
+The reasoning model feature is implemented with consistent behavior across all workers:
+
+1. The `USE_REASONING_MODELS` environment variable is checked at startup
+2. When enabled, each analysis worker initializes a `ThinkingModelConfig` with the recommended parameters
+3. Each worker uses the same temperature (0.6) and thinking parameters
+4. Appropriate logging indicates when a worker is using reasoning mode
 
 ### Test Utility
 

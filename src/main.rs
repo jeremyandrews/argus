@@ -16,6 +16,7 @@ const ANALYSIS_OPENAI_CONFIGS_ENV: &str = "ANALYSIS_OPENAI_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
+const USE_REASONING_MODELS_ENV: &str = "USE_REASONING_MODELS";
 
 use argus::analysis_worker;
 use argus::app::api;
@@ -336,15 +337,12 @@ async fn main() -> Result<()> {
         decision_handles.push(decision_worker_handle);
     }
 
-    // Configure thinking model for the first worker
-    let thinking_model_id = 1;
-    let thinking_model_name = "qwen3:30b-a3b-fp16".to_string();
-    let thinking_config = ThinkingModelConfig {
-        strip_thinking_tags: true,
-        top_p: 0.95,
-        top_k: 20,
-        min_p: 0.0,
-    };
+    // Configure thinking model based on global switch
+    // Read the environment variable
+    let use_reasoning_models = env::var(USE_REASONING_MODELS_ENV)
+        .unwrap_or_else(|_| "false".to_string())
+        .to_lowercase()
+        == "true";
 
     // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
@@ -355,33 +353,39 @@ async fn main() -> Result<()> {
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Analysis Worker {}", worker_config.id);
 
-        // Check if this is our designated thinking model worker
-        let is_thinking_worker = worker_config.id == thinking_model_id;
+        // Use the worker's configured model
+        let worker_model = worker_config.model.clone();
 
-        // If this is the thinking worker and we have a special model name, replace the model
-        let worker_model = if is_thinking_worker && !thinking_model_name.is_empty() {
-            info!(target: TARGET_LLM_REQUEST, "{}: Using thinking model '{}' with special parameters", thread_name, thinking_model_name);
-            thinking_model_name.clone()
-        } else {
-            worker_config.model.clone()
-        };
-
-        // Use thinking config for the first worker
-        let worker_thinking_config = if is_thinking_worker {
-            Some(thinking_config.clone())
-        } else {
-            None
-        };
-
-        // Special temperature for thinking model
-        let worker_temperature = if is_thinking_worker {
-            0.6 // Temperature=0.6 for thinking model as specified in requirements
+        // Set temperature based on whether we're using reasoning models
+        // This ensures we don't use greedy decoding for reasoning models
+        let worker_temperature = if use_reasoning_models {
+            0.6 // Recommended temperature for reasoning models
         } else {
             temperature
         };
 
+        if use_reasoning_models {
+            info!(target: TARGET_LLM_REQUEST, "{}: Using reasoning model '{}' with parameters (temp=0.6, top_p=0.95, top_k=20)", thread_name, worker_model);
+        }
+
+        // Capture reasoning mode status for this worker
+        let worker_use_reasoning = use_reasoning_models;
+
         let analysis_handle = tokio::spawn(async move {
             info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_model);
+
+            // Create thinking config inside the task closure
+            let worker_thinking_config = if worker_use_reasoning {
+                Some(ThinkingModelConfig {
+                    strip_thinking_tags: true,
+                    top_p: 0.95,
+                    top_k: 20,
+                    min_p: 0.0,
+                })
+            } else {
+                None
+            };
+
             match analysis_worker::analysis_loop(
                 worker_config.id,
                 &decision_worker_topics,
