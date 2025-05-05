@@ -236,14 +236,33 @@ pub async fn generate_llm_response(
 
                         // Handle the response based on mode
                         if params.no_think {
-                            // For no_think mode, check for unexpected thinking tags
+                            // For no_think mode, check for non-empty thinking tags
                             if response_text.contains("<think>") {
-                                error!(
-                                    target: TARGET_LLM_REQUEST,
-                                    "[{} {} {} {}]: Response contains thinking tags despite no-think mode being enabled. This indicates an issue with the model configuration.",
-                                    worker_detail.name, worker_detail.id, worker_detail.model,
-                                    worker_detail.connection_info
-                                );
+                                // Create a regex to check for non-empty thinking tags
+                                // This pattern matches <think> tags that contain any non-whitespace content
+                                let non_empty_pattern = r"<think>\s*\S+[\s\S]*?\s*</think>";
+                                let non_empty_re = Regex::new(non_empty_pattern).unwrap_or_else(|e| {
+                                    error!("Failed to compile non-empty thinking tags regex pattern: {}", e);
+                                    Regex::new(r"nevermatchanything").unwrap()
+                                });
+
+                                if non_empty_re.is_match(&response_text) {
+                                    // Only log an error if there's actual content inside the thinking tags
+                                    error!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Response contains non-empty thinking tags despite no-think mode being enabled. This indicates an issue with the model configuration.",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info
+                                    );
+                                } else {
+                                    // Empty thinking tags are expected with some models
+                                    debug!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Response contains empty thinking tags with no-think mode, as expected for some Qwen models.",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info
+                                    );
+                                }
                             }
                         } else if let Some(thinking_config) = &params.thinking_config {
                             // Process thinking tags for normal thinking mode
