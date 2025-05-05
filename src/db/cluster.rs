@@ -1,10 +1,11 @@
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use sqlx::{self, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::iter::FromIterator;
 use tracing::{debug, info};
 
-use crate::clustering::{ClusterArticle, EntityDetail};
+use crate::clustering::types::{ClusterArticle, EntityDetail};
 use crate::db::core::Database;
 use crate::entity::types::EntityType;
 
@@ -485,20 +486,6 @@ pub async fn update_cluster_summary(db: &Database, cluster_id: i64, summary: &st
     Ok(())
 }
 
-/// Calculates the importance score for a cluster
-///
-/// The score is based on:
-/// - Number of articles (more articles = higher score)
-/// - Average quality of articles (higher quality = higher score)
-/// - Recency of updates (more recent = higher score)
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `cluster_id` - ID of the cluster
-///
-/// # Returns
-/// * `Ok(f64)` - The calculated importance score
-/// * `Err` - If there was an error during calculation
 /// Gets brief article data for cluster listings (used by API)
 ///
 /// # Arguments  
@@ -620,6 +607,7 @@ pub async fn does_cluster_exist(db: &Database, cluster_id: i64) -> Result<bool> 
     Ok(row.is_some())
 }
 
+/// Calculate and update significance score for a cluster
 pub async fn calculate_cluster_significance(db: &Database, cluster_id: i64) -> Result<f64> {
     // Get the cluster's article count and last updated date
     let cluster = sqlx::query(
@@ -683,4 +671,229 @@ pub async fn calculate_cluster_significance(db: &Database, cluster_id: i64) -> R
     .await?;
 
     Ok(score)
+}
+
+/// Gets the most recent article publication date for a cluster
+pub async fn get_most_recent_article_date(
+    db: &Database,
+    cluster_id: i64,
+) -> Result<Option<String>> {
+    let row = sqlx::query(
+        r#"
+        SELECT a.pub_date
+        FROM articles a
+        JOIN article_cluster_mappings acm ON a.id = acm.article_id
+        WHERE acm.cluster_id = ? AND a.pub_date IS NOT NULL
+        ORDER BY a.pub_date DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(cluster_id)
+    .fetch_optional(db.pool())
+    .await?;
+
+    Ok(row
+        .map(|r| r.get::<Option<String>, _>("pub_date"))
+        .flatten())
+}
+
+/// Creates an empty cluster with default values
+pub async fn create_empty_cluster(db: &Database) -> Result<i64> {
+    let now = Utc::now().to_rfc3339();
+
+    // Create the cluster with empty primary entities
+    let cluster_id = sqlx::query(
+        r#"
+        INSERT INTO article_clusters
+        (creation_date, last_updated, primary_entity_ids, article_count, needs_summary_update, status)
+        VALUES (?, ?, '[]', 0, 1, 'active')
+        "#,
+    )
+    .bind(&now)
+    .bind(&now)
+    .execute(db.pool())
+    .await?
+    .last_insert_rowid();
+
+    debug!("Created new empty cluster {}", cluster_id);
+    Ok(cluster_id)
+}
+
+/// Mark a cluster as merged into another cluster
+pub async fn mark_cluster_as_merged(
+    db: &Database,
+    cluster_id: i64,
+    merged_into: i64,
+    reason: Option<&str>,
+) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+
+    // Update cluster status
+    sqlx::query(
+        r#"
+        UPDATE article_clusters
+        SET status = 'merged'
+        WHERE id = ?
+        "#,
+    )
+    .bind(cluster_id)
+    .execute(db.pool())
+    .await?;
+
+    // Record merge history
+    sqlx::query(
+        r#"
+        INSERT INTO cluster_merge_history
+        (original_cluster_id, merged_into_cluster_id, merge_date, merge_reason)
+        VALUES (?, ?, ?, ?)
+        "#,
+    )
+    .bind(cluster_id)
+    .bind(merged_into)
+    .bind(&now)
+    .bind(reason)
+    .execute(db.pool())
+    .await?;
+
+    Ok(())
+}
+
+/// Get all clusters that have been merged and their destinations
+pub async fn get_merged_clusters(db: &Database) -> Result<Vec<(i64, i64)>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT original_cluster_id, merged_into_cluster_id
+        FROM cluster_merge_history
+        "#,
+    )
+    .fetch_all(db.pool())
+    .await?;
+
+    let mut merged_pairs = Vec::new();
+    for row in rows {
+        let original_id: i64 = row.get("original_cluster_id");
+        let merged_into_id: i64 = row.get("merged_into_cluster_id");
+
+        merged_pairs.push((original_id, merged_into_id));
+    }
+
+    Ok(merged_pairs)
+}
+
+/// Checks if a cluster has been merged and returns the current active cluster ID
+pub async fn get_merged_cluster_destination(db: &Database, cluster_id: i64) -> Result<Option<i64>> {
+    let row = sqlx::query(
+        r#"
+        SELECT merged_into_cluster_id 
+        FROM cluster_merge_history
+        WHERE original_cluster_id = ?
+        "#,
+    )
+    .bind(cluster_id)
+    .fetch_optional(db.pool())
+    .await?;
+
+    Ok(row.map(|r| r.get::<i64, _>("merged_into_cluster_id")))
+}
+
+/// Gets the source clusters that were merged into this cluster
+pub async fn get_clusters_merged_into(db: &Database, cluster_id: i64) -> Result<Vec<i64>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT original_cluster_id
+        FROM cluster_merge_history
+        WHERE merged_into_cluster_id = ?
+        "#,
+    )
+    .bind(cluster_id)
+    .fetch_all(db.pool())
+    .await?;
+
+    let source_ids = rows
+        .iter()
+        .map(|row| row.get::<i64, _>("original_cluster_id"))
+        .collect();
+
+    Ok(source_ids)
+}
+
+/// Combine all entity IDs from multiple clusters
+pub async fn combine_entities_from_clusters(
+    db: &Database,
+    cluster_ids: &[i64],
+) -> Result<Vec<i64>> {
+    if cluster_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Create a set to track unique entities
+    let mut all_entities = HashSet::new();
+
+    for &cluster_id in cluster_ids {
+        // Get this cluster's entities
+        let row = sqlx::query("SELECT primary_entity_ids FROM article_clusters WHERE id = ?")
+            .bind(cluster_id)
+            .fetch_one(db.pool())
+            .await?;
+
+        let entities_json: String = row.get("primary_entity_ids");
+        let cluster_entities: Vec<i64> = serde_json::from_str(&entities_json)?;
+
+        // Add all entities to the set
+        all_entities.extend(cluster_entities);
+    }
+
+    // Convert set back to vector
+    Ok(Vec::from_iter(all_entities))
+}
+
+/// Updates a cluster's primary entities
+pub async fn update_cluster_primary_entities(
+    db: &Database,
+    cluster_id: i64,
+    entity_ids: &[i64],
+) -> Result<()> {
+    let entity_ids_json = serde_json::to_string(entity_ids)?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    sqlx::query(
+        r#"
+        UPDATE article_clusters
+        SET primary_entity_ids = ?,
+            last_updated = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(&entity_ids_json)
+    .bind(&now)
+    .bind(cluster_id)
+    .execute(db.pool())
+    .await?;
+
+    Ok(())
+}
+
+/// Updates a cluster's article count
+pub async fn update_cluster_article_count(
+    db: &Database,
+    cluster_id: i64,
+    count: i32,
+) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+
+    sqlx::query(
+        r#"
+        UPDATE article_clusters
+        SET article_count = ?,
+            last_updated = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(count)
+    .bind(&now)
+    .bind(cluster_id)
+    .execute(db.pool())
+    .await?;
+
+    Ok(())
 }

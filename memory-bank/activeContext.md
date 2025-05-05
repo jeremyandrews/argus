@@ -1,6 +1,34 @@
 # Active Development Context
 
-## Current Focus: Entity Normalizer Improvements
+## Current Focus: Clustering Module Refactoring
+
+We've refactored the clustering.rs module, which had grown too large, into a well-organized directory structure. The module has been split into smaller, focused files to improve maintainability and code organization, following the project's pattern of keeping files under 500 words.
+
+### Key Improvements
+
+1. **Modular Structure Creation**: 
+   - Created a hierarchical directory structure with logical component organization
+   - Split functionality into specialized files (assignment.rs, entities.rs, summary.rs, etc.)
+   - Created a nested merging/ directory for all merging-related functionality
+
+2. **Architectural Improvements**:
+   - Moved database operations to `db/cluster.rs` following the system's architectural pattern
+   - Created proper delegation from clustering modules to database operations
+   - Added function stubs in code that will need implementation
+
+3. **Testing and Quality Assurance**:
+   - Added simple test module (clustering/tests.rs) to verify exports work correctly
+   - Run full test suite to ensure no regressions were introduced
+   - Ensured all code compiles without errors or warnings
+
+4. **Backward Compatibility**:
+   - Maintained re-exports in clustering/mod.rs for all key functions
+   - Preserved all existing APIs so dependent code continues to work
+   - Used the same constants and types to ensure consistent behavior
+
+This refactoring makes the codebase more maintainable for future development and follows the same modular pattern already established for the workers and vector modules.
+
+## Previous Focus: Entity Normalizer Improvements
 
 We've fixed issues in the entity normalizer module that were causing test failures. The primary focus was on improving the organization acronym matching logic to handle common patterns like "NASA" matching "NASA Goddard Space Flight Center", while preventing incorrect matches like "Space" and "SpaceX". 
 
