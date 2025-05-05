@@ -1,6 +1,85 @@
 # Active Development Context
 
-## Current Focus: Thinking Model for Analysis Workers
+## Current Focus: Article Clustering Fixes & Enhancements
+
+We've implemented and fixed a robust article clustering system that automatically groups related articles to provide better context and enable more meaningful analysis. This enhancement allows the system to identify and present articles discussing the same topics or events.
+
+Recent improvements include:
+1. Fixed Ollama client initialization in vector module to use the new API requiring separate host and port parameters
+2. Added static MODEL and TOKENIZER variables for consistent embedding model access
+3. Fixed manage_clusters CLI tool with proper table formatting and command-line argument handling
+4. Updated logging functions to properly handle unused parameters
+
+### Implementation Details
+
+1. **Core Clustering Functionality**:
+   - Added automatic cluster assignment in the analysis worker pipeline
+   - Implemented entity-based similarity for more accurate clustering
+   - Created cluster merging capabilities to consolidate related clusters
+   - Added cluster summary generation using the LLM
+   - Implemented importance scoring for clusters based on recency, article count, and quality
+
+2. **Database Schema Updates**:
+   - Added `article_clusters` table for storing cluster metadata
+   - Added `article_cluster_mappings` for many-to-many relationships
+   - Added `cluster_merge_history` to track cluster merges
+   - Implemented `cluster_schema.sql` and `cluster_merge_schema.sql` migrations
+
+3. **API Integration**:
+   - Added `/clusters/sync` endpoint for client synchronization
+   - Implemented delta updates to minimize data transfer
+   - Created structured response format for cluster data
+   - Added support for tracking cluster changes (updates, merges, deletions)
+
+4. **CLI Management Tool**:
+   - Created `manage_clusters` CLI utility for administrative operations
+   - Implemented commands for listing, showing, finding merge candidates, and merging clusters
+   - Added summary regeneration functionality
+   - Provided detailed cluster information views with entity and article data
+
+5. **Architecture Improvements**:
+   - Modularized database functions in `db/cluster.rs`
+   - Separated clustering logic from DB operations
+   - Added helper function in vector module for LLM client access
+   - Maintained separation of concerns between API and data layers
+
+### Using the Clustering System
+
+Clustering happens automatically during article processing. The system:
+
+1. Extracts entities from each article
+2. Finds the best matching cluster based on entity overlap
+3. Creates a new cluster if no good match is found
+4. Generates a summary for the cluster using the LLM
+5. Calculates an importance score to prioritize clusters
+6. Periodically checks for similar clusters that should be merged
+
+The system supports both automatic and manual cluster management:
+
+- Automatic clustering during normal processing
+- Automatic detection and merging of similar clusters
+- Manual review and management through the CLI tool
+- Client synchronization through the API endpoint
+
+Example CLI usage:
+```bash
+# List recent clusters
+cargo run --bin manage_clusters -- list
+
+# Show details for a specific cluster
+cargo run --bin manage_clusters -- show 123 --articles
+
+# Find clusters that could be merged
+cargo run --bin manage_clusters -- find-merge-candidates --threshold 0.7
+
+# Merge multiple clusters
+cargo run --bin manage_clusters -- merge 123 456 --reason "Same event coverage"
+
+# Regenerate a cluster summary
+cargo run --bin manage_clusters -- regenerate-summary 123
+```
+
+## Previous Focus: Thinking Model for Analysis Workers
 
 We've implemented a new feature that allows one analysis worker to use a thinking/reasoning model. This enhancement enables more detailed and transparent analysis of articles by using a model that shows its reasoning process before providing a final answer.
 

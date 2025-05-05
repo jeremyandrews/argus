@@ -9,7 +9,10 @@ use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
-use std::{collections::HashSet, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Mutex,
+};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
@@ -17,6 +20,57 @@ use crate::db::core::Database;
 use crate::entity::matching::calculate_entity_similarity;
 use crate::vector::search::get_article_entities;
 use crate::SubscriptionsResponse;
+
+/// Request for syncing clusters
+#[derive(Deserialize)]
+struct SyncClustersRequest {
+    known_clusters: Vec<ClusterSyncInfo>,
+}
+
+/// Simple structure for tracking client's known clusters
+#[derive(Deserialize)]
+struct ClusterSyncInfo {
+    id: i64,
+    version: i32, // Based on summary_version
+}
+
+/// Response for the cluster sync endpoint
+#[derive(Serialize)]
+struct SyncClustersResponse {
+    updated_clusters: Vec<ClusterData>,
+    deleted_clusters: Vec<i64>,
+    merged_clusters: Vec<ClusterMergeInfo>,
+}
+
+/// Cluster data for API responses
+#[derive(Serialize)]
+struct ClusterData {
+    id: i64,
+    version: i32,
+    creation_date: String,
+    summary: Option<String>,
+    article_count: i32,
+    importance_score: f64,
+    has_timeline: bool,
+    articles: Vec<ArticleBrief>,
+}
+
+/// Brief article data for cluster listings
+#[derive(Serialize)]
+pub struct ArticleBrief {
+    pub id: i64,
+    pub title: String,
+    pub url: String,
+    pub pub_date: String,
+    pub similarity_score: f64,
+}
+
+/// Information about merged clusters
+#[derive(Serialize)]
+struct ClusterMergeInfo {
+    original_id: i64,
+    merged_into_id: i64,
+}
 
 /// Represents the response for an authentication request, containing a JWT token.
 #[derive(Serialize)]
@@ -333,6 +387,105 @@ async fn analyze_article_match(
     Ok(Json(response))
 }
 
+/// Sync clusters endpoint handler
+async fn sync_clusters(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(payload): Json<SyncClustersRequest>,
+) -> Result<Json<SyncClustersResponse>, StatusCode> {
+    // Validate the JWT token
+    let token = auth_header.token();
+    if decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256)).is_err() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    let client_ip = get_client_ip(&headers, &addr);
+    info!("app::api sync_clusters request from IP {}", client_ip);
+
+    let db = Database::instance().await;
+
+    // Create maps of known cluster IDs and versions
+    let mut known_clusters = HashMap::new();
+    for info in payload.known_clusters {
+        known_clusters.insert(info.id, info.version);
+    }
+
+    // Get all active clusters
+    let active_clusters = crate::db::cluster::get_active_clusters(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut updated_clusters = Vec::new();
+
+    // Add clusters that are new or have updated versions
+    for cluster in active_clusters {
+        let id = cluster.id;
+        let version = cluster.summary_version;
+
+        let known_version = known_clusters.get(&id).copied().unwrap_or(-1);
+
+        // If client doesn't know this cluster or has an outdated version
+        if known_version < version {
+            // Get articles for this cluster using the proper db function
+            let articles = crate::db::cluster::get_cluster_articles_brief(&db, id, 5)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+            let cluster_data = ClusterData {
+                id,
+                version,
+                creation_date: cluster.creation_date,
+                summary: cluster.summary,
+                article_count: cluster.article_count,
+                importance_score: cluster.importance_score,
+                has_timeline: cluster.has_timeline,
+                articles,
+            };
+
+            updated_clusters.push(cluster_data);
+        }
+    }
+
+    // Get merged clusters
+    let merged_clusters_data = crate::clustering::get_merged_clusters(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut merged_clusters = Vec::new();
+    let mut deleted_clusters = Vec::new();
+
+    for (original_id, merged_into_id) in merged_clusters_data {
+        // Only include if client knew about the original cluster
+        if known_clusters.contains_key(&original_id) {
+            merged_clusters.push(ClusterMergeInfo {
+                original_id,
+                merged_into_id,
+            });
+        }
+    }
+
+    // Deleted clusters would be any in the client's known list that are
+    // neither active nor merged into something else
+    for &id in known_clusters.keys() {
+        let exists = crate::db::cluster::does_cluster_exist(&db, id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        if !exists {
+            deleted_clusters.push(id);
+        }
+    }
+
+    let response = SyncClustersResponse {
+        updated_clusters,
+        deleted_clusters,
+        merged_clusters,
+    };
+
+    Ok(Json(response))
+}
+
 /// Main application loop, setting up and running the Axum-based API server.
 pub async fn app_api_loop() -> Result<()> {
     let app = Router::new()
@@ -342,7 +495,8 @@ pub async fn app_api_loop() -> Result<()> {
         .route("/subscribe", post(subscribe_to_topic))
         .route("/unsubscribe", post(unsubscribe_from_topic))
         .route("/articles/sync", post(sync_seen_articles))
-        .route("/articles/analyze-match", post(analyze_article_match));
+        .route("/articles/analyze-match", post(analyze_article_match))
+        .route("/clusters/sync", post(sync_clusters));
 
     let port: u16 = std::env::var("PORT")
         .ok()

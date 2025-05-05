@@ -10,7 +10,8 @@ use tokenizers::Tokenizer;
 use tokio::fs;
 use tracing::{error, info};
 
-use crate::vector::{MODEL, TARGET_VECTOR, TOKENIZER};
+use crate::vector::TARGET_VECTOR;
+use crate::vector::{MODEL, TOKENIZER};
 
 /// Configuration struct for the E5 embedding model
 pub struct E5Config {

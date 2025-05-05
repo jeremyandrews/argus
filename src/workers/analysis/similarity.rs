@@ -182,9 +182,9 @@ pub async fn process_article_similarity(
                                                 .await
                                             {
                                                 info!(
-                                                    "Updated significance score for cluster {}: {:.4}",
-                                                    cluster_id, score
-                                                );
+                                                            "Updated significance score for cluster {}: {:.4}",
+                                                            cluster_id, score
+                                                        );
                                             }
                                         }
                                         Err(e) => {
@@ -192,6 +192,31 @@ pub async fn process_article_similarity(
                                                 "Failed to generate summary for cluster {}: {}",
                                                 cluster_id, e
                                             );
+                                        }
+                                    }
+
+                                    // Check for potential cluster merges
+                                    let merge_start = Instant::now();
+                                    match crate::clustering::check_and_merge_similar_clusters(
+                                        db,
+                                        cluster_id,
+                                        &llm_params.llm_client,
+                                    )
+                                    .await
+                                    {
+                                        Ok(Some(new_cluster_id)) => {
+                                            info!(
+                                                "Merged cluster {} into new cluster {} in {:?}",
+                                                cluster_id,
+                                                new_cluster_id,
+                                                merge_start.elapsed()
+                                            );
+                                        }
+                                        Ok(None) => {
+                                            debug!("No clusters merged for cluster {}", cluster_id);
+                                        }
+                                        Err(e) => {
+                                            error!("Error checking for cluster merges: {}", e);
                                         }
                                     }
                                 }

@@ -1,10 +1,20 @@
+// Vector embedding and similarity configuration
+pub const TARGET_VECTOR: &str = "article-embeddings";
+pub const QDRANT_URL_ENV: &str = "QDRANT_URL";
+pub const MODEL_URL: &str =
+    "https://huggingface.co/intfloat/e5-large-v2/resolve/main/model.safetensors";
+pub const TOKENIZER_URL: &str =
+    "https://huggingface.co/intfloat/e5-large-v2/resolve/main/tokenizer.json";
+
 use anyhow::Result;
 use candle_transformers::models::bert::BertModel;
-use once_cell::sync::OnceCell;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokenizers::Tokenizer;
 
-// Submodules
+// Static variables for model and tokenizer
+pub static MODEL: OnceLock<Arc<BertModel>> = OnceLock::new();
+pub static TOKENIZER: OnceLock<Arc<Tokenizer>> = OnceLock::new();
+
 pub mod config;
 pub mod embedding;
 pub mod search;
@@ -12,38 +22,42 @@ pub mod similarity;
 pub mod storage;
 pub mod types;
 
-// Re-export commonly used types and functions
-pub use config::E5Config;
-pub use embedding::get_article_vectors;
-pub use search::{get_article_entities, get_similar_articles, get_similar_articles_with_entities};
-pub use similarity::{calculate_direct_similarity, calculate_vector_similarity};
-pub use storage::{get_article_vector_from_qdrant, store_embedding};
-pub use types::{ArticleMatch, NearMissMatch};
+// Re-export main components
+pub use config::*;
+pub use embedding::*;
+pub use search::*;
+pub use similarity::*;
+pub use storage::*;
+pub use types::*;
 
-// Constants
-pub const TARGET_VECTOR: &str = "vector";
-pub const MODEL_URL: &str =
-    "https://huggingface.co/intfloat/e5-large-v2/resolve/main/model.safetensors";
-pub const TOKENIZER_URL: &str =
-    "https://huggingface.co/intfloat/e5-large-v2/resolve/main/tokenizer.json";
-pub const QDRANT_URL_ENV: &str = "QDRANT_URL";
+use crate::LLMClient;
+use ollama_rs::Ollama;
 
-// Global statics for model and tokenizer
-pub static MODEL: OnceCell<Arc<BertModel>> = OnceCell::new();
-pub static TOKENIZER: OnceCell<Arc<Tokenizer>> = OnceCell::new();
-
-/// Get a reference to the initialized E5 model
+/// Returns a reference to the model, if initialized
 pub fn model() -> Result<Arc<BertModel>> {
     MODEL
         .get()
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("E5 model not initialized"))
+        .ok_or_else(|| anyhow::anyhow!("Model not initialized"))
+        .map(Arc::clone)
 }
 
-/// Get a reference to the initialized E5 tokenizer
+/// Returns a reference to the tokenizer, if initialized
 pub fn tokenizer() -> Result<Arc<Tokenizer>> {
     TOKENIZER
         .get()
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("E5 tokenizer not initialized"))
+        .ok_or_else(|| anyhow::anyhow!("Tokenizer not initialized"))
+        .map(Arc::clone)
+}
+
+/// Returns the default LLM client for vector operations
+pub fn get_default_llm_client() -> LLMClient {
+    // Parse host and port from environment or use defaults
+    let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let port: u16 = std::env::var("OLLAMA_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(11434);
+
+    // Initialize the Ollama client with the base URL
+    LLMClient::Ollama(Ollama::new(host, port))
 }

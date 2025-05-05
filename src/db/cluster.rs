@@ -499,6 +499,127 @@ pub async fn update_cluster_summary(db: &Database, cluster_id: i64, summary: &st
 /// # Returns
 /// * `Ok(f64)` - The calculated importance score
 /// * `Err` - If there was an error during calculation
+/// Gets brief article data for cluster listings (used by API)
+///
+/// # Arguments  
+/// * `db` - Database instance
+/// * `cluster_id` - ID of the cluster
+/// * `limit` - Maximum number of articles to retrieve
+///
+/// # Returns
+/// * `Ok(Vec<ArticleBrief>)` - Brief article data for the cluster
+/// * `Err` - If there was an error during retrieval
+pub async fn get_cluster_articles_brief(
+    db: &Database,
+    cluster_id: i64,
+    limit: usize,
+) -> Result<Vec<crate::app::api::ArticleBrief>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT a.id, a.title, a.url, a.pub_date, acm.similarity_score
+        FROM articles a
+        JOIN article_cluster_mappings acm ON a.id = acm.article_id
+        WHERE acm.cluster_id = ?
+        ORDER BY a.pub_date DESC, acm.similarity_score DESC
+        LIMIT ?
+        "#,
+    )
+    .bind(cluster_id)
+    .bind(limit as i64)
+    .fetch_all(db.pool())
+    .await?;
+
+    let mut articles = Vec::new();
+
+    for row in rows {
+        let article = crate::app::api::ArticleBrief {
+            id: row.get("id"),
+            title: row
+                .get::<Option<String>, _>("title")
+                .unwrap_or_else(|| "Untitled".to_string()),
+            url: row.get("url"),
+            pub_date: row
+                .get::<Option<String>, _>("pub_date")
+                .unwrap_or_else(|| "Unknown".to_string()),
+            similarity_score: row.get("similarity_score"),
+        };
+
+        articles.push(article);
+    }
+
+    Ok(articles)
+}
+
+/// Gets all active clusters
+///
+/// # Arguments
+/// * `db` - Database instance
+///
+/// # Returns
+/// * `Ok(Vec<ActiveClusterInfo>)` - Vector of active cluster information
+/// * `Err` - If there was an error during retrieval
+pub async fn get_active_clusters(db: &Database) -> Result<Vec<ActiveClusterInfo>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, summary_version, creation_date, last_updated, summary, 
+               article_count, importance_score, has_timeline
+        FROM article_clusters
+        WHERE status = 'active'
+        "#,
+    )
+    .fetch_all(db.pool())
+    .await?;
+
+    let mut clusters = Vec::new();
+
+    for row in rows {
+        let cluster = ActiveClusterInfo {
+            id: row.get("id"),
+            summary_version: row.get("summary_version"),
+            creation_date: row.get("creation_date"),
+            last_updated: row.get("last_updated"),
+            summary: row.get("summary"),
+            article_count: row.get("article_count"),
+            importance_score: row.get("importance_score"),
+            has_timeline: row.get::<i32, _>("has_timeline") != 0,
+        };
+
+        clusters.push(cluster);
+    }
+
+    Ok(clusters)
+}
+
+/// Struct to hold active cluster information
+pub struct ActiveClusterInfo {
+    pub id: i64,
+    pub summary_version: i32,
+    pub creation_date: String,
+    pub last_updated: String,
+    pub summary: Option<String>,
+    pub article_count: i32,
+    pub importance_score: f64,
+    pub has_timeline: bool,
+}
+
+/// Checks if a cluster exists
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `cluster_id` - ID of the cluster to check
+///
+/// # Returns
+/// * `Ok(bool)` - True if the cluster exists, false otherwise
+/// * `Err` - If there was an error during the check
+pub async fn does_cluster_exist(db: &Database, cluster_id: i64) -> Result<bool> {
+    let row = sqlx::query("SELECT 1 FROM article_clusters WHERE id = ?")
+        .bind(cluster_id)
+        .fetch_optional(db.pool())
+        .await?;
+
+    Ok(row.is_some())
+}
+
 pub async fn calculate_cluster_significance(db: &Database, cluster_id: i64) -> Result<f64> {
     // Get the cluster's article count and last updated date
     let cluster = sqlx::query(

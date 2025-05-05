@@ -87,8 +87,10 @@ impl EntityNormalizer {
         // Apply basic normalization first
         let mut normalized = self.basic_normalize(name);
 
-        // Apply stemming for certain entity types
-        if entity_type == EntityType::Product || entity_type == EntityType::Organization {
+        // Apply stemming for certain entity types (but not to Person entities)
+        if (entity_type == EntityType::Product || entity_type == EntityType::Organization)
+            && entity_type != EntityType::Person
+        {
             // Use stemming to handle plurals and other variations
             let en_stemmer = Stemmer::create(Algorithm::English);
             normalized = normalized
@@ -254,8 +256,12 @@ impl EntityNormalizer {
                         shorter, longer
                     );
                 }
-                // Special case for acronyms
-                else if is_acronym {
+                // Special case for acronyms, including organization acronyms like "NASA"
+                else if is_acronym
+                    || (entity_type == EntityType::Organization
+                        && shorter_tokens.len() == 1
+                        && shorter.len() <= 5)
+                {
                     // For acronyms, check if it matches the first letters of words in the longer name
                     let longer_initials: String = longer
                         .split_whitespace()
@@ -280,15 +286,45 @@ impl EntityNormalizer {
                         );
                         return true;
                     }
+
+                    // For special case of organization acronyms like "NASA" at the start of longer phrases
+                    if entity_type == EntityType::Organization && longer.starts_with(shorter) {
+                        debug!(
+                            target: TARGET_ENTITY,
+                            "Organization acronym prefix match: '{}' starts '{}'",
+                            shorter, longer
+                        );
+                        return true;
+                    }
                 }
-                // Require all tokens from shorter name to exist in longer name
-                else if shorter_tokens.is_subset(&longer_tokens) {
+                // Product entities have special handling to match partial names
+                else if entity_type == EntityType::Product && shorter.len() > 3 {
                     debug!(
                         target: TARGET_ENTITY,
-                        "Substring match: '{}' contained in '{}' with token verification",
+                        "Product substring match: '{}' contained in '{}'",
                         shorter, longer
                     );
                     return true;
+                }
+                // For organizations, require token verification
+                else if shorter_tokens.is_subset(&longer_tokens) {
+                    if entity_type == EntityType::Organization
+                        && (shorter_tokens.len() > 1 || shorter.len() >= longer.len() / 2)
+                    {
+                        debug!(
+                            target: TARGET_ENTITY,
+                            "Organization substring match: '{}' contained in '{}'",
+                            shorter, longer
+                        );
+                        return true;
+                    }
+
+                    // For location entities, we need exact token matching to avoid "New York" matching "New York City"
+                    if entity_type == EntityType::Location
+                        && shorter_tokens.len() != longer_tokens.len()
+                    {
+                        return false;
+                    }
                 }
             }
         }

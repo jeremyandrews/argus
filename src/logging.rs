@@ -7,6 +7,26 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
+/// Sets up logging with a specific name and level.
+///
+/// # Arguments
+///
+/// * `name` - A string slice that holds the name of the program.
+/// * `level` - The level of logging to enable.
+///
+/// # Returns
+///
+/// * `Result<(), anyhow::Error>` - Ok if successful, Err otherwise.
+pub fn setup_logging(_name: &str, _level: Level) -> anyhow::Result<()> {
+    // Ensure log directory exists
+    std::fs::create_dir_all("logs").ok();
+
+    // Configure logging
+    configure_logging();
+
+    Ok(())
+}
+
 pub fn configure_logging() {
     // Custom filter to ignore specific warnings
     let custom_filter = FilterFn::new(|metadata| {
