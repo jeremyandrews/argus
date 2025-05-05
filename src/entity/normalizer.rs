@@ -88,9 +88,7 @@ impl EntityNormalizer {
         let mut normalized = self.basic_normalize(name);
 
         // Apply stemming for certain entity types (but not to Person entities)
-        if (entity_type == EntityType::Product || entity_type == EntityType::Organization)
-            && entity_type != EntityType::Person
-        {
+        if entity_type == EntityType::Product || entity_type == EntityType::Organization {
             // Use stemming to handle plurals and other variations
             let en_stemmer = Stemmer::create(Algorithm::English);
             normalized = normalized
@@ -229,6 +227,44 @@ impl EntityNormalizer {
         name2: &str,
         entity_type: EntityType,
     ) -> bool {
+        // Special handling for location entities - must have exact token matching to avoid "New York" matching "New York City"
+        if entity_type == EntityType::Location {
+            let tokens1: HashSet<_> = norm1.split_whitespace().collect();
+            let tokens2: HashSet<_> = norm2.split_whitespace().collect();
+
+            // For locations, if token counts don't match, they're not the same place
+            if tokens1.len() != tokens2.len() {
+                return false;
+            }
+        }
+
+        // Special case for product comparisons with different concepts but same manufacturer
+        if entity_type == EntityType::Product {
+            // Check for product names like "Microsoft Windows" vs "Microsoft Office"
+            // which shouldn't match despite sharing a common prefix
+            let norm1_words: Vec<_> = norm1.split_whitespace().collect();
+            let norm2_words: Vec<_> = norm2.split_whitespace().collect();
+
+            // If they have a shared prefix but different meaningful suffixes
+            if norm1_words.len() > 1 && norm2_words.len() > 1 &&
+               norm1_words[0] == norm2_words[0] && // Same first word (e.g., "Microsoft")
+               norm1_words.last() != norm2_words.last() && // Different last words
+               norm1_words.last().unwrap().len() > 3 && norm2_words.last().unwrap().len() > 3
+            {
+                let last1 = norm1_words.last().unwrap();
+                let last2 = norm2_words.last().unwrap();
+
+                if levenshtein(last1, last2) > 2 {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Products with same manufacturer but different types: '{}' vs '{}'",
+                        norm1, norm2
+                    );
+                    return false;
+                }
+            }
+        }
+
         // For product/organization entities, check for substring containment
         if entity_type == EntityType::Product || entity_type == EntityType::Organization {
             // Check if shorter name is contained in longer name (case insensitive)
@@ -238,9 +274,72 @@ impl EntityNormalizer {
                 (&norm2, &norm1)
             };
 
-            // Special case for acronyms (all uppercase with no spaces)
+            // Check for acronyms (all uppercase with no spaces)
             let is_acronym =
                 shorter.chars().all(|c| c.is_ascii_uppercase()) && !shorter.contains(' ');
+
+            // Organization acronyms (like NASA, FBI, etc.) - enhanced solution
+            if entity_type == EntityType::Organization {
+                // Check for acronym patterns with the original names, not just normalized forms
+                let is_acronym_original = if norm1.len() < norm2.len() {
+                    name1.chars().all(|c| c.is_ascii_uppercase()) && !name1.contains(' ')
+                } else {
+                    name2.chars().all(|c| c.is_ascii_uppercase()) && !name2.contains(' ')
+                };
+
+                // If we found an acronym in the original (non-normalized) names
+                if is_acronym || is_acronym_original {
+                    // Check if shorter (the acronym) is the first word in longer
+                    let longer_first_word = longer.split_whitespace().next().unwrap_or("");
+
+                    // Match if acronym is identical to the first word in longer name
+                    if longer_first_word == *shorter {
+                        debug!(
+                            target: TARGET_ENTITY,
+                            "Organization acronym as first word match: '{}' at start of '{}'",
+                            shorter, longer
+                        );
+                        return true;
+                    }
+
+                    // Check if longer name starts with the acronym followed by space
+                    // This is specifically for cases like "NASA Goddard Space Flight Center"
+                    if longer.starts_with(&format!("{} ", shorter)) {
+                        debug!(
+                            target: TARGET_ENTITY,
+                            "Organization acronym at start followed by space: '{}' in '{}'",
+                            shorter, longer
+                        );
+                        return true;
+                    }
+
+                    // Special handling for when the longer version has the acronym embedded
+                    let longer_words: Vec<_> = longer.split_whitespace().collect();
+                    if longer_words.iter().any(|word| *word == *shorter) {
+                        debug!(
+                            target: TARGET_ENTITY,
+                            "Organization acronym contained in longer name: '{}' in '{}'",
+                            shorter, longer
+                        );
+                        return true;
+                    }
+
+                    // Strategy 3: Check if acronym represents initials of words in longer name
+                    let initials: String = longer
+                        .split_whitespace()
+                        .map(|word| word.chars().next().unwrap_or(' '))
+                        .collect();
+
+                    if initials.to_lowercase().contains(&shorter.to_lowercase()) {
+                        debug!(
+                            target: TARGET_ENTITY,
+                            "Acronym matches initials in longer name: '{}' found in initials of '{}'",
+                            shorter, longer
+                        );
+                        return true;
+                    }
+                }
+            }
 
             if longer.contains(shorter) {
                 // Verify with token-based match to avoid false positives
@@ -248,13 +347,30 @@ impl EntityNormalizer {
                 let longer_tokens: HashSet<_> = longer.split_whitespace().collect();
 
                 // Skip very short single-token matches unless it's an acronym
-                if shorter_tokens.len() == 1 && shorter.len() < 4 && !is_acronym {
+                if shorter_tokens.len() == 1 && shorter.len() < 5 && !is_acronym {
                     // Don't match very short single tokens (avoid "App" matching "Apple")
                     debug!(
                         target: TARGET_ENTITY,
                         "Skipping very short single token match: '{}' in '{}'",
                         shorter, longer
                     );
+                    return false;
+                }
+
+                // Special case for "Space" vs "SpaceX" - prevent matching partial company names
+                if entity_type == EntityType::Organization
+                    && shorter_tokens.len() == 1
+                    && !is_acronym
+                    && longer.starts_with(shorter)
+                    && longer.len() > shorter.len()
+                    && !longer[shorter.len()..].starts_with(' ')
+                {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Rejecting prefix match for organizations: '{}' in '{}'",
+                        shorter, longer
+                    );
+                    return false;
                 }
                 // Special case for acronyms, including organization acronyms like "NASA"
                 else if is_acronym
@@ -331,6 +447,23 @@ impl EntityNormalizer {
 
         // Try fuzzy matching if enabled
         if self.use_fuzzy_matching {
+            // Handle plurals for person names - prevent "Americans"/"American" matching
+            if entity_type == EntityType::Person {
+                // Check if one is likely a plural form of the other
+                if (norm1.ends_with("s") && norm1.len() > norm2.len() && norm1.starts_with(&norm2))
+                    || (norm2.ends_with("s")
+                        && norm2.len() > norm1.len()
+                        && norm2.starts_with(&norm1))
+                {
+                    debug!(
+                        target: TARGET_ENTITY,
+                        "Rejecting person name match with plural form: '{}' vs '{}'",
+                        norm1, norm2
+                    );
+                    return false;
+                }
+            }
+
             // First try Jaro-Winkler (better for names)
             let jw_threshold = self.similarity_threshold(entity_type);
             let jw_similarity = jaro_winkler(&norm1, &norm2);
@@ -366,6 +499,27 @@ impl EntityNormalizer {
                         .zip(norm2.chars())
                         .take_while(|(a, b)| a == b)
                         .count();
+
+                    // For products like "Microsoft Windows" vs "Microsoft Office"
+                    // Check if they have distinct suffixes after a shared prefix
+                    if entity_type == EntityType::Product && common_prefix_len > 0 {
+                        let suffix1 = &norm1[common_prefix_len..];
+                        let suffix2 = &norm2[common_prefix_len..];
+
+                        // If suffixes differ significantly and are meaningful words
+                        if suffix1.trim().len() > 3
+                            && suffix2.trim().len() > 3
+                            && levenshtein(suffix1.trim(), suffix2.trim()) > 2
+                        {
+                            // These are different products with the same manufacturer/prefix
+                            debug!(
+                                target: TARGET_ENTITY,
+                                "Rejecting product match with different suffixes: '{}' vs '{}'",
+                                suffix1, suffix2
+                            );
+                            return false;
+                        }
+                    }
 
                     // Only match if they share a common prefix (at least 30%)
                     if common_prefix_len >= (max_len / 3) {

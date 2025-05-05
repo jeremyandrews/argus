@@ -299,6 +299,9 @@ Argus is currently in active development with all major components implemented a
 - ✓ Added static MODEL and TOKENIZER variables for consistent embedding access
 - ✓ Fixed manage_clusters CLI tool formatting and command-line argument handling 
 - ✓ Updated logging functions to properly handle unused parameters
+- ✓ Enhanced entity normalizer with improved organization acronym handling
+- ✓ Fixed entity normalizer test failures to ensure proper entity matching
+- ✓ Implemented quality check rule to always run tests after code changes
 
 ### In Progress
 - 🔄 Parameter optimization for entity matching

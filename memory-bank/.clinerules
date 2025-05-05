@@ -28,6 +28,12 @@
 - Quality scoring uses a three-tier system (1-3) for quick assessment
 - Insights go beyond article content to provide deeper context
 
+## Development Quality Rules
+- Always run `cargo check` and `cargo test` after making any changes to avoid regressions
+- Failing tests should be fixed immediately before other development continues; proper fixes should be made after carefully analyzing the intent of the code
+- All code changes should be verified with tests before being committed
+- Test coverage should be maintained or improved with each change
+
 ## Entity Matching & Alias System
 - The entity matching system uses a multi-factor approach with configurable parameters:
   - Vector similarity has 60% weight in the final score

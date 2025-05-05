@@ -1,6 +1,31 @@
 # Active Development Context
 
-## Current Focus: Article Clustering Fixes & Enhancements
+## Current Focus: Entity Normalizer Improvements
+
+We've fixed issues in the entity normalizer module that were causing test failures. The primary focus was on improving the organization acronym matching logic to handle common patterns like "NASA" matching "NASA Goddard Space Flight Center", while preventing incorrect matches like "Space" and "SpaceX". 
+
+### Key Improvements
+
+1. **Enhanced Organization Acronym Handling**:
+   - Improved detection of acronyms in organization names using both normalized and original formats
+   - Added explicit support for acronyms at the beginning of longer names (e.g., "NASA Goddard Space Flight Center")
+   - Implemented handling for acronyms that represent the initials of the longer name
+   - Fixed false positive matches between partial organization names (e.g., "Space" vs "SpaceX")
+
+2. **Testing and Quality Assurance**:
+   - Fixed failing tests in test_substring_matching, test_stemming, and test_levenshtein_distance
+   - Ensured all test cases properly handle specialized entity matching rules
+   - Added special cases to prevent plurals matching singular forms for person entities
+   - Maintained the distinction between product names from the same manufacturer (e.g., "Microsoft Windows" vs "Microsoft Office")
+
+3. **Process Improvements**:
+   - Added a firm development rule to always run `cargo check` and `cargo test` after making changes
+   - Updated the memory-bank's .clinerules with this requirement to prevent future regressions
+   - Enforced the practice of fixing failing tests immediately before continuing development
+
+The implementation takes a more general approach to entity matching rules rather than special-casing specific entity names, which will better scale to the wide variety of entities the system encounters.
+
+## Previous Focus: Article Clustering Fixes & Enhancements
 
 We've implemented and fixed a robust article clustering system that automatically groups related articles to provide better context and enable more meaningful analysis. This enhancement allows the system to identify and present articles discussing the same topics or events.
 
