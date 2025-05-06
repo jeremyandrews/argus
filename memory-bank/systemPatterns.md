@@ -11,6 +11,21 @@ Argus is a modular Rust application built around several key components:
 5. **Database Storage**: Store articles, analysis results, and metadata
 6. **API Interface**: Expose results and controls to users
 
+## RSS Module Architecture
+
+The RSS module is organized in a modular fashion to handle feed fetching, parsing, and processing:
+
+```
+src/rss/
+├── mod.rs           # Main module exports
+├── types.rs         # RSS data types and constants
+├── client.rs        # HTTP client functionality
+├── parser.rs        # Feed content parsing
+├── fetcher.rs       # RSS feed fetching loop
+├── test.rs          # Testing and diagnostic tools
+└── util.rs          # Helper functions
+```
+
 ## Worker System Architecture
 
 The worker system is a crucial component, operating with a modular pattern:

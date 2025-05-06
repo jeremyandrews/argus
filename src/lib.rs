@@ -16,7 +16,13 @@ pub mod llm;
 pub mod logging;
 pub mod metrics;
 pub mod prompt; // Now uses the directory module structure (replacing prompts.rs)
+                // Import the modular RSS structure
 pub mod rss;
+
+// Re-export RSS module functionality for backward compatibility
+pub use rss::process_rss_urls;
+pub use rss::rss_loop;
+pub use rss::test_rss_feed;
 pub mod slack;
 pub mod util;
 pub mod vector;

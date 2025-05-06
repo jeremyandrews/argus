@@ -1,7 +1,9 @@
 use anyhow::Result;
 use argus::db::Database;
 use argus::logging;
-use argus::rss;
+// Import the re-exported types and functions
+use argus::rss::RssFeedStatus;
+use argus::test_rss_feed;
 use colored::Colorize;
 use std::env;
 use std::process;
@@ -34,8 +36,8 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Call the test_rss_feed function from the rss module
-    match rss::test_rss_feed(url, db.as_deref()).await {
+    // Call the test_rss_feed function
+    match test_rss_feed(url, db.as_deref()).await {
         Ok(result) => {
             println!("\n{}", "═".repeat(100).bright_blue());
             println!(
@@ -48,8 +50,8 @@ async fn main() -> Result<()> {
             // Print status with appropriate color
             let status_str = format!("{:?}", result.status);
             let colored_status = match result.status {
-                rss::RssFeedStatus::Success => status_str.bright_green(),
-                rss::RssFeedStatus::RequestFailed | rss::RssFeedStatus::RequestTimeout => {
+                RssFeedStatus::Success => status_str.bright_green(),
+                RssFeedStatus::RequestFailed | RssFeedStatus::RequestTimeout => {
                     status_str.bright_red()
                 }
                 _ => status_str.bright_yellow(),
@@ -172,7 +174,7 @@ async fn main() -> Result<()> {
 
             // Return error code if feed had problems
             match result.status {
-                rss::RssFeedStatus::Success => {
+                RssFeedStatus::Success => {
                     println!(
                         "Feed test completed successfully with {} entries found",
                         result.entries_found
