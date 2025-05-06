@@ -52,7 +52,8 @@ cargo run --bin test_thinking_model -- -P "Your test prompt"
 - **Qwen Models**: 
   - Will disable the thinking process and return direct responses
   - May return empty `<think></think>` tags in the response, which is expected behavior
-  - The system is designed to handle these empty tags without generating errors
+  - The system automatically strips these empty tags from the final response
+  - Empty tags are logged for debugging but not treated as errors
 - **Other Models**: The `/no_think` suffix will be ignored or treated as part of the prompt
   - The system safely handles this by only applying the suffix to models whose names start with "qwen"
 
@@ -83,7 +84,7 @@ When troubleshooting issues with this feature:
 1. Check if the model name starts with "qwen" (case-insensitive)
 2. Verify that `/no_think` is correctly appended to the prompt
 3. Use the `test_thinking_model` utility with the `--no-think` flag and the `-r` (raw output) flag to see the exact model response
-4. If you see empty `<think></think>` tags in the response, this is normal for Qwen models - the system only logs an error if there's actual content inside the tags
+4. Empty `<think></think>` tags are automatically stripped from responses, so you shouldn't see them in the final output
 
 ## Future Enhancements
 

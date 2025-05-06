@@ -307,6 +307,7 @@ Argus is currently in active development with all major components implemented a
 - ✓ Created proper separation between clustering logic and database operations
 - ✓ Added testing infrastructure for clustering module
 - ✓ Added no_think mode support for Qwen models to disable thinking tags
+- ✓ Fixed empty thinking tag stripping in no_think mode with proper tests
 
 ### In Progress
 - 🔄 Parameter optimization for entity matching

@@ -262,6 +262,16 @@ pub async fn generate_llm_response(
                                         worker_detail.name, worker_detail.id, worker_detail.model,
                                         worker_detail.connection_info
                                     );
+
+                                    // Strip the empty thinking tags
+                                    response_text = strip_thinking_tags(&response_text);
+
+                                    debug!(
+                                        target: TARGET_LLM_REQUEST,
+                                        "[{} {} {} {}]: Stripped empty thinking tags from no-think mode response.",
+                                        worker_detail.name, worker_detail.id, worker_detail.model,
+                                        worker_detail.connection_info
+                                    );
                                 }
                             }
                         } else if let Some(thinking_config) = &params.thinking_config {
@@ -465,5 +475,45 @@ pub async fn generate_llm_response(
             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
         );
         Some(response_text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_thinking_tags() {
+        // Test with empty thinking tags
+        let text_with_empty_tags = "Hello <think></think> World";
+        let stripped = strip_thinking_tags(text_with_empty_tags);
+        assert_eq!(stripped, "Hello  World"); // Note: double space is preserved
+
+        // Test with whitespace in thinking tags
+        let text_with_whitespace_tags = "Hello <think> \n </think> World";
+        let stripped = strip_thinking_tags(text_with_whitespace_tags);
+        assert_eq!(stripped, "Hello  World"); // Note: space is preserved
+
+        // Test with actual content in thinking tags
+        let text_with_content_tags = "Hello <think>This is thinking</think> World";
+        let stripped = strip_thinking_tags(text_with_content_tags);
+        assert_eq!(stripped, "Hello  World"); // Note: space is preserved
+
+        // Test with multiple thinking tags
+        let text_with_multiple_tags = "Hello <think></think> World <think>More thinking</think>";
+        let stripped = strip_thinking_tags(text_with_multiple_tags);
+        assert_eq!(stripped, "Hello  World"); // Note: spaces are preserved
+
+        // Test with just thinking tags and nothing else
+        // When input only has thinking tags, the function returns the original text
+        // This is a special case to avoid returning empty responses
+        let just_thinking_tags = "<think>Just thinking</think>";
+        let stripped = strip_thinking_tags(just_thinking_tags);
+        assert_eq!(stripped, just_thinking_tags);
+
+        // Test with nothing - should return original text
+        let empty_text = "";
+        let stripped = strip_thinking_tags(empty_text);
+        assert_eq!(stripped, "");
     }
 }
