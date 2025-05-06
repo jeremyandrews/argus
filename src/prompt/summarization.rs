@@ -92,13 +92,14 @@ CREATE A CONCISE SUMMARY:
 * Each sentence should focus on a distinct aspect of the news
 * If you reach 400 characters, start over and prioritize better
 
-* The summary may include "EVENT:" and "CONTEXT:" prefixes
-* Extract the core information from the EVENT bullet point (who, what, when, where)
-* Use this as the foundation of your first sentence
+* The summary may include "EVENT:" and "CONTEXT:" prefixes in the bullet points
+* Extract ONLY the information after these labels - DO NOT include the words "EVENT:" or "CONTEXT:" in your summary
+* Use the information from the EVENT bullet point as the foundation of your first sentence
 * Add the most important details from other bullet points in subsequent sentences
 * You can incorporate relevant context if space allows
 
-REQUIREMENTS:
+FORMAT REQUIREMENTS:
+* All sentences MUST be in a SINGLE PARAGRAPH with NO line breaks between sentences
 * Must fit in a tweet
 * Must prioritize most important information
 * Must drop less critical details
@@ -117,11 +118,11 @@ CRITICAL: PRESERVE FACTUAL ACCURACY
 * NEVER suggest a company officially announced something when article only mentions leaks/rumors
 
 PROPER ATTRIBUTION EXAMPLES:
-* INCORRECT: "Apple Details Foldable iPhone Specs." (implies official announcement)
-* CORRECT: "Apple's foldable iPhone specs were detailed in recent leaks. The device may feature a 7.6-inch display."
+* INCORRECT: "EVENT: Apple Details Foldable iPhone Specs." (includes label and implies official announcement)
+* CORRECT: "Apple's foldable iPhone specs were detailed in recent leaks. The device may feature a 7.6-inch display." (no label, proper attribution)
 
-* INCORRECT: "Google Reveals New Product Features." (implies official reveal)
-* CORRECT: "Google's new product features reportedly include voice control. The update is expected next month."
+* INCORRECT: "Google Reveals New Product Features. CONTEXT: This follows their previous release." (includes label and implies official reveal)
+* CORRECT: "Google's new product features reportedly include voice control. The update is expected next month following their previous release." (no labels, maintains qualification)
 
 TEMPORAL ACCURACY (CRITICAL):
 * TODAY means {date} - the system's current date at the time of processing
@@ -173,10 +174,10 @@ EXAMPLES OF EFFECTIVE SUMMARIES:
 "Voters will decide on Proposition 37 on November 5, 2025. The measure would establish universal basic income for all state residents over 18, funded by a 2% wealth tax on assets exceeding $50 million."
 
 **INCORRECT APPROACH - DO NOT DO THIS:**
-"The article explains how to use the Drupal Views module for organizing content display, including how to add views through the Structure section, configure settings, choose between Page or Block displays and it also mentions..." [Incomplete and runs on]
+"EVENT: Drupal released its Views module. The module helps organize content by creating custom displays without SQL queries. CONTEXT: This follows increased demand for no-code solutions." [Includes labels and has line breaks]
 
 **CORRECT APPROACH - DO THIS INSTEAD:**
-"Drupal's Views module helps organize content by creating custom displays without SQL queries. The module offers both Page and Block options with various formatting choices for easier website management."
+"Drupal released its Views module allowing users to create organized content lists without SQL queries. The module offers both Page and Block options with various formatting choices for easier website management."
 {write_in_clear_english}
 {dont_tell_me}"#,
         summary = summary_response,
