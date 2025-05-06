@@ -78,23 +78,24 @@ Now summarize the article text above using these rules:
     )
 }
 
-/// Generate a prompt for creating a tiny one-sentence summary based on an existing summary
+/// Generate a prompt for creating a tiny multi-sentence summary based on an existing summary
 pub fn tiny_summary_prompt(summary_response: &str) -> String {
     format!(
         r#"Below is the summary of an article between ~~~ markers:
 ~~~
 {summary}
 ~~~
-CREATE ONE SENTENCE:
-* TARGET LENGTH: 200 characters
-* ABSOLUTE MAXIMUM: 400 characters
-* If your sentence reaches 400 characters, start over and prioritize better
-* Never leave an incomplete thought or hanging sentence
+CREATE A CONCISE SUMMARY:
+* TARGET LENGTH: 200 characters total
+* ABSOLUTE MAXIMUM: 400 characters total
+* Use 2-3 short, complete sentences instead of one long sentence
+* Each sentence should focus on a distinct aspect of the news
+* If you reach 400 characters, start over and prioritize better
 
 * The summary may include "EVENT:" and "CONTEXT:" prefixes
 * Extract the core information from the EVENT bullet point (who, what, when, where)
-* Use this as the foundation of your sentence
-* Add the most important details from other bullet points
+* Use this as the foundation of your first sentence
+* Add the most important details from other bullet points in subsequent sentences
 * You can incorporate relevant context if space allows
 
 REQUIREMENTS:
@@ -102,7 +103,7 @@ REQUIREMENTS:
 * Must prioritize most important information
 * Must drop less critical details
 * Must use active voice
-* Must be ONE complete, coherent sentence
+* Must be 2-3 complete, coherent sentences
 * Must preserve source attribution and factual accuracy
 * Must distinguish between confirmed facts vs rumors/leaks/reports
 * Must NEVER convert "reportedly" or "according to leaks" into definitive statements
@@ -116,63 +117,66 @@ CRITICAL: PRESERVE FACTUAL ACCURACY
 * NEVER suggest a company officially announced something when article only mentions leaks/rumors
 
 PROPER ATTRIBUTION EXAMPLES:
-* INCORRECT: "Apple Details Foldable iPhone Specs" (implies official announcement)
-* CORRECT: "Apple's Foldable iPhone Specs Detailed in Recent Leaks" (preserves leak attribution)
+* INCORRECT: "Apple Details Foldable iPhone Specs." (implies official announcement)
+* CORRECT: "Apple's foldable iPhone specs were detailed in recent leaks. The device may feature a 7.6-inch display."
 
-* INCORRECT: "Google Reveals New Product Features" (implies official reveal)
-* CORRECT: "Google's New Product Features Reportedly Include Voice Control" (maintains qualification)
+* INCORRECT: "Google Reveals New Product Features." (implies official reveal)
+* CORRECT: "Google's new product features reportedly include voice control. The update is expected next month."
 
 TEMPORAL ACCURACY (CRITICAL):
 * TODAY means {date} - the system's current date at the time of processing
 * ALWAYS use appropriate tense to distinguish between past, present, and future events
 * For PAST events (before today): Use past tense ("announced," "released," "discovered")
 * For PRESENT events (happening now): Use present tense ("is announcing," "is rolling out")
-* For FUTURE events (after today): Use future-indicating phrases ("will announce," "plans to release," "is scheduled to launch")
+* For FUTURE events (after today): Use future-indicating phrases ("will announce," "plans to release")
 * NEVER describe future events as if they've already happened
 * Check dates carefully and maintain temporal accuracy
 * When a date is mentioned in the article, compare it to TODAY to determine proper tense
 
+SENTENCE STRUCTURE:
+* First sentence: Focus on the core event (who did what, when, where)
+* Second sentence: Add important details, numbers, or implications
+* Third sentence (if needed): Provide context or additional significance
+* Keep each sentence under 150 characters when possible
+* Each sentence should be complete on its own
+* Avoid conjunctions that create run-on sentences
+
 LEAD-IN VARIETY:
-* DO NOT always start with "In [month/date/year]" unless the date is CRITICAL to understanding the news
-* ONLY highlight the date when it adds significant value to the information (e.g., election dates, product release timing)
-* Vary your opening approaches based on what's most important about the news:
-  - For significant actions: Start with the subject and their action
-  - For major discoveries: Highlight what was found
-  - For announcements: Focus on what was revealed
-  - For ongoing situations: Emphasize current developments
-  - For analyses/reports: Start with key findings
+* DO NOT always start with "In [month/date/year]" unless the date is CRITICAL
+* ONLY highlight the date when it adds significant value to the information
+* Vary your opening approaches based on what's most important about the news
 
 PROMOTIONAL CONTENT:
-* Your summary should focus on substantive information, not promotions or sales
-* If the article is primarily about price reductions, discounts, or limited-time offers, indicate this is a "price promotion article" rather than presenting it as significant news
+* Focus on substantive information, not promotions or sales
+* If the article is primarily about price reductions, indicate this is a "price promotion article"
 
 For multi-topic articles:
-* Synthesize the main points without relying on "In [timeframe]" as a crutch
+* Use one sentence per major topic
 * Drop minor events to stay within length
 * Keep only the most significant numbers/dates
-* Plan your sentence before writing to ensure completion within limit
 
-EXAMPLES OF DIVERSE, EFFECTIVE SUMMARIES:
-**Action-Focused (182 chars):**
-"Drupal released its Views module allowing users to create organized content lists without SQL queries, offering Page and Block display options with customizable formats."
+EXAMPLES OF EFFECTIVE SUMMARIES:
 
-**Discovery-Focused (195 chars):**
-"Researchers at MIT discovered a new quantum computing method that reduces error rates by 40% while requiring fewer qubits, potentially accelerating practical applications by several years."
+**Technology Announcement (183 chars):**
+"Drupal released its Views module allowing users to create organized content lists without SQL queries. The module offers both Page and Block display options with customizable formats."
 
-**Announcement-Focused (176 chars):**
-"Apple's upcoming iPhone will feature satellite connectivity for emergency calls in remote areas without cellular coverage, according to multiple sources familiar with the company's plans."
+**Discovery News (199 chars):**
+"Researchers at MIT discovered a new quantum computing method that reduces error rates by 40%. This breakthrough requires fewer qubits and could accelerate practical applications by several years."
 
-**Analysis-Focused (189 chars):**
-"Recent climate data reveals Arctic ice reached its lowest summer extent since records began, with scientists warning the region could experience ice-free summers by 2035 if current trends continue."
+**Product Leak (170 chars):**
+"Apple's upcoming iPhone will reportedly feature satellite connectivity for emergency calls. The technology would work in remote areas without cellular coverage, according to multiple sources."
 
-**Date-Important Example (204 chars):**
-"On November 5, 2025, voters will decide on Proposition 37, which would establish universal basic income for all state residents over 18, funded by a 2% wealth tax on assets exceeding $50 million."
+**Climate Report (177 chars):**
+"Arctic ice reached its lowest summer extent since records began. Scientists warn the region could experience ice-free summers by 2035 if current trends continue."
+
+**Election News (198 chars):**
+"Voters will decide on Proposition 37 on November 5, 2025. The measure would establish universal basic income for all state residents over 18, funded by a 2% wealth tax on assets exceeding $50 million."
 
 **INCORRECT APPROACH - DO NOT DO THIS:**
-"The article explains how to use the Drupal Views module for organizing content display, including how to add views through the Structure section, configure settings, choose between Page or Block displays..." [Incomplete at 400 characters]
+"The article explains how to use the Drupal Views module for organizing content display, including how to add views through the Structure section, configure settings, choose between Page or Block displays and it also mentions..." [Incomplete and runs on]
 
 **CORRECT APPROACH - DO THIS INSTEAD:**
-"Drupal's Views module helps organize content by creating custom displays without SQL queries, offering both Page and Block options with various formatting choices for easier website content management."
+"Drupal's Views module helps organize content by creating custom displays without SQL queries. The module offers both Page and Block options with various formatting choices for easier website management."
 {write_in_clear_english}
 {dont_tell_me}"#,
         summary = summary_response,
