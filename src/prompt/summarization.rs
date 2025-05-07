@@ -32,7 +32,12 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
 
 3. **First Bullet Point MUST:**
    - Start with "EVENT:" followed by a concise description of the main event (who, what, when, where).
-   - Example: "EVENT: Microsoft announced acquisition of GitHub for $7.5 billion on June 4, 2018."
+   - CRITICAL: Use precise verbs that accurately reflect certainty level:
+     * For confirmed facts: "announced", "released", "launched", "confirmed"
+     * For rumors/reports/leaks: "reportedly", "allegedly", "rumored to", "according to sources", "is said to"
+   - Examples: 
+     * Confirmed: "EVENT: Microsoft announced acquisition of GitHub for $7.5 billion on June 4, 2018."
+     * Unconfirmed: "EVENT: Apple reportedly plans to release a foldable iPhone in 2026, according to industry leaks."
 
 4. **Each Additional Bullet Point MUST:**
    - Start with a dash (-).
@@ -47,21 +52,40 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
    - Include a "CONTEXT:" section that briefly places the event in broader context.
    - Example: "CONTEXT: This acquisition follows Microsoft's strategic shift toward open-source development under CEO Satya Nadella."
 
-6. **DO NOT:**
+6. **Attribution and Certainty REQUIRED:**
+   - Always maintain appropriate attribution for unconfirmed information
+   - Clearly indicate when information comes from rumors, leaks, analysts, or unconfirmed sources
+   - NEVER present rumors, leaks, or speculation as confirmed facts
+   - Use specific attribution phrases: "according to sources", "reportedly", "allegedly", "rumored", "leaks suggest"
+   - For Apple and other companies: explicitly distinguish between official announcements and unconfirmed reports/rumors
+   - Maintain proper skepticism with phrases like "claimed to" or "purported to" for unverified claims
+
+7. **DO NOT:**
    - Use headings or sections (except for the EVENT and CONTEXT prefixes).
    - Include nested bullets.
    - Include commentary or analysis.
    - Summarize the global context instead of the article.
 
-**EXAMPLE (Correct):**
+**EXAMPLES (Correct):**
+
+Confirmed Event:
 - EVENT: European Union approved new environmental regulations affecting 15 major industries across 3 continents on October 12, 2023.
 - The regulations require a 45% reduction in carbon emissions by 2025, while providing $12 billion in transition funding for affected companies.
 - CONTEXT: This legislation represents the EU's most aggressive climate action since the 2015 Paris Agreement.
 
-**EXAMPLE (Incorrect):**
+Rumor/Leak Example:
+- EVENT: Apple reportedly plans to release an augmented reality headset in 2025, according to supply chain sources cited in Bloomberg.
+- The device is rumored to feature advanced eye-tracking technology and may be priced around $2,000, though specifications remain unconfirmed.
+- Industry analysts suggest Apple has allegedly ordered specialized components from Taiwanese manufacturers for the initial production run.
+- CONTEXT: This would represent Apple's first major new product category since the Apple Watch was introduced in 2015.
+
+**EXAMPLES (Incorrect):**
 - Summarizes unrelated global events mentioned in the context above.
-- New environmental regulations were approved.
-- There will be funding for companies.
+- New environmental regulations were approved. (Too vague)
+- There will be funding for companies. (Too vague)
+- EVENT: Apple is releasing an AR headset in 2025. (WRONG - presents rumor as confirmed fact)
+- EVENT: The company announced its new product yesterday. (WRONG - missing specific attribution for rumor)
+- EVENT: iPhone 16 will include advanced AI features. (WRONG - future event presented as definite without attribution)
 
 Now summarize the article text above using these rules:
 
@@ -116,13 +140,27 @@ CRITICAL: PRESERVE FACTUAL ACCURACY
 * NEVER present unconfirmed information as confirmed fact
 * NEVER convert phrases like "according to sources" into definitive statements
 * NEVER suggest a company officially announced something when article only mentions leaks/rumors
+* Pay SPECIAL ATTENTION to rumors about Apple, Google, Microsoft and other tech companies
+* Distinguish clearly between:
+  - Official announcements ("Apple announced new iPhone features")
+  - Credible reporting ("The Wall Street Journal reports that Apple will announce...")
+  - Rumors/leaks ("Apple is reportedly planning..." or "According to leaks...")
+  - Analyst predictions ("Analysts predict Apple will release...")
+* Be explicit about the source of information in your summary
 
 PROPER ATTRIBUTION EXAMPLES:
+
+* INCORRECT: "Apple's new AR headset will launch next month with a $1,999 price tag." (presents rumor as confirmed fact)
+* CORRECT: "Apple reportedly plans to launch an AR headset next month, with sources suggesting a $1,999 price tag, according to Bloomberg." (maintains attribution and uncertainty)
+
+* INCORRECT: "Google's Pixel 8 includes advanced AI features for photo editing." (when based on leaks/rumors)
+* CORRECT: "Google's upcoming Pixel 8 will reportedly include advanced AI features for photo editing, according to leaked specifications." (maintains attribution)
+
+* INCORRECT: "Microsoft is releasing Windows updates to improve security." (when based on analyst speculation)
+* CORRECT: "Security analysts expect Microsoft to release Windows updates addressing recent vulnerabilities, though no official announcement has been made." (proper attribution)
+
 * INCORRECT: "EVENT: Apple Details Foldable iPhone Specs." (includes label and implies official announcement)
 * CORRECT: "Apple's foldable iPhone specs were detailed in recent leaks. The device may feature a 7.6-inch display." (no label, proper attribution)
-
-* INCORRECT: "Google Reveals New Product Features. CONTEXT: This follows their previous release." (includes label and implies official reveal)
-* CORRECT: "Google's new product features reportedly include voice control. The update is expected next month following their previous release." (no labels, maintains qualification)
 
 TEMPORAL ACCURACY (CRITICAL):
 * TODAY means {date} - the system's current date at the time of processing
@@ -223,6 +261,15 @@ Create ONE 3-5 word title that:
 - Use verbs that accurately reflect the level of certainty
   - For confirmed actions: "Announces", "Launches", "Releases"
   - For rumors/leaks: "Reportedly", "Allegedly", "Rumored to", "Leaks Suggest"
+- Pay SPECIAL ATTENTION to tech companies (Apple, Google, Microsoft, etc.):
+  - Good: *Apple AR Headset Rumored*
+  - Bad: *Apple Launches AR Headset* (when only rumored)
+  - Good: *iPhone Features Reportedly Leaked*
+  - Bad: *iPhone Gets New Features* (when based on leaks, not announcement)
+- ALWAYS check if the underlying article distinguishes between:
+  - Official announcements from the company
+  - Credible reporting from established publications
+  - Industry rumors, leaks, or analyst predictions
 - For articles about price drops, discounts, or sales:
   - Add "Sale:" prefix if the article is primarily about a promotional discount
   - Example: *Sale: iPad Prices Reduced*
