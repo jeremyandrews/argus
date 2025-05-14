@@ -127,16 +127,21 @@ CREATE A CONCISE SUMMARY:
 * If you reach 400 characters, start over and prioritize better
 
 * The summary will include "EVENT:" and "CONTEXT:" bullet points with source labels like [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS]
-* Extract the information after these labels but PRESERVE the level of certainty indicated by the source type
-* DO NOT include the actual [OFFICIAL], [NEWS], etc. labels in your summary
+* You MUST REMOVE BOTH the "EVENT:" and "CONTEXT:" prefixes from your summary
+* You MUST REMOVE the [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] source labels from your summary
+* However, you MUST PRESERVE the level of certainty indicated by these source types in your language
 * For [OFFICIAL] sources: Use confident, definitive language without qualifiers
-  - Example: Convert "EVENT: [OFFICIAL] Microsoft announced new AI features..." to "Microsoft announced new AI features..."
+  - BEFORE: "EVENT: [OFFICIAL] Microsoft announced new AI features..."
+  - AFTER: "Microsoft announced new AI features..." (note: no "EVENT:" prefix, no [OFFICIAL] label)
 * For [NEWS] sources: Include modest attribution when appropriate
-  - Example: Convert "EVENT: [NEWS] The Wall Street Journal reports Apple plans..." to "The Wall Street Journal reports Apple plans..."
+  - BEFORE: "EVENT: [NEWS] The Wall Street Journal reports Apple plans..."
+  - AFTER: "The Wall Street Journal reports Apple plans..." (note: no "EVENT:" prefix, no [NEWS] label)
 * For [RUMOR/LEAK] sources: MUST include clear uncertainty qualifiers
-  - Example: Convert "EVENT: [RUMOR/LEAK] Apple reportedly plans..." to "Apple reportedly plans..."
+  - BEFORE: "EVENT: [RUMOR/LEAK] Apple reportedly plans..."
+  - AFTER: "Apple reportedly plans..." (note: no "EVENT:" prefix, no [RUMOR/LEAK] label)
 * For [ANALYSIS] sources: Indicate these are opinions or predictions
-  - Example: Convert "EVENT: [ANALYSIS] Market analysts predict Bitcoin will..." to "Market analysts predict Bitcoin will..."
+  - BEFORE: "EVENT: [ANALYSIS] Market analysts predict Bitcoin will..."
+  - AFTER: "Market analysts predict Bitcoin will..." (note: no "EVENT:" prefix, no [ANALYSIS] label)
 * Use the information from the EVENT bullet point as the foundation of your first sentence
 * Add the most important details from other bullet points in subsequent sentences
 * You can incorporate relevant context if space allows
@@ -183,8 +188,10 @@ PROPER ATTRIBUTION EXAMPLES:
 * INCORRECT: "Microsoft is releasing Windows updates to improve security." (when based on analyst speculation)
 * CORRECT: "Security analysts expect Microsoft to release Windows updates addressing recent vulnerabilities, though no official announcement has been made." (proper attribution)
 
-* INCORRECT: "EVENT: Apple Details Foldable iPhone Specs." (includes label and implies official announcement)
-* CORRECT: "Apple's foldable iPhone specs were detailed in recent leaks. The device may feature a 7.6-inch display." (no label, proper attribution)
+* INCORRECT: "EVENT: Apple details foldable iPhone specs." (includes "EVENT:" prefix)
+* INCORRECT: "[OFFICIAL] Apple announced new features." (includes source label)
+* INCORRECT: "EVENT: [RUMOR/LEAK] Apple reportedly plans..." (includes both prefix and label)
+* CORRECT: "Apple's foldable iPhone specs were detailed in recent leaks. The device may feature a 7.6-inch display." (no "EVENT:" prefix, no source label, maintains uncertainty)
 
 TEMPORAL ACCURACY (CRITICAL):
 * TODAY means {date} - the system's current date at the time of processing
@@ -225,7 +232,7 @@ For multi-topic articles:
 - The update includes integration with GPT-6, allowing real-time document summarization and smart content suggestions for users across all pricing tiers.
 - CONTEXT: [NEWS] This release comes amid increasing competition in the productivity software market, as reported by CNBC.
 
-**[OFFICIAL] SOURCE EXAMPLE - CORRECT TINY SUMMARY:**
+**[OFFICIAL] SOURCE EXAMPLE - CORRECT TINY SUMMARY (note: no "EVENT:" or "CONTEXT:" prefixes, no source labels):**
 "Microsoft announced new AI features for Office 365 on March 15, 2025, including GPT-6 integration for document summarization. The update offers smart content suggestions for users across all pricing tiers amid increasing competition in the productivity software market."
 
 **[RUMOR/LEAK] SOURCE EXAMPLE - ORIGINAL BULLETS:**
@@ -233,7 +240,7 @@ For multi-topic articles:
 - The device is rumored to feature a 7.6-inch flexible display when unfolded and may be priced starting at $1,999.
 - CONTEXT: [NEWS] This would represent Apple's response to Samsung's dominance in the foldable phone market, which currently holds 70% market share.
 
-**[RUMOR/LEAK] SOURCE EXAMPLE - CORRECT TINY SUMMARY:**
+**[RUMOR/LEAK] SOURCE EXAMPLE - CORRECT TINY SUMMARY (note: no "EVENT:" or "CONTEXT:" prefixes, no source labels):**
 "Apple reportedly plans to release a foldable iPhone in 2026, according to supply chain sources cited by Bloomberg. The device is rumored to feature a 7.6-inch flexible display and may be priced around $1,999 to compete with Samsung's 70% dominance in the foldable market."
 
 **[NEWS] SOURCE EXAMPLE - ORIGINAL BULLETS:**
@@ -241,7 +248,7 @@ For multi-topic articles:
 - According to the publication, the technology uses silicon-based anodes and could enter production within 18 months.
 - CONTEXT: [ANALYSIS] Industry experts believe this advancement could significantly strengthen Tesla's competitive position against traditional automakers.
 
-**[NEWS] SOURCE EXAMPLE - CORRECT TINY SUMMARY:**
+**[NEWS] SOURCE EXAMPLE - CORRECT TINY SUMMARY (note: no "EVENT:" or "CONTEXT:" prefixes, no source labels):**
 "The Wall Street Journal reports that Tesla is developing a new battery technology with silicon-based anodes that could double vehicle range. According to the publication, this technology could enter production within 18 months, potentially strengthening Tesla's position against traditional automakers."
 
 **[ANALYSIS] SOURCE EXAMPLE - ORIGINAL BULLETS:**
@@ -249,16 +256,17 @@ For multi-topic articles:
 - Their forecast is based on institutional adoption trends and decreasing volatility metrics observed over the past three quarters.
 - CONTEXT: [NEWS] This projection comes as several major banks have launched Bitcoin ETF products, as reported by Financial Times.
 
-**[ANALYSIS] SOURCE EXAMPLE - CORRECT TINY SUMMARY:**
+**[ANALYSIS] SOURCE EXAMPLE - CORRECT TINY SUMMARY (note: no "EVENT:" or "CONTEXT:" prefixes, no source labels):**
 "Cryptocurrency analysts at Goldman Sachs predict Bitcoin will reach $100,000 by the end of 2025, based on institutional adoption trends and decreasing volatility. This projection comes as several major banks have launched Bitcoin ETF products, according to Financial Times."
 
 **INCORRECT CONVERSION EXAMPLES TO AVOID:**
 
-* Converting [RUMOR/LEAK]: "Apple will release a foldable iPhone in 2026 with a 7.6-inch display priced at $1,999." (WRONG - removes uncertainty qualifiers)
-
-* Converting [NEWS]: "Tesla is developing battery technology that doubles vehicle range and will enter production within 18 months." (WRONG - removes attribution to WSJ)
-
-* Converting [ANALYSIS]: "Bitcoin will reach $100,000 by end of 2025 due to institutional adoption and decreasing volatility." (WRONG - presents prediction as fact)
+* "EVENT: Apple reportedly plans to release a foldable iPhone." (WRONG - includes "EVENT:" prefix)
+* "[RUMOR/LEAK] Apple reportedly plans to release a foldable iPhone." (WRONG - includes source label)
+* "CONTEXT: This would represent Apple's response to Samsung's dominance." (WRONG - includes "CONTEXT:" prefix)
+* "Apple will release a foldable iPhone in 2026 with a 7.6-inch display priced at $1,999." (WRONG - removes uncertainty qualifiers)
+* "Tesla is developing battery technology that doubles vehicle range and will enter production within 18 months." (WRONG - removes attribution to WSJ)
+* "Bitcoin will reach $100,000 by end of 2025 due to institutional adoption and decreasing volatility." (WRONG - presents prediction as fact)
 {write_in_clear_english}
 {dont_tell_me}"#,
         summary = summary_response,
@@ -296,7 +304,9 @@ Create ONE 3-5 word title that:
 
 * CRITICAL FACTUAL ACCURACY REQUIREMENTS:
 - The summary will contain source labels ([OFFICIAL], [NEWS], [RUMOR/LEAK], [ANALYSIS])
-- Your title MUST reflect the appropriate level of certainty based on these source labels
+- DO NOT include "EVENT:" or "CONTEXT:" prefixes in your title
+- DO NOT include [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] labels in your title
+- However, your title MUST reflect the appropriate level of certainty based on these source labels
 - For [OFFICIAL] sources, you may use definitive verbs like "Announces", "Launches", "Releases"
 - For [RUMOR/LEAK] sources, your title MUST reflect this uncertainty
   - Good: *iPhone Specs Leaked Online* or *Rumored iPhone Specs Surface*
@@ -341,11 +351,17 @@ Create ONE 3-5 word title that:
 * RETURN EXACTLY ONE TITLE, regardless of topic count
 
 **EXAMPLES (Single Topic by Source Type):**
-"Trump Called Zelensky a Dictator" (for [OFFICIAL] source)
-"WSJ Reports Border Agreement" (for [NEWS] source)
-"iPhone Features Reportedly Leaked" (for [RUMOR/LEAK] source)
-"Analysts Predict Market Downturn" (for [ANALYSIS] source)
+"Trump Called Zelensky a Dictator" (for [OFFICIAL] source - uses confident language, no source label)
+"WSJ Reports Border Agreement" (for [NEWS] source - attributes to publication, no source label)
+"iPhone Features Reportedly Leaked" (for [RUMOR/LEAK] source - includes uncertainty qualifier, no source label)
+"Analysts Predict Market Downturn" (for [ANALYSIS] source - indicates it's a prediction, no source label)
 "Apple Products' Prices Reduced" (for sales)
+
+**INCORRECT TITLE EXAMPLES TO AVOID:**
+"EVENT: Trump Called Zelensky" (WRONG - includes "EVENT:" prefix)
+"[OFFICIAL] Trump Called Zelensky" (WRONG - includes source label)
+"CONTEXT: Tensions Between Countries" (WRONG - includes "CONTEXT:" prefix)
+"iPhone 16 Will Have AI" (WRONG - presents [RUMOR/LEAK] as definite fact)
 
 **EXAMPLE (Multi-Topic):**
 "March Global Events Review"
