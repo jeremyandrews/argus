@@ -1,0 +1,308 @@
+# Argus Project Intelligence
+
+## Naming Conventions
+- "Argus" references Argus Panoptes from Greek mythology - the all-seeing giant with many eyes
+- Worker types use consistent naming: Decision Workers and Analysis Workers
+- The system uses "topics" as the primary taxonomy for categorizing content
+
+## Architecture Patterns
+- Analysis Workers can dynamically switch to Decision Worker role when needed, then switch back
+- Workers operate on queue-based model with database-backed persistence
+- Each component can scale independently with multiple parallel workers
+- Notification system has dual channels: Slack (team) and iOS app (individual)
+
+## Project Workflows
+- RSS feeds → Decision Workers → Matched Topics Queue → Analysis Workers → Notifications
+- Life safety concerns follow a specialized path with geographical impact assessment
+- iOS app authentication uses JWT tokens tied to device IDs
+
+## Technology Conventions
+- Rust with tokio for async processing
+- SQLite with SQLx for database operations
+- Local (Ollama) and cloud (OpenAI) LLM integration
+- Prompt templates use structured format with consistent sections
+
+## Quality Analysis
+- Critical analysis examines source credibility and content quality
+- Logical analysis identifies fallacies and reasoning quality
+- Quality scoring uses a three-tier system (1-3) for quick assessment
+- Insights go beyond article content to provide deeper context
+
+## Development Quality Rules
+- Always run `cargo check` and `cargo test` after making any changes to avoid regressions
+- Failing tests should be fixed immediately before other development continues; proper fixes should be made after carefully analyzing the intent of the code
+- All code changes should be verified with tests before being committed
+- Test coverage should be maintained or improved with each change
+
+## Entity Matching & Alias System
+- The entity matching system uses a multi-factor approach with configurable parameters:
+  - Vector similarity has 60% weight in the final score
+  - Entity overlap has 30% weight (with type-specific subscores)
+  - Temporal proximity has 10% weight
+  - The current threshold for article matches is 70% (reduced from 75%)
+  - This means articles must share entities to match, as vector similarity alone maxes at 60%
+
+- Entity type-specific thresholds are used for fuzzy matching:
+  - Person entities: 0.90 Jaro-Winkler threshold, 2 max Levenshtein distance
+  - Organization entities: 0.85 Jaro-Winkler threshold, 3 max Levenshtein distance
+  - Location entities: 0.85 Jaro-Winkler threshold, 3 max Levenshtein distance
+  - Product entities: 0.80 Jaro-Winkler threshold, 3 max Levenshtein distance
+  - These thresholds are defined as constants in normalizer.rs
+
+- Special case handling is implemented for specific entity types:
+  - Acronym detection for organizations (e.g., "FBI" matching "Federal Bureau of Investigation")
+  - Substring matching for products and organizations (e.g., "iPhone" matching "Apple iPhone 15")
+  - Token-based verification to prevent partial matches (e.g., "App" shouldn't match "Apple")
+  - Common variation substitution (e.g., "center" ↔ "centre", "organization" ↔ "organisation")
+
+- The entity alias system follows a multi-tier matching strategy:
+  1. Basic normalization (case folding, whitespace normalization, etc.)
+  2. Exact match after normalization (fastest)
+  3. Cache lookup with time-based expiration (optimized performance)
+  4. Database alias lookup (reliable for known aliases)
+  5. Fuzzy matching fallback (for unknown aliases)
+  6. Negative match checking (to prevent repeated false positives)
+
+- Parameter optimization strategies based on our testing:
+  - Entity type weights should reflect their importance in different domains
+  - Primary entities should have more impact than secondary or mentioned entities
+  - Temporal proximity should have lower weight but can be a useful tiebreaker
+  - Thresholds should be optimized based on precision/recall tradeoffs
+  - Adaptive thresholds work better than fixed thresholds for diverse content
+
+- Pattern-based alias discovery uses configurable regex patterns:
+  - "X, also known as Y" pattern: `(?P<canonical>.+?),?\s+(?:also\s+)?(?:known|called)\s+as\s+["']?(?P<alias>.+?)["']?[,\.)]`
+  - "X (formerly Y)" pattern: `(?P<canonical>.+?)\s+\((?:a\.?k\.?a\.?|formerly)\s+["']?(?P<alias>.+?)["']?\)`
+  - "Y, now known as X" pattern: `["']?(?P<alias>.+?)["']?,?\s+now\s+(?:known\s+as\s+)?["']?(?P<canonical>.+?)["']?[,\.)]`
+  - These patterns are defined in aliases.rs and can be extended
+
+- Alias system performance optimizations:
+  - Thread-safe caching layer uses DashMap for concurrent access
+  - Cache entries include timestamps for time-based expiration (default: 10 minutes)
+  - Size-based eviction policy prevents unbounded memory growth (default: 10,000 entries)
+  - Cache key normalization ensures consistent lookups (alphabetical ordering of names)
+  - The cache is a global singleton accessed through AliasCache::instance()
+
+## LLM JSON Response Handling
+- The system uses a structured approach to handle different JSON response formats from LLMs
+- The `JsonSchemaType` enum defines supported schema types (EntityExtraction, ThreatLocation, Generic)
+- Each schema type has a corresponding response structure defined in llm.rs
+- When requesting structured JSON, always specify the appropriate schema type in `json_format` parameter
+- Different tasks require different JSON schemas - never hardcode one schema for all tasks
+- The LLM client uses these schemas to properly instruct the LLM about expected response format
+- Error logs should include raw LLM responses to diagnose JSON parsing issues
+- Always validate the top-level structure of JSON responses before attempting to access nested fields
+- JSON schema types should be documented when adding new functions that use structured LLM output
+- Field names change during serialization/deserialization:
+  - LLM responses use a field named `type` for entity types
+  - When serialized to a Rust struct, this becomes `entity_type`
+  - When serialized back to JSON, it remains `entity_type`
+  - Code that processes this JSON should look for `entity_type` not `type`
+  - Monitor JSON serialization paths closely to track field name transformations
+
+## Ollama Client Configuration
+- When creating Ollama clients, follow the same pattern used in main.rs
+- Do not attempt to strip protocols from URLs yourself; pass them directly to Ollama constructor:
+  - CORRECT: `Ollama::new(host.clone(), port)`
+  - INCORRECT: `Ollama::new(host.trim_start_matches("http://"), port)`
+- Environment variables should be handled consistently across all binaries
+- For utility programs, prefer to use the same env variables as the main program:
+  - Use `ANALYSIS_OLLAMA_CONFIGS` and `DECISION_OLLAMA_CONFIGS` instead of custom variables
+  - This ensures consistent configuration across all components
+- All code that connects to external services should use a consistent pattern
+- LLM client initialization should be centralized or follow a clear template
+- Use the `process_ollama_configs` and `process_analysis_ollama_configs` functions from lib.rs to parse environment variables
+
+## Vector Similarity Calculation
+- Vector similarity is a critical component of article matching (weighted at 60% of the final score)
+- Always retrieve actual article vectors from Qdrant - never use dummy or placeholder vectors:
+  - INCORRECT: `calculate_vector_similarity(&vec![0.0; 1024], article_id)` - using a dummy vector
+  - CORRECT: `calculate_direct_similarity(&source_vector, &target_vector)` - using real vectors
+- Qdrant client is used via the qdrant-client crate (version 1.13)
+- For consistency, lib.rs exports common functions for vector operations:
+  ```rust
+  pub use vector::{calculate_direct_similarity, get_article_vector_from_qdrant};
+  ```
+- Always use these exported functions rather than reimplementing vector operations
+- Special handling is required for self-comparisons (when an article is compared to itself):
+  - Self-comparisons should always return a vector similarity of 1.0 (perfect match)
+  - Explicitly check for self-comparisons: `if article_id == source_article_id`
+- Vector similarity calculation has three main steps:
+  1. Retrieve source article vector from Qdrant
+  2. Retrieve target article vector from Qdrant
+  3. Calculate cosine similarity between the two vectors
+- All new code that needs vector similarity should use a common pattern:
+  ```rust
+  // First, get both vectors
+  let source_vector = get_article_vector_from_qdrant(source_id).await?;
+  let target_vector = get_article_vector_from_qdrant(target_id).await?;
+  
+  // Then calculate similarity
+  let similarity = calculate_direct_similarity(&source_vector, &target_vector)?;
+  ```
+- Error handling for vector operations should provide specific failure reasons:
+  - Vector not found in database
+  - Dimension mismatch between vectors
+  - Near-zero magnitude vectors (can cause NaN results)
+  - Qdrant connection failures
+- Vector similarity functions should always check vector magnitudes:
+  - A vector magnitude below 0.001 should be treated as an error
+  - Avoid division by zero errors by checking magnitudes before normalization
+
+## Entity-Based Article Matching
+- Entity extraction uses structured LLM prompts to identify people, organizations, locations, and events
+- Entity extraction requires the EntityExtraction schema type for proper JSON handling
+- Multi-factor similarity uses weighted combination of vector similarity (60%), entity overlap (30%), and temporal proximity (10%)
+- Entity storage follows a normalized database schema with separate tables for entities and article-entity relationships
+- Similarity functions should be consolidated not duplicated - avoid maintaining parallel implementations
+- Entity importance is classified as PRIMARY, SECONDARY, or MENTIONED to prioritize matching weight
+- Database-related entity operations should be kept in db.rs for consistency with architecture
+- Entity matching has two critical paths: vector similarity and entity-based matching
+- The dual-query approach ensures we don't miss valid matches from either approach
+- Type compatibility with Qdrant client types requires careful attention due to potential mismatches:
+  - Watch for namespace conflicts between `qdrant_client::qdrant::vectors::VectorsOptions` and `qdrant_client::qdrant::vectors_output::VectorsOptions`
+  - When pattern matching against references to enums from different modules, use fully qualified paths with the `&EnumType::Variant(ref v)` pattern
+- For transparency, similarity metrics should be exposed in JSON output, including:
+  - Vector quality metrics (score, active dimensions, magnitude)
+  - Entity-specific overlap scores (by entity type: person, org, location, event)
+  - Formula explanation showing the weighted contribution of each component
+- Similarity formula should be clearly documented in both code and JSON output to help diagnose matching issues
+- Consistent weighting is critical for proper similarity calculation:
+  - Always apply the same weighting scheme (60% vector, 40% entity) across all code paths
+  - When entity data is missing, still use 60% of the vector score, not 100%
+  - This ensures articles without entity overlap cannot exceed a score of 0.6, falling below our 0.75 threshold
+  - Similarity descriptions in output should accurately reflect the actual calculation being performed
+  - Maintain the minimum threshold (currently 0.75) above what's possible with vector similarity alone (0.6) to require entity overlap
+
+## Entity Matching Diagnostic Tools
+- The system includes several specialized diagnostic tools for entity matching analysis:
+  - `analyze_matches`: Command-line tool for detailed analysis of a single article pair
+  - `batch_analyze`: Command-line tool for statistical analysis of multiple article pairs
+  - `create_match_pairs`: Command-line tool for generating test datasets
+  - `/articles/analyze-match` API endpoint for diagnostic information
+
+- When using diagnostic tools, follow these conventions:
+  - Single pair analysis should include detailed output for all metrics (vector, entity by type, temporal)
+  - Batch analysis should generate both CSV output and summary statistics
+  - Statistical reports should include match success rates, common failure patterns, score distributions
+  - Testing should involve both known matches and known non-matches to assess precision and recall
+
+- Diagnostic output format should include:
+  - Clear threshold information showing the cutoff for matches (currently 0.75)
+  - Individual component scores (vector, entity, temporal) with their weighted contributions
+  - Entity-by-entity comparison showing shared entities and their importance levels
+  - Clear explanation of why articles did or didn't match
+  - For near misses, show how close they came to the threshold
+
+- Common match failure patterns to check for:
+  - No shared entities despite semantic similarity (entity extraction failure)
+  - Weak vector similarity despite strong entity overlap (embedding issues)
+  - Date filtering eliminating valid matches (date format or window issues)
+  - Entity importance misalignment (correct entities but wrong importance level)
+  - Single entity type dominance (e.g., only location matches, no people/org matches)
+
+- Test dataset generation should produce:
+  - A mix of likely matches (same-day articles) and random pairs
+  - CSV format compatible with batch_analyze tool
+  - Sufficient volume for statistical significance (100+ pairs minimum)
+  - Recent articles with complete entity data (use find_articles_with_entities)
+- Always check *all* code paths that handle similar articles without entity data to ensure they apply the 60% weighting consistently
+- Important bug pattern to watch for: when there are multiple code paths for article processing, ensure all paths apply the same weighting rules
+- Similar articles should never appear in results unless they meet both the threshold (0.75+) and have entity overlap
+- Enhanced diagnostic logging has been added for entity extraction, entity matching, and similarity scoring to help troubleshoot issues
+
+## Date Handling in SQLite
+- RFC3339 formatted dates require special handling in SQLite queries:
+  - Direct string comparison can fail due to timezone and formatting variations
+  - INCORRECT: `WHERE a.pub_date > ?` directly comparing RFC3339 strings
+  - CORRECT: `WHERE substr(a.pub_date, 1, 10) >= substr(?, 1, 10)` comparing just the date portion
+
+- Best Practices for Date Filtering:
+  - Extract just the date portion (YYYY-MM-DD) using substring operations
+  - Use date windows rather than fixed thresholds (e.g., 14 days before to 1 day after)
+  - When both event_date and pub_date exist, use COALESCE:
+    ```sql
+    WHERE COALESCE(date(substr(a.event_date,1,10)), date(substr(a.pub_date,1,10))) 
+          BETWEEN date(substr(?,1,10), '-14 days') AND date(substr(?,1,10), '+1 day')
+    ```
+  - Add proper indexes for date fields: `CREATE INDEX IF NOT EXISTS articles_pub_date ON articles(pub_date)`
+  - Always handle NULL values properly with IS NULL checks or COALESCE
+
+- Date Parameters in Function Calls:
+  - Use Option<&str> for date parameters to properly handle NULL values
+  - INCORRECT: `store_embedding(conn, &id, &embedding, "unknown", "unknown", &entity_ids)`
+  - CORRECT: `store_embedding(conn, &id, &embedding, pub_date.as_deref(), event_date.as_deref(), &entity_ids)`
+
+## Application Conventions
+- iOS app relies on push notifications with payload size limits
+- Detailed content is stored in R2 and linked in notifications
+- Users subscribe to topics through the iOS app
+- Quality filters allow users to set minimum quality thresholds
+
+## Text Processing Libraries
+- **String Similarity (strsim v0.11.1)**: Used for fuzzy matching and comparison
+  - Provides Levenshtein distance, Jaro-Winkler, and other similarity metrics
+  - Used in entity matching to handle minor spelling variations
+  - Appropriate threshold is typically 0.8+ for name matches
+
+- **Word Stemming (rust-stemmers v1.2.0)**: Used for normalizing word variations
+  - Reduces words to their base/root form (e.g., "running" → "run")
+  - Important for entity normalization where morphological variants appear
+  - Should be coupled with case normalization for best results
+
+- **Unicode Handling**:
+  - unicode-normalization (v0.1.24): Ensures consistent Unicode representation (use NFC normalization)
+  - unicode-segmentation (v1.12): Proper handling of grapheme clusters and word boundaries
+  - Important for processing non-English content and special characters
+  - All entity names should be Unicode-normalized before comparison or storage
+
+- **Language Detection (whatlang v0.16.4)**:
+  - Used to identify the language of article content
+  - Helps apply appropriate language-specific processing rules
+  - Minimum confidence threshold should be 0.8 for language detection
+
+## RSS Feed Diagnostics
+- The system includes a dedicated diagnostic tool for troubleshooting RSS feed loading issues:
+  - `test_rss_feed`: Command-line binary for testing RSS feed connectivity and parsing
+  - Provides detailed diagnostics about HTTP headers, compression, content type, and feed structure
+  - Shows raw content hex dumps for binary inspection of problematic feeds
+  - Displays decoded content previews for text inspection
+  - Lists successfully parsed feed entries when available
+
+- When troubleshooting feed loading issues:
+  - First check the HTTP headers - especially content-type and content-encoding
+  - Look for compression methods in use (gzip, deflate, brotli)
+  - Examine raw content hex dump for binary patterns that might indicate encoding issues
+  - Check for valid XML/RSS markers in the decoded content
+  - Review any specific errors or warnings reported by the diagnostic tool
+
+- Common RSS feed loading issues to watch for:
+  - Brotli compression (content-encoding: br) - now supported but was previously a problem
+  - Invalid UTF-8 encoding in content, especially after decompression
+  - Malformed XML that doesn't meet RSS/Atom format requirements
+  - Non-standard character encodings (requiring specific decoding)
+  - Content-type mismatches (reported as application/xml but actually binary data)
+  - Mixed content issues (partial XML with binary segments)
+
+- Best practices for RSS feed diagnostics:
+  - Use `test_rss_feed <url>` to diagnose any feed loading issues
+  - Always check both raw and decoded content previews
+  - Compare HTTP headers against actual content to identify mismatches
+  - For compression issues, look for content-encoding headers
+  - For encoding issues, check charset parameter in content-type
+  - When adding feed support, consider all four compression types (gzip, zlib, deflate, brotli)
+  - Use diagnostic tool output to guide targeted fixes in the RSS module
+
+## Cloud Storage Integration
+- **AWS SDK Configuration**:
+  - aws-config (v1.1.7): Used with behavior-version-latest feature for modern API behavior
+  - aws-sdk-s3 (v1.68): Provides S3 client for R2 integration
+  - Authentication using environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+  - R2 endpoint configuration uses custom endpoint URL (R2_ENDPOINT)
+
+- **Content Storage Pattern**:
+  - JSON files stored in predictable path format: `{bucket_name}/{uuid}.json`
+  - Analysis results stored with article ID in the filename for easy reference
+  - URLs to content are generated and included in notifications
+  - Content is stored in both full and summarized formats for different use cases
+  - Article IDs must be exposed in R2 JSON to allow for match feedback

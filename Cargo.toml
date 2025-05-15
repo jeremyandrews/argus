@@ -1,50 +1,86 @@
 [package]
 name = "argus"
-version = "0.10.26"
+version = "0.13.13"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-async-openai = "0.27"
+clap = { version = "4.4", features = ["derive"] }
+async-openai = "0.28"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+dashmap = "6.1"
 aws-sdk-s3 = "1.68"
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["typed-header"] }
 base64 = "0.22"
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
 chrono = "0.4"
+colored = "3.0"
 emailmessage = "0.2"
 encoding_rs = "0.8"
 feed-rs = "2.1"
 flate2 = "1.0"
+brotli = "3.4"
+fst = "0.4.7"
 futures = "0.3"
+futures-util = "0.3"
 jsonwebtoken = "9.0"
 lazy_static = "1.5"
 ollama-rs = "0.2"
 once_cell = "1.19"
+prettytable-rs = "0.10.0"
+qdrant-client = "1.13"
 rand = "0.9"
 regex = "1.0"
 readability = "0.3"
-reqwest = { version = "0.12", features = ["cookies", "json", "gzip", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["cookies", "gzip", "json", "rustls-tls", "stream"] }
 ring = "0.17"
 schemars = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "macros"] }
-sysinfo = "0.33"
+strsim = "0.11.1"
+rust-stemmers = "1.2.0"
+sysinfo = "0.34"
+tokenizers = "0.21"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio = { version = "1", features = ["full"] }
+unicode-normalization = "0.1.24"
 unicode-segmentation = "1.12"
 url = "2.5"
 urlnorm = "0.1.6"
 uuid = "1.11"
+whatlang = "0.16.4"
 
 [build-dependencies]
 chrono = "0.4"
 
 [[bin]]
-name = "rss_fetcher"
-path = "src/bin/rss_fetcher.rs"
+name = "process_entities"
+path = "src/bin/process_entities.rs"
 
+[[bin]]
+name = "test_entity_extraction"
+path = "src/bin/test_entity_extraction.rs"
+
+[[bin]]
+name = "test_ollama_endpoints"
+path = "src/bin/test_ollama_endpoints.rs"
+
+[[bin]]
+name = "test_thinking_model"
+path = "src/bin/test_thinking_model.rs"
+
+[[bin]]
+name = "test_entity_normalizer"
+path = "src/bin/test_entity_normalizer.rs"
+
+[[bin]]
+name = "manage_aliases"
+path = "src/bin/manage_aliases.rs"

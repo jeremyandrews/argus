@@ -16,6 +16,7 @@ const ANALYSIS_OPENAI_CONFIGS_ENV: &str = "ANALYSIS_OPENAI_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
+const USE_REASONING_MODELS_ENV: &str = "USE_REASONING_MODELS";
 
 use argus::analysis_worker;
 use argus::app::api;
@@ -23,7 +24,10 @@ use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rss;
-use argus::{FallbackConfig, LLMClient, START_TIME, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST};
+use argus::{
+    FallbackConfig, LLMClient, ThinkingModelConfig, START_TIME, TARGET_LLM_REQUEST,
+    TARGET_WEB_REQUEST,
+};
 
 use environment::get_env_var_as_vec;
 
@@ -34,6 +38,7 @@ struct AnalysisWorkerConfig {
     llm_client: LLMClient,
     model: String,
     fallback: Option<FallbackConfig>,
+    no_think: bool,
 }
 
 pub fn initialize_start_time() {
@@ -62,36 +67,30 @@ async fn main() -> Result<()> {
     let mut analysis_workers: Vec<AnalysisWorkerConfig> = Vec::new();
     let mut analysis_count: i16 = 0;
 
-    // Existing helper functions remain unchanged
-    fn process_ollama_configs(
+    // Process Ollama and OpenAI configs using shared functions
+    fn process_ollama_configs_for_workers(
         configs: &str,
-        workers: &mut Vec<(i16, LLMClient, String)>,
+        workers: &mut Vec<(i16, LLMClient, String, bool)>,
         count: &mut i16,
     ) {
-        for config in configs.split(';').filter(|c| !c.is_empty()) {
-            let parts: Vec<&str> = config.split('|').collect();
-            if parts.len() != 3 {
-                error!("Invalid Ollama configuration format: {}", config);
-                continue;
-            }
-            let host = parts[0].to_string();
-            let port: u16 = parts[1].parse().unwrap_or_else(|_| {
-                error!("Invalid port in configuration: {}", parts[1]);
-                11434 // Default port
-            });
-            let model = parts[2].to_string();
+        for (host, port, model, no_think) in argus::process_ollama_configs(configs) {
             info!(
-                "Configuring Ollama worker {} to connect to model '{}' at {}:{}",
-                *count, model, host, port
+                "Configuring Ollama worker {} to connect to model '{}' at {}:{} (no_think: {})",
+                *count, model, host, port, no_think
             );
-            workers.push((*count, LLMClient::Ollama(Ollama::new(host, port)), model));
+            workers.push((
+                *count,
+                LLMClient::Ollama(Ollama::new(host, port)),
+                model,
+                no_think,
+            ));
             *count += 1;
         }
     }
 
     fn process_openai_configs(
         configs: &str,
-        workers: &mut Vec<(i16, LLMClient, String)>,
+        workers: &mut Vec<(i16, LLMClient, String, bool)>,
         count: &mut i16,
     ) {
         for config in configs.split(';').filter(|c| !c.is_empty()) {
@@ -108,85 +107,55 @@ async fn main() -> Result<()> {
                 "Configuring OpenAI worker {} to connect to model '{}'",
                 *count, model
             );
-            workers.push((*count, LLMClient::OpenAI(client), model));
+            // OpenAI doesn't support no_think mode
+            workers.push((*count, LLMClient::OpenAI(client), model, false));
             *count += 1;
         }
     }
 
-    // New: Function to process Analysis Ollama configurations with optional fallback
-    fn process_analysis_ollama_configs(
+    // Process Analysis config using shared functions
+    fn process_analysis_ollama_configs_for_workers(
         configs: &str,
         workers: &mut Vec<AnalysisWorkerConfig>,
         count: &mut i16,
     ) {
-        for config in configs.split(';').filter(|c| !c.is_empty()) {
-            // Split main and fallback configurations
-            let parts: Vec<&str> = config.split("||").collect();
-            if parts.is_empty() {
-                error!("Invalid Analysis Ollama configuration format: {}", config);
-                continue;
-            }
+        for (host, port, model, no_think, fallback) in
+            argus::process_analysis_ollama_configs(configs)
+        {
+            // Create main LLM client
+            let main_llm_client = LLMClient::Ollama(Ollama::new(host.clone(), port));
 
-            // Process main configuration
-            let main_parts: Vec<&str> = parts[0].split('|').collect();
-            if main_parts.len() != 3 {
-                error!(
-                    "Invalid main Ollama configuration format for Analysis worker: {}",
-                    parts[0]
-                );
-                continue;
-            }
-            let main_host = main_parts[0].to_string();
-            let main_port: u16 = main_parts[1].parse().unwrap_or_else(|_| {
-                error!("Invalid port in main configuration: {}", main_parts[1]);
-                11434 // Default port
-            });
-            let main_model = main_parts[2].to_string();
-            let main_llm_client = LLMClient::Ollama(Ollama::new(main_host, main_port));
-
-            // Process fallback configuration if present
-            let fallback = if parts.len() > 1 {
-                let fallback_parts: Vec<&str> = parts[1].split('|').collect();
-                if fallback_parts.len() != 3 {
-                    error!(
-                        "Invalid fallback Ollama configuration format for Analysis worker: {}",
-                        parts[1]
-                    );
-                    None
-                } else {
-                    let fallback_host = fallback_parts[0].to_string();
-                    let fallback_port: u16 = fallback_parts[1].parse().unwrap_or_else(|_| {
-                        error!(
-                            "Invalid port in fallback configuration: {}",
-                            fallback_parts[1]
-                        );
-                        11434 // Default port
-                    });
-                    let fallback_model = fallback_parts[2].to_string();
-                    Some(FallbackConfig {
-                        llm_client: LLMClient::Ollama(Ollama::new(fallback_host, fallback_port)),
+            // Create fallback config if present
+            let fallback_config = fallback.map(
+                |(fallback_host, fallback_port, fallback_model, fallback_no_think)| {
+                    FallbackConfig {
+                        llm_client: LLMClient::Ollama(Ollama::new(
+                            fallback_host.clone(),
+                            fallback_port,
+                        )),
                         model: fallback_model,
-                    })
-                }
-            } else {
-                None
-            };
+                        no_think: fallback_no_think,
+                    }
+                },
+            );
 
             info!(
-                "Configuring Analysis worker {} to connect to model '{}' at host:{}",
-                *count, main_model, main_parts[0]
+                "Configuring Analysis worker {} to connect to model '{}' at {}:{} (no_think: {})",
+                *count, model, host, port, no_think
             );
+
             workers.push(AnalysisWorkerConfig {
                 id: *count,
                 llm_client: main_llm_client,
-                model: main_model,
-                fallback,
+                model,
+                fallback: fallback_config,
+                no_think,
             });
             *count += 1;
         }
     }
 
-    // New: Function to process Analysis OpenAI configurations with optional fallback
+    // Process Analysis OpenAI configurations
     fn process_analysis_openai_configs(
         configs: &str,
         workers: &mut Vec<AnalysisWorkerConfig>,
@@ -231,6 +200,7 @@ async fn main() -> Result<()> {
                     Some(FallbackConfig {
                         llm_client: LLMClient::OpenAI(OpenAIClient::with_config(fallback_config)),
                         model: fallback_model,
+                        no_think: false, // OpenAI doesn't support no_think mode
                     })
                 }
             } else {
@@ -246,6 +216,7 @@ async fn main() -> Result<()> {
                 llm_client: main_llm_client,
                 model: main_model,
                 fallback,
+                no_think: false, // OpenAI doesn't support no_think mode
             });
             *count += 1;
         }
@@ -254,7 +225,7 @@ async fn main() -> Result<()> {
     // Existing process_*_configs functions are unchanged
 
     // Process DECISION configurations
-    process_ollama_configs(
+    process_ollama_configs_for_workers(
         &decision_ollama_configs,
         &mut decision_workers,
         &mut decision_count,
@@ -272,7 +243,7 @@ async fn main() -> Result<()> {
     );
 
     // Load ANALYSIS configurations with possible fallback
-    process_analysis_ollama_configs(
+    process_analysis_ollama_configs_for_workers(
         &analysis_ollama_configs,
         &mut analysis_workers,
         &mut analysis_count,
@@ -290,10 +261,8 @@ async fn main() -> Result<()> {
     );
 
     // Determine number of decision workers to launch
-    let decision_worker_count = decision_ollama_configs
-        .split(';')
-        .filter(|c| !c.is_empty())
-        .count()
+    // Use the shared parse functions to determine the count
+    let decision_worker_count = argus::process_ollama_configs(&decision_ollama_configs).len()
         + decision_openai_configs
             .split(';')
             .filter(|c| !c.is_empty())
@@ -349,7 +318,7 @@ async fn main() -> Result<()> {
 
     // Launch DECISION workers
     let mut decision_handles = Vec::new();
-    for (decision_id, llm_client, decision_model) in
+    for (decision_id, llm_client, decision_model, no_think) in
         decision_workers.into_iter().take(decision_worker_count)
     {
         let decision_worker_topics = topics.clone();
@@ -367,6 +336,7 @@ async fn main() -> Result<()> {
                 temperature,
                 &decision_worker_slack_token,
                 &decision_worker_slack_channel,
+                no_think,
             )
             .await
             {
@@ -382,6 +352,13 @@ async fn main() -> Result<()> {
         decision_handles.push(decision_worker_handle);
     }
 
+    // Configure thinking model based on global switch
+    // Read the environment variable
+    let use_reasoning_models = env::var(USE_REASONING_MODELS_ENV)
+        .unwrap_or_else(|_| "false".to_string())
+        .to_lowercase()
+        == "true";
+
     // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
     for worker_config in analysis_workers.into_iter() {
@@ -390,17 +367,51 @@ async fn main() -> Result<()> {
         let analysis_worker_slack_channel = slack_channel.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Analysis Worker {}", worker_config.id);
+
+        // Use the worker's configured model
+        let worker_model = worker_config.model.clone();
+
+        // Set temperature based on whether we're using reasoning models
+        // This ensures we don't use greedy decoding for reasoning models
+        let worker_temperature = if use_reasoning_models {
+            0.6 // Recommended temperature for reasoning models
+        } else {
+            temperature
+        };
+
+        if use_reasoning_models {
+            info!(target: TARGET_LLM_REQUEST, "{}: Using reasoning model '{}' with parameters (temp=0.6, top_p=0.95, top_k=20)", thread_name, worker_model);
+        }
+
+        // Capture reasoning mode status for this worker
+        let worker_use_reasoning = use_reasoning_models;
+
         let analysis_handle = tokio::spawn(async move {
-            info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_config.model);
+            info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_model);
+
+            // Create thinking config inside the task closure
+            let worker_thinking_config = if worker_use_reasoning {
+                Some(ThinkingModelConfig {
+                    strip_thinking_tags: true,
+                    top_p: 0.95,
+                    top_k: 20,
+                    min_p: 0.0,
+                })
+            } else {
+                None
+            };
+
             match analysis_worker::analysis_loop(
                 worker_config.id,
                 &decision_worker_topics,
                 &worker_config.llm_client,
-                &worker_config.model,
+                &worker_model,
                 &analysis_worker_slack_token,
                 &analysis_worker_slack_channel,
-                temperature,
+                worker_temperature,
                 worker_config.fallback,
+                worker_thinking_config,
+                worker_config.no_think,
             )
             .await
             {

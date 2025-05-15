@@ -9,12 +9,68 @@ use once_cell::sync::Lazy;
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
-use std::{collections::HashSet, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Mutex,
+};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
-use crate::db::Database;
+use crate::db::core::Database;
+use crate::entity::matching::calculate_entity_similarity;
+use crate::vector::search::get_article_entities;
 use crate::SubscriptionsResponse;
+
+/// Request for syncing clusters
+#[derive(Deserialize)]
+struct SyncClustersRequest {
+    known_clusters: Vec<ClusterSyncInfo>,
+}
+
+/// Simple structure for tracking client's known clusters
+#[derive(Deserialize)]
+struct ClusterSyncInfo {
+    id: i64,
+    version: i32, // Based on summary_version
+}
+
+/// Response for the cluster sync endpoint
+#[derive(Serialize)]
+struct SyncClustersResponse {
+    updated_clusters: Vec<ClusterData>,
+    deleted_clusters: Vec<i64>,
+    merged_clusters: Vec<ClusterMergeInfo>,
+}
+
+/// Cluster data for API responses
+#[derive(Serialize)]
+struct ClusterData {
+    id: i64,
+    version: i32,
+    creation_date: String,
+    summary: Option<String>,
+    article_count: i32,
+    importance_score: f64,
+    has_timeline: bool,
+    articles: Vec<ArticleBrief>,
+}
+
+/// Brief article data for cluster listings
+#[derive(Serialize)]
+pub struct ArticleBrief {
+    pub id: i64,
+    pub title: String,
+    pub url: String,
+    pub pub_date: String,
+    pub similarity_score: f64,
+}
+
+/// Information about merged clusters
+#[derive(Serialize)]
+struct ClusterMergeInfo {
+    original_id: i64,
+    merged_into_id: i64,
+}
 
 /// Represents the response for an authentication request, containing a JWT token.
 #[derive(Serialize)]
@@ -54,6 +110,38 @@ struct SyncSeenArticlesResponse {
     unseen_articles: Vec<String>,
 }
 
+/// Request for analyzing match between two articles
+#[derive(Deserialize)]
+struct ArticleMatchAnalysisRequest {
+    source_article_id: i64,
+    target_article_id: i64,
+}
+
+/// Detailed response about article match analysis
+#[derive(Serialize)]
+struct ArticleMatchAnalysisResponse {
+    source_article_id: i64,
+    target_article_id: i64,
+    is_self_match: bool,
+    vector_similarity: f32,
+    entity_similarity: Option<f32>,
+    combined_score: f32,
+    threshold: f32,
+    match_status: bool,
+    source_entity_count: usize,
+    target_entity_count: usize,
+    shared_entity_count: usize,
+    shared_primary_entity_count: usize,
+    person_overlap: Option<f32>,
+    org_overlap: Option<f32>,
+    location_overlap: Option<f32>,
+    event_overlap: Option<f32>,
+    product_overlap: Option<f32>,
+    temporal_proximity: Option<f32>,
+    match_formula: String,
+    reason_for_failure: Option<String>,
+}
+
 /// Static private key used for encoding and decoding JWT tokens.
 static PRIVATE_KEY: Lazy<Mutex<Vec<u8>>> = Lazy::new(|| {
     let rng = SystemRandom::new();
@@ -88,6 +176,316 @@ static VALID_TOPICS: Lazy<HashSet<String>> = Lazy::new(|| {
     topics
 });
 
+/// Analyze the matching between two specific articles to understand why they
+/// match or don't match. This is a diagnostic endpoint for tuning the matching algorithm.
+async fn analyze_article_match(
+    ConnectInfo(_addr): ConnectInfo<SocketAddr>,
+    _headers: HeaderMap,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(payload): Json<ArticleMatchAnalysisRequest>,
+) -> Result<Json<ArticleMatchAnalysisResponse>, StatusCode> {
+    // Validate the JWT token
+    let token = auth_header.token();
+    if decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256)).is_err() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    info!(
+        "Analyzing match between articles {} and {}",
+        payload.source_article_id, payload.target_article_id
+    );
+
+    // Get embeddings for both articles from Qdrant
+    let source_article_id = payload.source_article_id;
+    let target_article_id = payload.target_article_id;
+
+    // Check if this is a self-match (comparing an article to itself)
+    let is_self_match = source_article_id == target_article_id;
+
+    // Initialize response defaults
+    let mut response = ArticleMatchAnalysisResponse {
+        source_article_id,
+        target_article_id,
+        is_self_match,
+        vector_similarity: 0.0,
+        entity_similarity: None,
+        combined_score: 0.0,
+        threshold: 0.75, // Standard threshold
+        match_status: false,
+        source_entity_count: 0,
+        target_entity_count: 0,
+        shared_entity_count: 0,
+        shared_primary_entity_count: 0,
+        person_overlap: None,
+        org_overlap: None,
+        location_overlap: None,
+        event_overlap: None,
+        product_overlap: None,
+        temporal_proximity: None,
+        match_formula: "60% vector similarity + 40% entity similarity".to_string(),
+        reason_for_failure: None,
+    };
+
+    // For self-matches, add a note about not displaying in UI
+    if is_self_match {
+        info!(
+            "Self-match detected for article {}, this would be filtered in related articles",
+            source_article_id
+        );
+        response.reason_for_failure =
+            Some("Self-matches are filtered from related articles in the UI".to_string());
+    }
+
+    // Step 1: Get both articles' entity data
+    let source_entities = match get_article_entities(source_article_id).await {
+        Ok(Some(entities)) => entities,
+        Ok(None) => {
+            response.reason_for_failure =
+                Some("Source article has no extracted entities".to_string());
+            return Ok(Json(response));
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get entities for source article {}: {}",
+                source_article_id, e
+            );
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    let target_entities = match get_article_entities(target_article_id).await {
+        Ok(Some(entities)) => entities,
+        Ok(None) => {
+            response.reason_for_failure =
+                Some("Target article has no extracted entities".to_string());
+            return Ok(Json(response));
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get entities for target article {}: {}",
+                target_article_id, e
+            );
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Step 2: Calculate vector similarity
+    let vector_similarity =
+        match crate::vector::storage::get_article_vector_from_qdrant(source_article_id).await {
+            Ok(source_vector) => {
+                match crate::vector::storage::get_article_vector_from_qdrant(target_article_id)
+                    .await
+                {
+                    Ok(target_vector) => {
+                        match crate::vector::similarity::calculate_direct_similarity(
+                            &source_vector,
+                            &target_vector,
+                        ) {
+                            Ok(similarity) => similarity,
+                            Err(e) => {
+                                warn!("Failed to calculate direct vector similarity: {}", e);
+                                response.reason_for_failure =
+                                    Some("Failed to calculate vector similarity".to_string());
+                                return Ok(Json(response));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to retrieve target article vector: {}", e);
+                        response.reason_for_failure =
+                            Some("Failed to retrieve target article vector".to_string());
+                        return Ok(Json(response));
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to retrieve source article vector: {}", e);
+                response.reason_for_failure =
+                    Some("Failed to retrieve source article vector".to_string());
+                return Ok(Json(response));
+            }
+        };
+
+    response.vector_similarity = vector_similarity;
+
+    // Step 3: Calculate entity similarity
+    let db = Database::instance().await;
+    let (source_pub_date, source_event_date) =
+        match db.get_article_details_with_dates(source_article_id).await {
+            Ok(dates) => dates,
+            Err(e) => {
+                warn!("Failed to get source article dates: {}", e);
+                (None, None)
+            }
+        };
+
+    let (target_pub_date, _) = match db.get_article_details_with_dates(target_article_id).await {
+        Ok(dates) => dates,
+        Err(e) => {
+            warn!("Failed to get target article dates: {}", e);
+            (None, None)
+        }
+    };
+
+    // Calculate entity similarity
+    let entity_sim = calculate_entity_similarity(
+        &source_entities,
+        &target_entities,
+        source_event_date.as_deref().or(source_pub_date.as_deref()),
+        target_pub_date.as_deref(),
+    );
+
+    // Update response with entity details
+    response.entity_similarity = Some(entity_sim.combined_score);
+    response.source_entity_count = source_entities.entities.len();
+    response.target_entity_count = target_entities.entities.len();
+    response.shared_entity_count = entity_sim.entity_overlap_count;
+    response.shared_primary_entity_count = entity_sim.primary_overlap_count;
+    response.person_overlap = Some(entity_sim.person_overlap);
+    response.org_overlap = Some(entity_sim.organization_overlap);
+    response.location_overlap = Some(entity_sim.location_overlap);
+    response.event_overlap = Some(entity_sim.event_overlap);
+    response.product_overlap = Some(entity_sim.product_overlap);
+    response.temporal_proximity = Some(entity_sim.temporal_proximity);
+
+    // Calculate combined score (60% vector + 40% entity)
+    response.combined_score = 0.6 * vector_similarity + 0.4 * entity_sim.combined_score;
+
+    // Determine match status
+    response.match_status = response.combined_score >= response.threshold;
+
+    // Add detailed reason if not matching
+    if !response.match_status {
+        let missing_score = response.threshold - response.combined_score;
+
+        if entity_sim.entity_overlap_count == 0 {
+            response.reason_for_failure = Some(format!(
+                "No shared entities. Articles with no entity overlap cannot match regardless of vector similarity."
+            ));
+        } else if vector_similarity < 0.5 {
+            response.reason_for_failure = Some(format!(
+                "Low vector similarity ({:.2}). Articles need at least {:.2} more points to reach threshold.",
+                vector_similarity, missing_score
+            ));
+        } else if entity_sim.combined_score < 0.3 {
+            response.reason_for_failure = Some(format!(
+                "Weak entity similarity ({:.2}). Despite sharing {} entities, the importance levels or entity types don't align well.",
+                entity_sim.combined_score, entity_sim.entity_overlap_count
+            ));
+        } else {
+            response.reason_for_failure = Some(format!(
+                "Combined score ({:.2}) below threshold ({:.2}). Needs {:.2} more points to match.",
+                response.combined_score, response.threshold, missing_score
+            ));
+        }
+    }
+
+    info!("Match analysis result: articles {} and {} - match={}, score={:.2}, vector={:.2}, entity={:.2}, shared_entities={}",
+          source_article_id, target_article_id, response.match_status, response.combined_score,
+          vector_similarity, entity_sim.combined_score, entity_sim.entity_overlap_count);
+
+    Ok(Json(response))
+}
+
+/// Sync clusters endpoint handler
+async fn sync_clusters(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    Json(payload): Json<SyncClustersRequest>,
+) -> Result<Json<SyncClustersResponse>, StatusCode> {
+    // Validate the JWT token
+    let token = auth_header.token();
+    if decode::<Claims>(token, &DECODING_KEY, &Validation::new(Algorithm::HS256)).is_err() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    let client_ip = get_client_ip(&headers, &addr);
+    info!("app::api sync_clusters request from IP {}", client_ip);
+
+    let db = Database::instance().await;
+
+    // Create maps of known cluster IDs and versions
+    let mut known_clusters = HashMap::new();
+    for info in payload.known_clusters {
+        known_clusters.insert(info.id, info.version);
+    }
+
+    // Get all active clusters
+    let active_clusters = crate::db::cluster::get_active_clusters(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut updated_clusters = Vec::new();
+
+    // Add clusters that are new or have updated versions
+    for cluster in active_clusters {
+        let id = cluster.id;
+        let version = cluster.summary_version;
+
+        let known_version = known_clusters.get(&id).copied().unwrap_or(-1);
+
+        // If client doesn't know this cluster or has an outdated version
+        if known_version < version {
+            // Get articles for this cluster using the proper db function
+            let articles = crate::db::cluster::get_cluster_articles_brief(&db, id, 5)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+            let cluster_data = ClusterData {
+                id,
+                version,
+                creation_date: cluster.creation_date,
+                summary: cluster.summary,
+                article_count: cluster.article_count,
+                importance_score: cluster.importance_score,
+                has_timeline: cluster.has_timeline,
+                articles,
+            };
+
+            updated_clusters.push(cluster_data);
+        }
+    }
+
+    // Get merged clusters
+    let merged_clusters_data = crate::clustering::get_merged_clusters(&db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut merged_clusters = Vec::new();
+    let mut deleted_clusters = Vec::new();
+
+    for (original_id, merged_into_id) in merged_clusters_data {
+        // Only include if client knew about the original cluster
+        if known_clusters.contains_key(&original_id) {
+            merged_clusters.push(ClusterMergeInfo {
+                original_id,
+                merged_into_id,
+            });
+        }
+    }
+
+    // Deleted clusters would be any in the client's known list that are
+    // neither active nor merged into something else
+    for &id in known_clusters.keys() {
+        let exists = crate::db::cluster::does_cluster_exist(&db, id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        if !exists {
+            deleted_clusters.push(id);
+        }
+    }
+
+    let response = SyncClustersResponse {
+        updated_clusters,
+        deleted_clusters,
+        merged_clusters,
+    };
+
+    Ok(Json(response))
+}
+
 /// Main application loop, setting up and running the Axum-based API server.
 pub async fn app_api_loop() -> Result<()> {
     let app = Router::new()
@@ -96,7 +494,9 @@ pub async fn app_api_loop() -> Result<()> {
         .route("/subscriptions", post(get_subscriptions))
         .route("/subscribe", post(subscribe_to_topic))
         .route("/unsubscribe", post(unsubscribe_from_topic))
-        .route("/articles/sync", post(sync_seen_articles));
+        .route("/articles/sync", post(sync_seen_articles))
+        .route("/articles/analyze-match", post(analyze_article_match))
+        .route("/clusters/sync", post(sync_clusters));
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -382,6 +782,8 @@ async fn sync_seen_articles(
 
     Ok(Json(SyncSeenArticlesResponse { unseen_articles }))
 }
+
+// [Nothing here - remove this duplicate function]
 
 async fn get_subscriptions(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
