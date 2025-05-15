@@ -282,6 +282,42 @@ pub fn tiny_title_prompt(summary_response: &str) -> String {
         r#"{summary}
 Create ONE 3-5 word title that:
 
+* HIGHEST PRIORITY - RUMOR/LEAK ACCURACY:
+  - If the summary contains [RUMOR/LEAK], your title MUST CLEARLY indicate this is unconfirmed information
+  - NEVER use these verbs with [RUMOR/LEAK] content: "Unveils", "Announces", "Launches", "Reveals", "Introduces", "Releases", "Confirms"
+  - MANDATORY: For [RUMOR/LEAK] source about future products/features, use ONLY these patterns:
+    * "Rumored [Feature]" (e.g., "Rumored iPhone AI Features")
+    * "[Feature] Reportedly Coming" (e.g., "Battery AI Feature Reportedly Coming")
+    * "Leak Suggests [Feature]" (e.g., "Leak Suggests iPhone Battery AI")
+    * "Report: [Company] Planning [Feature]" (e.g., "Report: Apple Planning Battery AI")
+  
+  - DIRECT EXAMPLES OF THE PROBLEM TO AVOID:
+    * [RUMOR/LEAK] summary about "Apple reportedly working on AI battery feature"
+      - BAD: "Apple Unveils AI Battery Feature" (WRONG - implies official announcement)
+      - BAD: "New iPhone Battery Features Coming" (WRONG - presents as confirmed)
+      - GOOD: "Rumored iPhone Battery AI Feature" (correct - indicates rumor status)
+      - GOOD: "Apple Battery AI Feature Reportedly Coming" (correct - indicates rumor status)
+
+* CRITICAL - PRESERVING CRITICISM CORRECTLY:
+  - When the summary mentions criticism about the "lack of" something positive (depth, quality, originality, etc.):
+    * NEVER drop the "lack of" qualifier in the title
+    * ALWAYS preserve the negative framing in the title
+    * Use phrases like "Lacks Depth" or "Criticized for Lacking Depth" instead of just "Criticized for Depth"
+    
+  - DIRECT EXAMPLES OF CRITICISM PHRASING:
+    * Summary: "criticized for lack of artistic depth"
+      - BAD: "Criticized for Depth" (WRONG - this inverts the meaning to suggest having TOO MUCH depth)
+      - GOOD: "Criticized for Lacking Depth" (correct - preserves negative framing)
+      - GOOD: "Tour Lacks Depth, Critics Say" (correct - clearly indicates the missing quality)
+    
+    * Summary: "review noted poor choreography"
+      - BAD: "Noted for Choreography" (WRONG - sounds positive)
+      - GOOD: "Poor Choreography in Tour" (correct - preserves the negative assessment)
+      
+  - OTHER NEGATION PHRASES TO PRESERVE:
+    * "insufficient", "poor", "weak", "inadequate", "deficient", "missing", "absence of"
+    * Never drop these qualifiers when they modify criticized elements
+
 * Captures the main theme or themes
 * For single-topic articles:
 - The main thing in a headline is the fact. A headline should report an event and answer the questions "who?", "what?", and "where?". Make the headline as informative as possible.
@@ -308,9 +344,13 @@ Create ONE 3-5 word title that:
 - DO NOT include [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] labels in your title
 - However, your title MUST reflect the appropriate level of certainty based on these source labels
 - For [OFFICIAL] sources, you may use definitive verbs like "Announces", "Launches", "Releases"
-- For [RUMOR/LEAK] sources, your title MUST reflect this uncertainty
-  - Good: *iPhone Specs Leaked Online* or *Rumored iPhone Specs Surface*
+- For [RUMOR/LEAK] sources:
+  - Your title MUST use explicit rumor-indicating terms such as "Rumored", "Reportedly", "Leak Suggests"
+  - NEVER use action verbs that imply confirmation like "Unveils", "Announces", "Launches"
+  - ALWAYS make it clear the information is unconfirmed
+  - Good: *iPhone Specs Leaked Online* or *Rumored iPhone Specs Surface* or *Report: Apple AI Feature Coming*
   - Bad: *Apple Announces iPhone Specs* (when it's only a [RUMOR/LEAK])
+  - Bad: *Apple Unveils New Feature* (when it's only a [RUMOR/LEAK])
 - For [NEWS] sources, indicate it's reporting if not a direct confirmation
   - Good: *WSJ Reports Tesla Expansion*
   - Bad: *Tesla Expands to New Markets* (when it's just a news report)
@@ -354,6 +394,8 @@ Create ONE 3-5 word title that:
 "Trump Called Zelensky a Dictator" (for [OFFICIAL] source - uses confident language, no source label)
 "WSJ Reports Border Agreement" (for [NEWS] source - attributes to publication, no source label)
 "iPhone Features Reportedly Leaked" (for [RUMOR/LEAK] source - includes uncertainty qualifier, no source label)
+"Rumored iPhone Battery Feature" (for [RUMOR/LEAK] source - clearly indicates rumor status)
+"Leak Suggests Apple AI Plans" (for [RUMOR/LEAK] source - clearly indicates leak status)
 "Analysts Predict Market Downturn" (for [ANALYSIS] source - indicates it's a prediction, no source label)
 "Apple Products' Prices Reduced" (for sales)
 
@@ -362,6 +404,8 @@ Create ONE 3-5 word title that:
 "[OFFICIAL] Trump Called Zelensky" (WRONG - includes source label)
 "CONTEXT: Tensions Between Countries" (WRONG - includes "CONTEXT:" prefix)
 "iPhone 16 Will Have AI" (WRONG - presents [RUMOR/LEAK] as definite fact)
+"Apple Unveils AI Battery Feature" (WRONG - presents [RUMOR/LEAK] as confirmed announcement)
+"New iPhone Features Coming" (WRONG - presents [RUMOR/LEAK] as confirmed fact without indicating uncertainty)
 
 **EXAMPLE (Multi-Topic):**
 "March Global Events Review"
