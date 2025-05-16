@@ -34,9 +34,17 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
    - This MUST be exactly ONE bullet point
    - Start with "EVENT:" followed by a concise description of the main event (who, what, when, where).
    - EXPLICITLY INDICATE information source type using one of these labels:
-     * [OFFICIAL]: For confirmed facts from primary sources (company announcements, official statements)
+     * [OFFICIAL]: For confirmed facts from primary sources (company announcements, official statements, press releases)
+       - Use this for PRESENT-TENSE announcements: "Company X announces," "Studio Y releases," "Artist Z publishes"
+       - Use this for announcements about CONFIRMED future events: "Movie premiere scheduled for July 2025"
+       - Use this for ANY release date announcement by an official source (studio, publisher, developer)
      * [NEWS]: For reporting from established news sources
+       - Use this for factual reporting by journalists and news outlets
+       - Use this when a news source is reporting on an announcement, but isn't the primary source
      * [RUMOR/LEAK]: For unconfirmed information, leaks, or rumors
+       - Use this ONLY for genuinely unconfirmed information from unofficial sources
+       - Information must lack official confirmation to be classified as [RUMOR/LEAK]
+       - DO NOT use for official announcements about future plans/features/releases
      * [ANALYSIS]: For expert analysis or opinions
    - CRITICAL: Use precise verbs that accurately reflect certainty level:
      * For confirmed facts: "announced", "released", "launched", "confirmed"
@@ -77,10 +85,15 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
 
 **EXAMPLES (Correct):**
 
-Confirmed Event:
+Confirmed Event (Political announcement):
 - EVENT: [OFFICIAL] European Union approved new environmental regulations affecting 15 major industries across 3 continents on October 12, 2023.
 - The regulations require a 45% reduction in carbon emissions by 2025, while providing $12 billion in transition funding for affected companies.
 - CONTEXT: [NEWS] This legislation represents the EU's most aggressive climate action since the 2015 Paris Agreement, as reported by Reuters.
+
+Confirmed Event (Entertainment announcement):
+- EVENT: [OFFICIAL] Paramount+ announced Star Trek: Strange New Worlds season 3 will premiere on July 17, 2025, with a two-episode debut.
+- The new season will feature period-accurate 1960s elements, a murder-mystery on the Holodeck, and appearances by characters Kirk, Scotty, and Sybok.
+- CONTEXT: [NEWS] This announcement highlights the continued success of the Star Trek franchise on streaming platforms, as covered in multiple entertainment publications.
 
 Rumor/Leak Example:
 - EVENT: [RUMOR/LEAK] Apple reportedly plans to release an augmented reality headset in 2025, according to supply chain sources cited in Bloomberg.
@@ -374,9 +387,9 @@ Create ONE 3-5 word title that:
     * Good: *Analysts Predict iPhone Features*
     * Bad: *iPhone Gets New Features* (when just predicted)
 - ALWAYS check the source label in the summary to determine certainty level:
-  - [OFFICIAL]: Direct announcements from the company
+  - [OFFICIAL]: Direct announcements from the company, confirmed future events with specific dates, product release announcements from official sources
   - [NEWS]: Credible reporting from established publications
-  - [RUMOR/LEAK]: Industry rumors, leaks, unconfirmed information
+  - [RUMOR/LEAK]: ONLY genuinely unconfirmed information from unofficial sources, information lacking official confirmation
   - [ANALYSIS]: Expert opinions, predictions, and analysis
 - For articles about price drops, discounts, or sales:
   - Add "Sale:" prefix if the article is primarily about a promotional discount
