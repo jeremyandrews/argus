@@ -23,6 +23,7 @@ Argus is currently in active development with all major components implemented a
 - ✅ **Content Extraction**: Article extraction from web pages using readability
 - ✅ **Duplicate Detection**: Content deduplication through hash-based comparison
 - ✅ **Queue Management**: Database-backed queues for reliable content processing
+- ✅ **Source-Aware Summarization**: Enhanced title generation with proper distinction between news and rumors
 
 ### LLM Integration
 - ✅ **Ollama Support**: Integration with local Ollama LLM instances
@@ -308,6 +309,7 @@ Argus is currently in active development with all major components implemented a
 - ✓ Added testing infrastructure for clustering module
 - ✓ Added no_think mode support for Qwen models to disable thinking tags
 - ✓ Fixed empty thinking tag stripping in no_think mode with proper tests
+- ✓ Improved title generation with clear distinction between news and rumors in summarization
 
 ### In Progress
 - 🔄 Parameter optimization for entity matching

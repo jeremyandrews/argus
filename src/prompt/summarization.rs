@@ -311,6 +311,25 @@ Create ONE 3-5 word title that:
       - GOOD: "Rumored iPhone Battery AI Feature" (correct - indicates rumor status)
       - GOOD: "Apple Battery AI Feature Reportedly Coming" (correct - indicates rumor status)
 
+* CRITICAL DISTINCTION - NEWS vs. RUMORS:
+  - ONLY use "Rumored", "Reportedly", "Unconfirmed", or "Leak Suggests" when the summary EXPLICITLY contains [RUMOR/LEAK]
+  - NEVER add "Rumored" or "Unconfirmed" to news from [NEWS] or [OFFICIAL] sources
+  - [NEWS] source means the information is reported by credible news outlets, NOT that it's a rumor
+  - News about future plans from [NEWS] sources is still NEWS, not rumors
+  
+  - DIRECT EXAMPLES OF [NEWS] vs [RUMOR/LEAK]:
+    * [NEWS] "Russian President Putin approved delegation for Ukraine negotiations"
+      - GOOD: "Russia-Ukraine Talks Set" (correct - treated as news)
+      - BAD: "Rumored Russia-Ukraine Talks" (WRONG - falsely implies uncertainty)
+    
+    * [NEWS] "Donald Trump met with Saudi Crown Prince in Riyadh"
+      - GOOD: "Trump Saudi Meeting Held" (correct - treated as news)
+      - BAD: "Rumored Trump Saudi Meeting" (WRONG - falsely implies uncertainty)
+      
+    * [NEWS] "Rep. Thanedar introduced impeachment articles, according to AP"
+      - GOOD: "Impeachment Articles Introduced" (correct - treated as news)
+      - BAD: "Impeachment Effort Unconfirmed" (WRONG - falsely implies uncertainty)
+
 * CRITICAL - PRESERVING CRITICISM CORRECTLY:
   - When the summary mentions criticism about the "lack of" something positive (depth, quality, originality, etc.):
     * NEVER drop the "lack of" qualifier in the title
@@ -401,6 +420,9 @@ Create ONE 3-5 word title that:
 - Indicate time period if relevant
 * Maintains clarity and accuracy
 * Avoids clickbait or sensationalism
+* NEVER use quotation marks around the entire title
+* NEVER put the title in quotes for style or emphasis
+* Only use quotation marks for actual quotes within a title
 * RETURN EXACTLY ONE TITLE, regardless of topic count
 
 **EXAMPLES (Single Topic by Source Type):**
@@ -419,6 +441,9 @@ Create ONE 3-5 word title that:
 "iPhone 16 Will Have AI" (WRONG - presents [RUMOR/LEAK] as definite fact)
 "Apple Unveils AI Battery Feature" (WRONG - presents [RUMOR/LEAK] as confirmed announcement)
 "New iPhone Features Coming" (WRONG - presents [RUMOR/LEAK] as confirmed fact without indicating uncertainty)
+"Rumored Official Announcement" (WRONG - contradicts itself by labeling confirmed news as a rumor)
+"Unconfirmed AP Report" (WRONG - contradicts itself by labeling a credible news report as unconfirmed)
+"\"Trump Saudi Meeting\"" (WRONG - puts entire title in quotation marks)
 
 **EXAMPLE (Multi-Topic):**
 "March Global Events Review"

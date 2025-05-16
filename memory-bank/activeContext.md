@@ -1,6 +1,33 @@
 # Active Development Context
 
-## Current Focus: RSS Module Refactoring
+## Current Focus: Summarization Prompt Improvements
+
+We've fixed issues in the article summarization system that were incorrectly categorizing confirmed news as rumors. The system was mistakenly adding terms like "Rumored" or "Unconfirmed" to titles of news articles that were from credible sources, not actual rumors or leaks.
+
+### Key Improvements
+
+1. **Enhanced Source Type Distinction**: 
+   - Improved the `tiny_title_prompt` function in `src/prompt/summarization.rs` to better distinguish between different source types
+   - Added clear instructions on when to use rumor-indicating terms (only with explicit `[RUMOR/LEAK]` source labels)
+   - Provided specific examples showing proper handling of `[NEWS]` sources vs. `[RUMOR/LEAK]` sources
+
+2. **Fixed Quotation Mark Issues**:
+   - Added explicit instruction to never put quotation marks around entire titles
+   - Added counterexamples demonstrating incorrect usage of quotation marks
+
+3. **Improved News vs. Rumor Handling**:
+   - Added specific examples showing correct handling of news reported by credible sources
+   - Fixed the distinction between news about future events (which shouldn't be labeled as rumors) and actual unconfirmed rumors
+
+4. **Better Counterexamples**:
+   - Added examples showing common incorrect patterns:
+     - Labeling AP reports as "unconfirmed"
+     - Adding "rumored" to official diplomatic meetings
+     - Contradiction errors like "Rumored Official Announcement"
+
+This change will prevent misleading titles that incorrectly cast doubt on factual reporting from credible news sources.
+
+## Previous Focus: RSS Module Refactoring
 
 We've modularized the `src/rss.rs` file, which had grown too large, into a well-organized directory structure. The module has been split into smaller, focused files to improve maintainability and code organization, following the project's pattern of keeping files under 500 lines.
 
