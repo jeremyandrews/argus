@@ -1,31 +1,39 @@
 # Active Development Context
 
-## Current Focus: Summarization Prompt Improvements
+## Current Focus: Tiny Title Prompt Redesign
 
-We've fixed issues in the article summarization system that were incorrectly categorizing confirmed news as rumors. The system was mistakenly adding terms like "Rumored" or "Unconfirmed" to titles of news articles that were from credible sources, not actual rumors or leaks.
+We've completely redesigned the `tiny_title_prompt` function in `src/prompt/summarization.rs` to solve ongoing issues with title accuracy, particularly around the handling of rumors vs. confirmed information. The previous approach was overly complex and still produced incorrect titles in some cases.
 
 ### Key Improvements
 
-1. **Enhanced Source Type Distinction**: 
-   - Improved the `tiny_title_prompt` function in `src/prompt/summarization.rs` to better distinguish between different source types
-   - Added clear instructions on when to use rumor-indicating terms (only with explicit `[RUMOR/LEAK]` source labels)
-   - Provided specific examples showing proper handling of `[NEWS]` sources vs. `[RUMOR/LEAK]` sources
+1. **Complete Prompt Redesign**: 
+   - Simplified the prompt structure with clearer, more direct instructions
+   - Organized by core principles and practical examples
+   - Added explicit format patterns for each source type
+   - Emphasized present tense usage for all titles (the western tradition for headlines)
 
-2. **Fixed Quotation Mark Issues**:
-   - Added explicit instruction to never put quotation marks around entire titles
-   - Added counterexamples demonstrating incorrect usage of quotation marks
+2. **Dual Summary Context**:
+   - Modified the function to accept both the tiny summary AND the original summary
+   - Gives the title generator access to the explicit source type labels ([OFFICIAL], [NEWS], etc.) from the original summary
+   - Clear instruction to base the title primarily on the tiny summary, using the original summary only for context and certainty determination
 
-3. **Improved News vs. Rumor Handling**:
-   - Added specific examples showing correct handling of news reported by credible sources
-   - Fixed the distinction between news about future events (which shouldn't be labeled as rumors) and actual unconfirmed rumors
+3. **Simpler Source Type Handling**:
+   - Created specific title patterns for each source type:
+     - For [OFFICIAL]: "[Entity] [Action Verb] [Object]" (e.g., "Apple Launches New iPad")
+     - For [NEWS]: "[Entity] [Action Verb] [Object]" or "[Source] Reports [Event]" (e.g., "WSJ Reports Tesla Layoffs")
+     - For [RUMOR/LEAK]: Limited to specific patterns like "Rumored [Subject]" or "[Subject] Reportedly [Verb]"
+     - For [ANALYSIS]: Analysis-indicating patterns like "Analysts Predict [Outcome]"
 
-4. **Better Counterexamples**:
-   - Added examples showing common incorrect patterns:
-     - Labeling AP reports as "unconfirmed"
-     - Adding "rumored" to official diplomatic meetings
-     - Contradiction errors like "Rumored Official Announcement"
+4. **Clear Examples for Each Type**:
+   - Added parallel examples showing the transformation from original summary to tiny summary to title
+   - Grouped examples by source type for easier reference
+   - Included common mistakes to avoid with explicit before/after examples
 
-This change will prevent misleading titles that incorrectly cast doubt on factual reporting from credible news sources.
+5. **Code Updates**:
+   - Updated function signature: `pub fn tiny_title_prompt(tiny_summary: &str, original_summary: &str)`
+   - Modified the calling code in `src/workers/analysis/quality.rs` to pass both summaries
+
+This redesign focuses on capturing what's truly important about a title: summarizing the core event in present tense while clearly indicating the certainty level based on the source type. The new approach should significantly improve title accuracy and consistency.
 
 ## Previous Focus: RSS Module Refactoring
 

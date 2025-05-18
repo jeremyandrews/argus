@@ -84,7 +84,7 @@ pub async fn process_analysis(
     .unwrap_or_default();
 
     let tiny_title = generate_llm_response(
-        &prompt::tiny_title_prompt(&summary),
+        &prompt::tiny_title_prompt(&tiny_summary, &summary),
         llm_params,
         worker_detail,
     )

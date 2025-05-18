@@ -290,169 +290,115 @@ For multi-topic articles:
 }
 
 /// Generate a prompt for creating a title from a summary
-pub fn tiny_title_prompt(summary_response: &str) -> String {
+pub fn tiny_title_prompt(tiny_summary: &str, original_summary: &str) -> String {
     format!(
-        r#"{summary}
-Create ONE 3-5 word title that:
+        r#"TINY SUMMARY:
+{tiny_summary}
 
-* HIGHEST PRIORITY - RUMOR/LEAK ACCURACY:
-  - If the summary contains [RUMOR/LEAK], your title MUST CLEARLY indicate this is unconfirmed information
-  - NEVER use these verbs with [RUMOR/LEAK] content: "Unveils", "Announces", "Launches", "Reveals", "Introduces", "Releases", "Confirms"
-  - MANDATORY: For [RUMOR/LEAK] source about future products/features, use ONLY these patterns:
-    * "Rumored [Feature]" (e.g., "Rumored iPhone AI Features")
-    * "[Feature] Reportedly Coming" (e.g., "Battery AI Feature Reportedly Coming")
-    * "Leak Suggests [Feature]" (e.g., "Leak Suggests iPhone Battery AI")
-    * "Report: [Company] Planning [Feature]" (e.g., "Report: Apple Planning Battery AI")
-  
-  - DIRECT EXAMPLES OF THE PROBLEM TO AVOID:
-    * [RUMOR/LEAK] summary about "Apple reportedly working on AI battery feature"
-      - BAD: "Apple Unveils AI Battery Feature" (WRONG - implies official announcement)
-      - BAD: "New iPhone Battery Features Coming" (WRONG - presents as confirmed)
-      - GOOD: "Rumored iPhone Battery AI Feature" (correct - indicates rumor status)
-      - GOOD: "Apple Battery AI Feature Reportedly Coming" (correct - indicates rumor status)
+ORIGINAL DETAILED SUMMARY (for additional context only):
+{original_summary}
 
-* CRITICAL DISTINCTION - NEWS vs. RUMORS:
-  - ONLY use "Rumored", "Reportedly", "Unconfirmed", or "Leak Suggests" when the summary EXPLICITLY contains [RUMOR/LEAK]
-  - NEVER add "Rumored" or "Unconfirmed" to news from [NEWS] or [OFFICIAL] sources
-  - [NEWS] source means the information is reported by credible news outlets, NOT that it's a rumor
-  - News about future plans from [NEWS] sources is still NEWS, not rumors
-  
-  - DIRECT EXAMPLES OF [NEWS] vs [RUMOR/LEAK]:
-    * [NEWS] "Russian President Putin approved delegation for Ukraine negotiations"
-      - GOOD: "Russia-Ukraine Talks Set" (correct - treated as news)
-      - BAD: "Rumored Russia-Ukraine Talks" (WRONG - falsely implies uncertainty)
-    
-    * [NEWS] "Donald Trump met with Saudi Crown Prince in Riyadh"
-      - GOOD: "Trump Saudi Meeting Held" (correct - treated as news)
-      - BAD: "Rumored Trump Saudi Meeting" (WRONG - falsely implies uncertainty)
-      
-    * [NEWS] "Rep. Thanedar introduced impeachment articles, according to AP"
-      - GOOD: "Impeachment Articles Introduced" (correct - treated as news)
-      - BAD: "Impeachment Effort Unconfirmed" (WRONG - falsely implies uncertainty)
+Create ONE 3-5 word title that captures the MAIN EVENT described in the TINY SUMMARY above.
 
-* CRITICAL - PRESERVING CRITICISM CORRECTLY:
-  - When the summary mentions criticism about the "lack of" something positive (depth, quality, originality, etc.):
-    * NEVER drop the "lack of" qualifier in the title
-    * ALWAYS preserve the negative framing in the title
-    * Use phrases like "Lacks Depth" or "Criticized for Lacking Depth" instead of just "Criticized for Depth"
-    
-  - DIRECT EXAMPLES OF CRITICISM PHRASING:
-    * Summary: "criticized for lack of artistic depth"
-      - BAD: "Criticized for Depth" (WRONG - this inverts the meaning to suggest having TOO MUCH depth)
-      - GOOD: "Criticized for Lacking Depth" (correct - preserves negative framing)
-      - GOOD: "Tour Lacks Depth, Critics Say" (correct - clearly indicates the missing quality)
-    
-    * Summary: "review noted poor choreography"
-      - BAD: "Noted for Choreography" (WRONG - sounds positive)
-      - GOOD: "Poor Choreography in Tour" (correct - preserves the negative assessment)
-      
-  - OTHER NEGATION PHRASES TO PRESERVE:
-    * "insufficient", "poor", "weak", "inadequate", "deficient", "missing", "absence of"
-    * Never drop these qualifiers when they modify criticized elements
+IMPORTANT INSTRUCTIONS:
+- Your title should primarily be based on the TINY SUMMARY
+- Use the ORIGINAL SUMMARY only for determining certainty level and additional context
+- Pay close attention to source types ([OFFICIAL], [NEWS], [RUMOR/LEAK], [ANALYSIS]) in the ORIGINAL SUMMARY
 
-* Captures the main theme or themes
-* For single-topic articles:
-- The main thing in a headline is the fact. A headline should report an event and answer the questions "who?", "what?", and "where?". Make the headline as informative as possible.
-  - Good: *Trump Called Zelensky a Dictator*
-  - Bad: _Revealed How Trump Called Zelensky_
-- The sentence MUST include a verb (an action). Always use a verb in the headline. The verb should add as much dynamism as possible.
-  - Good: *First Human Flew into Space*
-  - Bad: _A Great Event in Human History_
-- The subject MUST not be the article, but what the article is about
-- The headline always contains an event and a clarification. Add the most interesting details to the headline.
-  - Good: *Musk Spoke at Conference with Chainsaw*
-  - Bad: _Musk Spoke at Conference_
-- You can use punctuation marks in headlines if necessary to emphasize something.
-  - Good: *Musk Did Nazi Salute. Again*
-  - Bad: _Musk Did Nazi Salute Again_
-- Keep the title concise and to the point. Avoid unnecessary details.
-  - Good: *Germany Votes Today to Renew Bundestag*
-  - Bad: _Germany Votes to Renew the Bundestag: Decisive Elections. The Scenarios_
-- Do not include details about projections, percentages, or secondary events.
+CORE PRINCIPLES:
 
-* CRITICAL FACTUAL ACCURACY REQUIREMENTS:
-- The summary will contain source labels ([OFFICIAL], [NEWS], [RUMOR/LEAK], [ANALYSIS])
-- DO NOT include "EVENT:" or "CONTEXT:" prefixes in your title
-- DO NOT include [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] labels in your title
-- However, your title MUST reflect the appropriate level of certainty based on these source labels
-- For [OFFICIAL] sources, you may use definitive verbs like "Announces", "Launches", "Releases"
-- For [RUMOR/LEAK] sources:
-  - Your title MUST use explicit rumor-indicating terms such as "Rumored", "Reportedly", "Leak Suggests"
-  - NEVER use action verbs that imply confirmation like "Unveils", "Announces", "Launches"
-  - ALWAYS make it clear the information is unconfirmed
-  - Good: *iPhone Specs Leaked Online* or *Rumored iPhone Specs Surface* or *Report: Apple AI Feature Coming*
-  - Bad: *Apple Announces iPhone Specs* (when it's only a [RUMOR/LEAK])
-  - Bad: *Apple Unveils New Feature* (when it's only a [RUMOR/LEAK])
-- For [NEWS] sources, indicate it's reporting if not a direct confirmation
-  - Good: *WSJ Reports Tesla Expansion*
-  - Bad: *Tesla Expands to New Markets* (when it's just a news report)
-- For [ANALYSIS] sources, indicate it's an opinion or prediction
-  - Good: *Analyst Predicts Tesla Expansion*
-  - Bad: *Tesla Expands to New Markets* (when it's just an analysis)
-- Use verbs that accurately reflect the level of certainty
-  - For confirmed [OFFICIAL] actions: "Announces", "Launches", "Releases"
-  - For [RUMOR/LEAK]: "Reportedly", "Allegedly", "Rumored to", "Leaks Suggest"
-- Pay SPECIAL ATTENTION to tech companies (Apple, Google, Microsoft, etc.):
-  - For [OFFICIAL] sources:
-    * Good: *Apple Launches AR Headset*
-    * Bad: *Apple Rumored to Launch AR Headset* (when it's an official announcement)
-  - For [RUMOR/LEAK] sources:
-    * Good: *Apple AR Headset Rumored*
-    * Bad: *Apple Launches AR Headset* (when only rumored)
-  - For [NEWS] sources:
-    * Good: *Publication Reports iPhone Features*
-    * Bad: *iPhone Gets New Features* (when just reported, not announced)
-  - For [ANALYSIS] sources:
-    * Good: *Analysts Predict iPhone Features*
-    * Bad: *iPhone Gets New Features* (when just predicted)
-- ALWAYS check the source label in the summary to determine certainty level:
-  - [OFFICIAL]: Direct announcements from the company, confirmed future events with specific dates, product release announcements from official sources
-  - [NEWS]: Credible reporting from established publications
-  - [RUMOR/LEAK]: ONLY genuinely unconfirmed information from unofficial sources, information lacking official confirmation
-  - [ANALYSIS]: Expert opinions, predictions, and analysis
-- For articles about price drops, discounts, or sales:
-  - Add "Sale:" prefix if the article is primarily about a promotional discount
-  - Example: *Sale: iPad Prices Reduced*
+1. PRESENT TENSE: Titles must be in present tense, the western tradition for headlines
+   * Use "Apple Announces New iPhone" NOT "Apple Will Announce New iPhone" or "Apple Announced New iPhone"
+   * For events that have already happened, still use present tense: "Russia Invades Ukraine" (even if it happened yesterday)
 
-* For multi-topic articles:
-- Use broader encompassing terms (e.g., "Global Weekly Developments")
-- Focus on the common thread if it exists
-- Indicate time period if relevant
-* Maintains clarity and accuracy
-* Avoids clickbait or sensationalism
-* NEVER use quotation marks around the entire title
-* NEVER put the title in quotes for style or emphasis
-* Only use quotation marks for actual quotes within a title
-* RETURN EXACTLY ONE TITLE, regardless of topic count
+2. ACTIVE VOICE: Use active subject-verb construction whenever possible
+   * "Company Launches Product" NOT "Product Launched by Company"
 
-**EXAMPLES (Single Topic by Source Type):**
-"Trump Called Zelensky a Dictator" (for [OFFICIAL] source - uses confident language, no source label)
-"WSJ Reports Border Agreement" (for [NEWS] source - attributes to publication, no source label)
-"iPhone Features Reportedly Leaked" (for [RUMOR/LEAK] source - includes uncertainty qualifier, no source label)
-"Rumored iPhone Battery Feature" (for [RUMOR/LEAK] source - clearly indicates rumor status)
-"Leak Suggests Apple AI Plans" (for [RUMOR/LEAK] source - clearly indicates leak status)
-"Analysts Predict Market Downturn" (for [ANALYSIS] source - indicates it's a prediction, no source label)
-"Apple Products' Prices Reduced" (for sales)
+3. ATTRIBUTION CLARITY: Maintain the level of certainty indicated in the summaries
+   * If the original summary shows [RUMOR/LEAK], your title MUST indicate uncertainty
+   * If the original summary shows [OFFICIAL], you may use definitive language
+   * If the tiny summary contains qualifiers like "reportedly" or "allegedly", preserve them
 
-**INCORRECT TITLE EXAMPLES TO AVOID:**
-"EVENT: Trump Called Zelensky" (WRONG - includes "EVENT:" prefix)
-"[OFFICIAL] Trump Called Zelensky" (WRONG - includes source label)
-"CONTEXT: Tensions Between Countries" (WRONG - includes "CONTEXT:" prefix)
-"iPhone 16 Will Have AI" (WRONG - presents [RUMOR/LEAK] as definite fact)
-"Apple Unveils AI Battery Feature" (WRONG - presents [RUMOR/LEAK] as confirmed announcement)
-"New iPhone Features Coming" (WRONG - presents [RUMOR/LEAK] as confirmed fact without indicating uncertainty)
-"Rumored Official Announcement" (WRONG - contradicts itself by labeling confirmed news as a rumor)
-"Unconfirmed AP Report" (WRONG - contradicts itself by labeling a credible news report as unconfirmed)
-"\"Trump Saudi Meeting\"" (WRONG - puts entire title in quotation marks)
+TITLE PATTERNS BASED ON SOURCE TYPE:
 
-**EXAMPLE (Multi-Topic):**
-"March Global Events Review"
+For [OFFICIAL] source (seen in original summary):
+  * Format: "[Entity] [Action Verb] [Object]"
+  * Example: "Apple Launches New iPad" or "Ukraine Rejects Peace Proposal"
+  * Use definitive action verbs: Announces, Launches, Releases, Unveils, Confirms
 
-IMPORTANT: Return ONLY one title, even if the article covers multiple topics or events.
+For [NEWS] source (seen in original summary):
+  * Format: "[Entity] [Action Verb] [Object]" or "[Source] Reports [Event]"
+  * Example: "Congress Passes Tax Bill" or "WSJ Reports Tesla Layoffs"
+  * Use present tense verbs without uncertainty qualifiers
+
+For [RUMOR/LEAK] source (seen in original summary):
+  * Format: Use ONLY these patterns:
+    a. "Rumored [Subject/Object]" 
+    b. "[Subject/Object] Reportedly [Verb]"
+    c. "Leak: [Subject/Object]"
+    d. "Report: [Entity] [Action]"
+  * Example: "iPhone Features Reportedly Coming" or "Rumored Google Acquisition"
+  * NEVER use definitive action verbs for rumors/leaks
+
+For [ANALYSIS] source (seen in original summary):
+  * Format: "Analysts Predict [Outcome]" or "[Subject] Likely [Outcome]"
+  * Example: "Analysts Predict Bitcoin Rise" or "Housing Prices Likely Falling"
+  * Use verbs that indicate prediction: Predict, Expect, Forecast, Project
+
+EXAMPLES:
+
+Original summary contains [OFFICIAL]:
+- EVENT: [OFFICIAL] Microsoft announced new AI features for Office 365 on March 15, 2025.
+Tiny summary: "Microsoft announced new AI features for Office 365 on March 15, 2025, including GPT-6 integration."
+TITLE: "Microsoft Announces Office AI" (definitive, present tense)
+
+Original summary contains [RUMOR/LEAK]:
+- EVENT: [RUMOR/LEAK] Apple reportedly plans to release a foldable iPhone in 2026, according to supply chain sources.
+Tiny summary: "Apple reportedly plans to release a foldable iPhone in 2026, according to supply chain sources."
+TITLE: "Apple Reportedly Planning Foldable" (preserves uncertainty)
+
+Original summary contains [NEWS]:
+- EVENT: [NEWS] The Wall Street Journal reports that Tesla will cut 10% of its workforce.
+Tiny summary: "The Wall Street Journal reports Tesla plans to cut 10% of its workforce due to economic pressures."
+TITLE: "WSJ Reports Tesla Layoffs" (attributes to source)
+
+Original summary contains [ANALYSIS]:
+- EVENT: [ANALYSIS] Cryptocurrency analysts predict Bitcoin will reach $100,000 by end of 2025.
+Tiny summary: "Cryptocurrency analysts predict Bitcoin will reach $100,000 by the end of 2025, based on institutional adoption trends."
+TITLE: "Analysts Predict Bitcoin Rise" (indicates prediction)
+
+COMMON MISTAKES TO AVOID:
+
+1. SOURCE TYPE ERRORS:
+   • WRONG: "Apple Announces New Features" (when original summary has [RUMOR/LEAK])
+   • CORRECT: "Apple Reportedly Planning Features" or "Rumored Apple Features"
+
+2. TENSE ERRORS:
+   • WRONG: "Company Will Launch Product" (future tense)
+   • WRONG: "Company Launched Product" (past tense)
+   • CORRECT: "Company Launches Product" (present tense)
+
+3. ATTRIBUTION ERRORS:
+   • WRONG: "Rumored Treaty Signing" (when original summary has [OFFICIAL] or [NEWS])
+   • WRONG: "Apple Releases iPhone" (when original summary has [RUMOR/LEAK])
+   • CORRECT: Match certainty level to the source type in original summary
+
+TITLE FORMATTING GUIDELINES:
+
+1. LENGTH: 3-5 words total (absolute maximum: 7 words)
+2. CAPITALIZATION: Capitalize all important words
+3. PUNCTUATION: Avoid unnecessary punctuation
+4. NO QUOTES: Never put the entire title in quotation marks
+5. SPECIFICITY: Be as specific as possible within the word limit
+6. PRIORITY INFO: Subject + Action + Object (if space allows)
+
+RETURN EXACTLY ONE TITLE:
+Your final output should be ONLY the title, nothing else.
 
 {write_in_clear_english}
 {dont_tell_me}"#,
-        summary = summary_response,
+        tiny_summary = tiny_summary,
+        original_summary = original_summary,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
