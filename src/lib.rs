@@ -43,6 +43,23 @@ pub const TARGET_DB: &str = "db_query";
 
 pub static START_TIME: AtomicU64 = AtomicU64::new(0);
 
+/// Default model to use for Ollama LLM requests when not specified otherwise.
+/// Using a smaller (4.7GB) model for faster performance during development and testing.
+/// Change this if you need higher quality results but can accept slower processing.
+///
+/// Note: Always explicitly specify format in LLM requests to prevent format leakage issues.
+///
+/// Available models may include:
+/// - llama3.1:8b (4.7GB) - Fast but lower quality
+/// - mistral-small:24b-instruct-2501-q8_0 (25GB) - Higher quality but requires more resources
+pub const DEFAULT_OLLAMA_MODEL: &str = "llama3.1:8b";
+
+/// Default Ollama server host address
+pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
+
+/// Default Ollama server port
+pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
+
 #[derive(Clone, Debug)]
 pub enum LLMClient {
     Ollama(Ollama),

@@ -25,13 +25,16 @@
 //! structured entity data in JSON format.
 
 use argus::entity::extraction::extract_entities;
-use argus::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, WorkerDetail};
+use argus::{
+    JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, WorkerDetail, DEFAULT_OLLAMA_HOST,
+    DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_PORT,
+};
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
 use serde_json::to_string_pretty;
 use std::env;
 use tokio::time::Instant;
-use tracing::{error, info, Level};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 /// Process analysis worker configuration and return client and model
@@ -39,8 +42,21 @@ fn process_analysis_worker_config(configs: &str) -> Option<(LLMClient, String, b
     let analysis_configs = argus::process_analysis_ollama_configs(configs);
 
     if analysis_configs.is_empty() {
-        error!("No valid configurations found in ANALYSIS_OLLAMA_CONFIGS");
-        return None;
+        // Fall back to default configuration if none found
+        info!("No valid configurations found. Using default configuration.");
+        info!(
+            "Default host: {}, port: {}, model: {}",
+            DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT, DEFAULT_OLLAMA_MODEL
+        );
+
+        return Some((
+            LLMClient::Ollama(Ollama::new(
+                DEFAULT_OLLAMA_HOST.to_string(),
+                DEFAULT_OLLAMA_PORT,
+            )),
+            DEFAULT_OLLAMA_MODEL.to_string(),
+            false, // Default to no-think mode disabled
+        ));
     }
 
     let (host, port, model, no_think, _fallback) = &analysis_configs[0];
@@ -91,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pub_date = Some("2025-04-17");
 
     // Set up LLM parameters
-    let mut model = env::var("ENTITY_MODEL").unwrap_or_else(|_| "llama3".to_string());
+    let mut model = env::var("ENTITY_MODEL").unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string());
     let temperature = env::var("ENTITY_TEMPERATURE")
         .ok()
         .and_then(|s| s.parse::<f32>().ok())
@@ -109,16 +125,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             LLMClient::OpenAI(OpenAIClient::with_config(config))
         }
         _ => {
-            // Get the analysis worker configs
-            let analysis_ollama_configs = env::var("ANALYSIS_OLLAMA_CONFIGS")
-                .expect("ANALYSIS_OLLAMA_CONFIGS environment variable must be set");
+            // Get the analysis worker configs or use empty string to trigger defaults
+            let analysis_ollama_configs = env::var("ANALYSIS_OLLAMA_CONFIGS").unwrap_or_default();
 
             let (client, config_model, no_think_enabled) =
                 process_analysis_worker_config(&analysis_ollama_configs)
                     .expect("Failed to process analysis worker configuration");
 
             // Update model if we're using default and config provides one
-            if model == "llama3" {
+            if model == DEFAULT_OLLAMA_MODEL {
                 info!("Using model {} from analysis configuration", config_model);
                 model = config_model;
             }
