@@ -4,6 +4,7 @@ use crate::vector::{
     search::{get_similar_articles, get_similar_articles_with_entities},
     storage::store_embedding,
 };
+use crate::JsonSchemaType;
 use serde_json::json;
 use tokio::time::Instant;
 use tracing::{debug, error, info};
@@ -57,7 +58,7 @@ pub async fn process_article_similarity(
     topic: Option<&str>,
     quality: i8,
     response_json: &mut serde_json::Value,
-    llm_params: &mut crate::LLMParams,
+    llm_params: &mut crate::TextLLMParams,
     worker_detail: &crate::WorkerDetail,
 ) -> Result<(), anyhow::Error> {
     // Generate vector embedding
@@ -73,10 +74,16 @@ pub async fn process_article_similarity(
         let entity_extraction_start = Instant::now();
         let mut entity_ids: Option<Vec<i64>> = None;
 
+        // Create JsonLLMParams directly
+        let json_params = crate::JsonLLMParams {
+            base: llm_params.base.clone(),
+            schema_type: JsonSchemaType::EntityExtraction,
+        };
+
         match crate::entity::extraction::extract_entities(
             article_text,
             pub_date,
-            llm_params,
+            &json_params,
             worker_detail,
         )
         .await
@@ -162,7 +169,7 @@ pub async fn process_article_similarity(
                                     // Generate summary for the cluster
                                     match crate::clustering::generate_cluster_summary(
                                         db,
-                                        &llm_params.llm_client,
+                                        &llm_params.base.llm_client,
                                         cluster_id,
                                     )
                                     .await
@@ -200,7 +207,7 @@ pub async fn process_article_similarity(
                                     match crate::clustering::check_and_merge_similar_clusters(
                                         db,
                                         cluster_id,
-                                        &llm_params.llm_client,
+                                        &llm_params.base.llm_client,
                                     )
                                     .await
                                     {

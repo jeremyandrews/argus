@@ -5,11 +5,11 @@ use tracing::{debug, error, info, warn};
 
 use crate::app::util::send_to_app;
 use crate::db::core::Database;
-use crate::llm::generate_llm_response;
+use crate::llm::generate_text_response;
 use crate::prompt;
 use crate::slack::send_to_slack;
 use crate::workers::common::calculate_quality_score;
-use crate::{LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
+use crate::{TextLLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 use super::quality::process_analysis;
 use super::similarity::process_article_similarity;
@@ -18,7 +18,7 @@ use super::similarity::process_article_similarity;
 /// Returns true if an item was processed, false otherwise.
 pub async fn process_analysis_item(
     worker_detail: &WorkerDetail,
-    llm_params: &mut LLMParams,
+    llm_params: &mut TextLLMParams,
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
@@ -104,7 +104,7 @@ pub async fn process_analysis_item(
 /// Process an item from the life safety queue
 async fn process_life_safety_item(
     worker_detail: &WorkerDetail,
-    llm_params: &mut LLMParams,
+    llm_params: &mut TextLLMParams,
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
@@ -171,7 +171,7 @@ async fn process_life_safety_item(
                         );
                         info!("region_prompt: {}", region_prompt);
                         let region_response =
-                            generate_llm_response(&region_prompt, &llm_params, worker_detail)
+                            generate_text_response(&region_prompt, &llm_params, worker_detail)
                                 .await
                                 .unwrap_or_default();
 
@@ -186,7 +186,7 @@ async fn process_life_safety_item(
                                     continent,
                                 );
                                 let city_response =
-                                    generate_llm_response(&city_prompt, llm_params, worker_detail)
+                                    generate_text_response(&city_prompt, llm_params, worker_detail)
                                         .await
                                         .unwrap_or_default();
                                 if city_response.to_lowercase().contains("yes") {
@@ -239,7 +239,7 @@ async fn process_life_safety_item(
                 "Generated how_does_it_affect prompt: {:?}",
                 how_does_it_affect_prompt
             );
-            generate_llm_response(&how_does_it_affect_prompt, llm_params, worker_detail)
+            generate_text_response(&how_does_it_affect_prompt, &llm_params, worker_detail)
                 .await
                 .unwrap_or_else(|| {
                     warn!("Failed to generate how_does_it_affect");
@@ -255,7 +255,7 @@ async fn process_life_safety_item(
                 "Generated why_not_affect prompt: {:?}",
                 why_not_affect_prompt
             );
-            generate_llm_response(&why_not_affect_prompt, llm_params, worker_detail)
+            generate_text_response(&why_not_affect_prompt, &llm_params, worker_detail)
                 .await
                 .unwrap_or_else(|| {
                     warn!("Failed to generate why_not_affect");
@@ -351,7 +351,7 @@ async fn process_life_safety_item(
             "quality": quality,
             "source_type": source_type,
             "elapsed_time": start_time.elapsed().as_secs_f64(),
-            "model": llm_params.model,
+            "model": llm_params.base.model.clone(),
             "stats": stats
         });
 
@@ -447,7 +447,7 @@ async fn process_life_safety_item(
 /// Process an item from the matched topics queue
 async fn process_matched_topic_item(
     worker_detail: &WorkerDetail,
-    llm_params: &mut LLMParams,
+    llm_params: &mut TextLLMParams,
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
@@ -538,7 +538,7 @@ async fn process_matched_topic_item(
             "quality": quality,
             "source_type": source_type,
             "elapsed_time": start_time.elapsed().as_secs_f64(),
-            "model": llm_params.model,
+            "model": llm_params.base.model.clone(),
             "stats": stats
         });
 

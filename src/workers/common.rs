@@ -1,5 +1,5 @@
 use crate::db::core::Database;
-use crate::{LLMClient, LLMParams};
+use crate::LLMClient;
 use std::collections::BTreeMap;
 
 /// Parameters required for processing an item, including topics, database, and Slack channel information.
@@ -15,16 +15,32 @@ pub struct ProcessItemParams<'a> {
         BTreeMap<std::string::String, BTreeMap<std::string::String, Vec<std::string::String>>>,
 }
 
-/// Extracts LLM parameters from ProcessItemParams
-pub fn extract_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> LLMParams {
-    LLMParams {
+/// Extracts LLM parameters base from ProcessItemParams
+pub fn extract_llm_params_base<'a>(params: &'a ProcessItemParams<'a>) -> crate::LLMParamsBase {
+    crate::LLMParamsBase {
         llm_client: params.llm_client.clone(),
         model: params.model.to_string(),
         temperature: params.temperature,
-        require_json: None,
-        json_format: None,
         thinking_config: None, // No thinking by default in decision worker
         no_think: false,       // No special no_think mode by default
+    }
+}
+
+/// Creates TextLLMParams from ProcessItemParams
+pub fn extract_text_llm_params<'a>(params: &'a ProcessItemParams<'a>) -> crate::TextLLMParams {
+    crate::TextLLMParams {
+        base: extract_llm_params_base(params),
+    }
+}
+
+/// Creates JsonLLMParams from ProcessItemParams
+pub fn extract_json_llm_params<'a>(
+    params: &'a ProcessItemParams<'a>,
+    schema_type: crate::JsonSchemaType,
+) -> crate::JsonLLMParams {
+    crate::JsonLLMParams {
+        base: extract_llm_params_base(params),
+        schema_type,
     }
 }
 

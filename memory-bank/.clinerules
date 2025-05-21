@@ -83,6 +83,37 @@
   - Cache key normalization ensures consistent lookups (alphabetical ordering of names)
   - The cache is a global singleton accessed through AliasCache::instance()
 
+## LLM Parameter Type System
+- The system uses a type-driven approach to enforce correct formatting for LLM requests:
+  - `TextLLMParams`: For generating plain text responses (summaries, titles, analysis)
+  - `JsonLLMParams`: For generating structured JSON responses (entities, threat locations)
+  - `LLMParamsBase`: Base parameter type used to construct the specialized types
+
+- Always use the appropriate function for each response type:
+  - `generate_text_response()`: For any response that should be plain text
+  - `generate_json_response()`: For any response that should be JSON formatted
+  - DO NOT use the legacy `generate_llm_response()` function in new code
+
+- When creating parameters, follow these patterns:
+  ```rust
+  // For text responses:
+  let base_params = LLMParamsBase::from(&llm_params);
+  let text_params = TextLLMParams { base: base_params };
+  generate_text_response(&prompt, &text_params, worker_detail);
+  
+  // For JSON responses:
+  let base_params = LLMParamsBase::from(&llm_params);
+  let json_params = JsonLLMParams {
+      base: base_params,
+      schema_type: JsonSchemaType::EntityExtraction,
+  };
+  generate_json_response(&prompt, &json_params, worker_detail);
+  ```
+
+- NEVER reuse a mutable `LLMParams` object for multiple requests with different format requirements
+- ALWAYS create new parameter objects for each request type to avoid format leakage
+- When using the legacy API, explicitly reset JSON mode: `llm_params.json_format = None;`
+
 ## LLM JSON Response Handling
 - The system uses a structured approach to handle different JSON response formats from LLMs
 - The `JsonSchemaType` enum defines supported schema types (EntityExtraction, ThreatLocation, Generic)

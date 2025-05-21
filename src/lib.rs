@@ -93,15 +93,41 @@ pub fn parse_model_name(model_string: &str) -> (String, bool) {
     }
 }
 
+// Base parameters shared between all LLM request types
 #[derive(Clone)]
-pub struct LLMParams {
+pub struct LLMParamsBase {
     pub llm_client: LLMClient,
     pub model: String,
     pub temperature: f32,
-    pub require_json: Option<bool>, // Kept for backward compatibility
-    pub json_format: Option<JsonSchemaType>, // New field for specifying JSON schema type
     pub thinking_config: Option<ThinkingModelConfig>, // Configuration for thinking models
-    pub no_think: bool,             // Flag to indicate /no_think mode
+    pub no_think: bool,                               // Flag to indicate /no_think mode
+}
+
+// Parameters specifically for text-only responses
+#[derive(Clone)]
+pub struct TextLLMParams {
+    pub base: LLMParamsBase,
+}
+
+// Parameters specifically for JSON-formatted responses
+#[derive(Clone)]
+pub struct JsonLLMParams {
+    pub base: LLMParamsBase,
+    pub schema_type: JsonSchemaType,
+}
+
+// Methods for creating specialized parameter types
+impl LLMParamsBase {
+    pub fn text_mode(&self) -> TextLLMParams {
+        TextLLMParams { base: self.clone() }
+    }
+
+    pub fn json_mode(&self, schema_type: JsonSchemaType) -> JsonLLMParams {
+        JsonLLMParams {
+            base: self.clone(),
+            schema_type,
+        }
+    }
 }
 
 // New: Struct to hold fallback configuration for Analysis Workers

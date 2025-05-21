@@ -1,6 +1,6 @@
 use crate::db::core::Database;
 use crate::entity::extraction::extract_entities;
-use crate::{LLMParams, WorkerDetail};
+use crate::{JsonLLMParams, WorkerDetail};
 use tokio::time::Instant;
 use tracing::{debug, error, info};
 
@@ -11,12 +11,12 @@ pub async fn process_entities(
     article_id: i64,
     article_text: &str,
     pub_date: Option<&str>,
-    llm_params: &mut LLMParams,
+    json_params: &JsonLLMParams,
     worker_detail: &WorkerDetail,
 ) -> Option<Vec<i64>> {
     let entity_extraction_start = Instant::now();
 
-    match extract_entities(article_text, pub_date, llm_params, worker_detail).await {
+    match extract_entities(article_text, pub_date, json_params, worker_detail).await {
         Ok(extracted_entities) => {
             info!(
                 "Extracted {} entities in {:?}",

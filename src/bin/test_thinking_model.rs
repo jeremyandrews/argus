@@ -1,4 +1,7 @@
-use argus::{JsonSchemaType, LLMClient, LLMParams, ThinkingModelConfig, WorkerDetail};
+use argus::{
+    JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, TextLLMParams, ThinkingModelConfig,
+    WorkerDetail,
+};
 use clap::Parser;
 use ollama_rs::{
     generation::completion::request::GenerationRequest, generation::options::GenerationOptions,
@@ -268,13 +271,11 @@ async fn main() -> anyhow::Result<()> {
             None
         };
 
-        // Create LLM params with thinking config
-        let llm_params = LLMParams {
+        // Create base LLM params with thinking config
+        let base_params = LLMParamsBase {
             llm_client: LLMClient::Ollama(ollama_client),
             model: args.model.clone(),
             temperature: args.temperature,
-            require_json: if args.json { Some(true) } else { None },
-            json_format,
             thinking_config: if args.no_think {
                 // In no_think mode, we still need the thinking_config for compatibility
                 // but it won't actually be used
@@ -299,8 +300,30 @@ async fn main() -> anyhow::Result<()> {
             info!("No-think mode enabled - standard parameters will be used instead of thinking parameters");
         }
 
-        // Use standard argus LLM processing
-        match argus::llm::generate_llm_response(&args.prompt, &llm_params, &worker_detail).await {
+        // Create clones of the base params for each response type
+        // This avoids the type mismatch error since each branch gets its own variable
+        let response;
+
+        if args.json {
+            // Create JSON params and use generate_json_response
+            let json_base = base_params.clone();
+            let json_params = JsonLLMParams {
+                base: json_base,
+                schema_type: json_format.unwrap_or(JsonSchemaType::Generic),
+            };
+            response =
+                argus::llm::generate_json_response(&args.prompt, &json_params, &worker_detail)
+                    .await;
+        } else {
+            // Create Text params and use generate_text_response
+            let text_base = base_params;
+            let text_params = TextLLMParams { base: text_base };
+            response =
+                argus::llm::generate_text_response(&args.prompt, &text_params, &worker_detail)
+                    .await;
+        }
+
+        match response {
             Some(response) => {
                 info!("Response from thinking model:");
                 println!("\n{}", response);

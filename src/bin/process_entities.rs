@@ -33,7 +33,7 @@
 
 use argus::db::Database;
 use argus::entity::extraction::extract_entities;
-use argus::{LLMClient, LLMParams, WorkerDetail};
+use argus::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, WorkerDetail};
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
 use sqlx::Row;
@@ -153,14 +153,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-    let mut llm_params = LLMParams {
-        llm_client: llm_client.clone(),
-        model: model.clone(),
-        temperature,
-        require_json: None,
-        json_format: None,
-        thinking_config: None,  // No thinking mode for entity extraction
-        no_think: use_no_think, // Apply no_think mode if enabled
+    let mut llm_params = JsonLLMParams {
+        base: LLMParamsBase {
+            llm_client: llm_client.clone(),
+            model: model.clone(),
+            temperature,
+            thinking_config: None,  // No thinking mode for entity extraction
+            no_think: use_no_think, // Apply no_think mode if enabled
+        },
+        schema_type: JsonSchemaType::EntityExtraction,
     };
 
     let worker_detail = WorkerDetail {

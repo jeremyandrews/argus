@@ -14,7 +14,7 @@
 //!
 //! This will run a test with both modes for comparison.
 
-use argus::{LLMClient, LLMParams, WorkerDetail};
+use argus::{LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
 use clap::Parser;
 use ollama_rs::Ollama;
 use std::time::Instant;
@@ -68,19 +68,19 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Create LLM params
-    let llm_params = LLMParams {
-        llm_client,
-        model: args.model.clone(),
-        temperature: 0.6,
-        require_json: None,
-        json_format: None,
-        thinking_config: Some(argus::ThinkingModelConfig {
-            strip_thinking_tags: true,
-            top_p: 0.95,
-            top_k: 20,
-            min_p: 0.0,
-        }),
-        no_think: args.no_think,
+    let llm_params = TextLLMParams {
+        base: LLMParamsBase {
+            llm_client,
+            model: args.model.clone(),
+            temperature: 0.6,
+            thinking_config: Some(argus::ThinkingModelConfig {
+                strip_thinking_tags: true,
+                top_p: 0.95,
+                top_k: 20,
+                min_p: 0.0,
+            }),
+            no_think: args.no_think,
+        },
     };
 
     // Log mode
@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     info!("Sending prompt: {}", test_prompt);
     let start = Instant::now();
 
-    match argus::llm::generate_llm_response(test_prompt, &llm_params, &worker_detail).await {
+    match argus::llm::generate_text_response(test_prompt, &llm_params, &worker_detail).await {
         Some(response) => {
             let elapsed = start.elapsed();
             info!("Response received in {:?}:", elapsed);

@@ -1,6 +1,42 @@
 # Active Development Context
 
-## Current Focus: Tiny Title Prompt Redesign
+## Current Focus: JSON Mode Formatting Bug Fix
+
+We've resolved an issue with JSON mode formatting being incorrectly applied to article sections like tiny titles and summaries. The problem manifested as error messages appearing in the article output:
+
+```
+{"error": "The request could not be processed. Please try again later."}
+```
+
+### Root Cause Analysis
+
+The issue was caused by JSON mode not being properly reset between LLM calls. We were using a single mutable `LLMParams` object that retained its `json_format` setting across different calls. When entity extraction or threat location detection (which require JSON mode) ran before generating summaries or titles (which require plain text), the JSON mode was still active, causing the LLM to return JSON error responses.
+
+### Implementation of a Type-Driven Solution
+
+1. **Type-Safe Parameter System**:
+   - Created specialized parameter types that encode the format in the type itself:
+     - `TextLLMParams`: For plain text responses
+     - `JsonLLMParams`: For JSON formatted responses with schema
+   - Added new API functions:
+     - `generate_text_response`: Always uses plain text mode
+     - `generate_json_response`: Always uses JSON mode with the specified schema
+   - Added conversion functions for backward compatibility
+
+2. **Updated Key Components**:
+   - `src/prompt/summarization.rs`: Now receives clean parameters that never use JSON mode
+   - `src/entity/extraction.rs`: Uses explicit JSON mode via `JsonLLMParams`
+   - `src/workers/decision/threat.rs`: Uses explicit JSON mode for threat location
+   - All functions now create fresh parameter objects rather than modifying a shared one
+
+3. **Compiler Enforcement**:
+   - The type system now enforces correct format usage throughout the code
+   - Impossible to accidentally leave JSON mode enabled between calls
+   - Clear documentation of intent in the type signatures
+
+This architecture change prevents JSON format settings from leaking between different LLM calls, providing robust protection against this class of bug in the future.
+
+## Previous Focus: Tiny Title Prompt Redesign
 
 We've completely redesigned the `tiny_title_prompt` function in `src/prompt/summarization.rs` to solve ongoing issues with title accuracy, particularly around the handling of rumors vs. confirmed information. The previous approach was overly complex and still produced incorrect titles in some cases.
 

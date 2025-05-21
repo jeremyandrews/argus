@@ -25,7 +25,7 @@
 //! structured entity data in JSON format.
 
 use argus::entity::extraction::extract_entities;
-use argus::{LLMClient, LLMParams, WorkerDetail};
+use argus::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, WorkerDetail};
 use async_openai::{config::OpenAIConfig, Client as OpenAIClient};
 use ollama_rs::Ollama;
 use serde_json::to_string_pretty;
@@ -139,14 +139,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|v| v.to_lowercase() == "true")
         .unwrap_or(false);
 
-    let mut llm_params = LLMParams {
-        llm_client,
-        model: model.clone(),
-        temperature,
-        require_json: None,
-        json_format: None,
-        thinking_config: None,  // No thinking mode for entity extraction
-        no_think: use_no_think, // Use no_think mode if configured
+    let mut llm_params = JsonLLMParams {
+        base: LLMParamsBase {
+            llm_client,
+            model: model.clone(),
+            temperature,
+            thinking_config: None,  // No thinking mode for entity extraction
+            no_think: use_no_think, // Use no_think mode if configured
+        },
+        schema_type: JsonSchemaType::EntityExtraction,
     };
 
     let worker_detail = WorkerDetail {

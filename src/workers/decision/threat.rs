@@ -1,7 +1,7 @@
-use crate::llm::generate_llm_response;
+use crate::llm::{generate_json_response, generate_text_response};
 use crate::prompt;
-use crate::workers::common::extract_llm_params;
-use crate::{LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
+use crate::workers::{extract_json_llm_params, extract_text_llm_params};
+use crate::{JsonSchemaType, WorkerDetail, TARGET_LLM_REQUEST};
 use std::collections::BTreeMap;
 use tracing::{debug, info};
 
@@ -11,13 +11,14 @@ pub async fn check_if_threat_at_all(
     params: &crate::workers::common::ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) -> bool {
-    let llm_params = extract_llm_params(params);
+    let text_params = extract_text_llm_params(params);
 
     // Initial threat check
     let threat_prompt = prompt::threat_prompt(article_text);
     debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking LLM if about something affecting life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
 
-    if let Some(response) = generate_llm_response(&threat_prompt, &llm_params, worker_detail).await
+    if let Some(response) =
+        generate_text_response(&threat_prompt, &text_params, worker_detail).await
     {
         if response.trim().to_lowercase().starts_with("yes") {
             // Confirmation check
@@ -25,7 +26,7 @@ pub async fn check_if_threat_at_all(
             debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: confirming if genuine threat to life or safety.", worker_detail.name, worker_detail.id, worker_detail.model);
 
             if let Some(confirm_response) =
-                generate_llm_response(&confirm_prompt, &llm_params, worker_detail).await
+                generate_text_response(&confirm_prompt, &text_params, worker_detail).await
             {
                 return confirm_response.trim().to_lowercase().starts_with("yes");
             }
@@ -52,13 +53,11 @@ pub async fn determine_threat_location(
         worker_detail.model
     );
 
-    // Extract LLM parameters
-    let llm_params = extract_llm_params(params);
-    let mut json_llm_params = llm_params.clone();
-    json_llm_params.json_format = Some(crate::JsonSchemaType::ThreatLocation);
+    // Create JSON params for threat location detection
+    let json_params = extract_json_llm_params(params, JsonSchemaType::ThreatLocation);
 
     if let Some(response) =
-        generate_llm_response(&threat_locations_prompt, &json_llm_params, worker_detail).await
+        generate_json_response(&threat_locations_prompt, &json_params, worker_detail).await
     {
         info!("initial response: {}", response);
         let trimmed_response = response.trim();
@@ -98,7 +97,7 @@ pub async fn article_is_relevant(
     article_text: &str,
     topic_prompt: &str,
     pub_date: Option<&str>,
-    llm_params: &mut LLMParams,
+    params: &crate::workers::common::ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) -> bool {
     // Be sure content has sufficient content.
@@ -111,16 +110,19 @@ pub async fn article_is_relevant(
         return false;
     }
 
+    // Create text params for text generation
+    let text_params = extract_text_llm_params(params);
+
     // Generate summary
     let summary_prompt = prompt::summary_prompt(article_text, pub_date);
-    let summary_response = generate_llm_response(&summary_prompt, llm_params, worker_detail)
+    let summary_response = generate_text_response(&summary_prompt, &text_params, worker_detail)
         .await
         .unwrap_or_default();
 
     // Confirm the article relevance
     let confirm_prompt = prompt::confirm_prompt(&summary_response, topic_prompt);
     if let Some(confirm_response) =
-        generate_llm_response(&confirm_prompt, llm_params, worker_detail).await
+        generate_text_response(&confirm_prompt, &text_params, worker_detail).await
     {
         if confirm_response.trim().to_lowercase().starts_with("yes") {
             return true;

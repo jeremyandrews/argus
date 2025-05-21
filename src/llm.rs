@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::TARGET_LLM_REQUEST;
-use crate::{JsonSchemaType, LLMClient, LLMParams, WorkerDetail};
+use crate::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
 
 const CONTEXT_WINDOW: u32 = 8192;
 
@@ -99,10 +99,33 @@ fn estimate_token_count(text: &str) -> u32 {
         .unwrap()
 }
 
-pub async fn generate_llm_response(
+pub async fn generate_text_response(
     prompt: &str,
-    params: &LLMParams,
+    params: &TextLLMParams,
     worker_detail: &WorkerDetail,
+) -> Option<String> {
+    generate_llm_response_internal(prompt, &params.base, worker_detail, None).await
+}
+
+pub async fn generate_json_response(
+    prompt: &str,
+    params: &JsonLLMParams,
+    worker_detail: &WorkerDetail,
+) -> Option<String> {
+    generate_llm_response_internal(
+        prompt,
+        &params.base,
+        worker_detail,
+        Some(&params.schema_type),
+    )
+    .await
+}
+
+async fn generate_llm_response_internal(
+    prompt: &str,
+    params: &LLMParamsBase,
+    worker_detail: &WorkerDetail,
+    json_format: Option<&JsonSchemaType>,
 ) -> Option<String> {
     let max_retries = 5;
     let mut response_text = String::new();
@@ -149,8 +172,9 @@ pub async fn generate_llm_response(
 
                 let mut request = GenerationRequest::new(params.model.clone(), actual_prompt);
 
-                // Apply JSON formatting if specified
-                if let Some(json_type) = &params.json_format {
+                // Apply formatting based on request type
+                if let Some(json_type) = json_format {
+                    // JSON format requested
                     match json_type {
                         JsonSchemaType::EntityExtraction => {
                             // Use simpler Json format for entity extraction
@@ -167,11 +191,10 @@ pub async fn generate_llm_response(
                             request.format = Some(FormatType::Json);
                         }
                     }
-                } else if params.require_json.unwrap_or(false) {
-                    // Legacy support for require_json
-                    request.format = Some(FormatType::StructuredJson(JsonStructure::new::<
-                        ThreatLocationResponse,
-                    >()));
+                } else {
+                    // Text format explicitly requested - force format to None
+                    // This ensures we don't get JSON responses when requesting plain text
+                    request.format = None;
                 }
 
                 // Apply model configuration based on mode

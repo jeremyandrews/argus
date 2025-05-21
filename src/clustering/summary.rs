@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use crate::clustering::types::{ClusterArticle, EntityDetail};
 use crate::db::cluster;
 use crate::db::core::Database;
-use crate::llm::generate_llm_response;
-use crate::{LLMClient, LLMParams, WorkerDetail};
+use crate::llm::generate_text_response;
+use crate::{LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
 
 /// Gets a list of clusters that need summary updates
 ///
@@ -58,19 +58,19 @@ pub async fn generate_cluster_summary(
     let prompt = build_summary_prompt(&articles, &entity_details)?;
 
     // Create LLM parameters
-    let llm_params = LLMParams {
-        llm_client: llm_client.clone(),
-        model: "".to_string(), // Will be set by the LLM client
-        temperature: 0.2,      // Lower temperature for more consistent summaries
-        require_json: None,
-        json_format: None,
-        thinking_config: None, // No thinking needed for cluster summaries
-        no_think: false,       // No need for special no_think mode for summaries
+    let llm_params = TextLLMParams {
+        base: LLMParamsBase {
+            llm_client: llm_client.clone(),
+            model: "".to_string(), // Will be set by the LLM client
+            temperature: 0.2,      // Lower temperature for more consistent summaries
+            thinking_config: None, // No thinking needed for cluster summaries
+            no_think: false,       // No need for special no_think mode for summaries
+        },
     };
 
     // Generate the summary
-    let summary = match generate_llm_response(&prompt, &llm_params, &worker_detail).await {
-        Some(response) => response,
+    let summary = match generate_text_response(&prompt, &llm_params, &worker_detail).await {
+        Some(response) => response.to_string(),
         None => return Err(anyhow!("Failed to generate summary")),
     };
 
