@@ -1,6 +1,33 @@
 # Active Development Context
 
-## Current Focus: JSON Mode Formatting Bug Fix
+## Current Focus: Brotli Dependency Upgrade
+
+We've upgraded the brotli compression library from version 3.4 to 8.0. This dependency is used in the RSS module for decompressing brotli-compressed content from web feeds.
+
+### Implementation Details
+
+1. **Dependency Update**:
+   - Updated the brotli crate version in Cargo.toml from "3.4" to "8.0"
+   - Verified that the API remained compatible with our usage pattern
+
+2. **Key Components Updated**:
+   - The decompression code in `src/rss/fetcher.rs` and `src/rss/test.rs` continues to use the same API:
+     ```rust
+     let mut reader = brotli::Decompressor::new(&bytes[..], 4096);
+     if reader.read_to_end(&mut decoded).is_ok() && decoded.len() > 0 {
+         // Process decompressed content
+     }
+     ```
+   - No code changes were required as the API has remained stable
+
+3. **Testing and Verification**:
+   - Verified the project builds successfully with `cargo check`
+   - Ran the full test suite to ensure compatibility with `cargo test`
+   - Updated the Memory Bank documentation to reflect the upgrade
+
+This upgrade ensures we're using the latest version of the brotli library, which may include performance improvements, bug fixes, and security patches.
+
+## Previous Focus: JSON Mode Formatting Bug Fix
 
 We've resolved an issue with JSON mode formatting being incorrectly applied to article sections like tiny titles and summaries. The problem manifested as error messages appearing in the article output:
 

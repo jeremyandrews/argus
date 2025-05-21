@@ -310,6 +310,7 @@ Argus is currently in active development with all major components implemented a
 - ✓ Added no_think mode support for Qwen models to disable thinking tags
 - ✓ Fixed empty thinking tag stripping in no_think mode with proper tests
 - ✓ Improved title generation with clear distinction between news and rumors in summarization
+- ✓ Upgraded brotli dependency from 3.4 to 8.0 for improved compression handling
 
 ### In Progress
 - 🔄 Parameter optimization for entity matching
