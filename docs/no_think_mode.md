@@ -16,7 +16,9 @@ The no-think mode is implemented by appending `/no_think` to prompts sent to Qwe
 
 1. **LLMParams Structure**: Added a `no_think` boolean field to the `LLMParams` struct to control this behavior
 
-2. **Workers Integration**: Updated both analysis and decision workers to accept and utilize this parameter
+2. **Workers Integration**: 
+   - Both analysis and decision workers fully support this parameter
+   - Common code path for handling thinking configuration through `ProcessItemParams`
 
 3. **Configuration System**: Added support for specifying no_think mode in Ollama configuration strings
 

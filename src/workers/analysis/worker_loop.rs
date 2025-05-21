@@ -194,6 +194,8 @@ pub async fn analysis_loop(
                                     slack_token,
                                     slack_channel: default_slack_channel,
                                     places: places_clone,
+                                    thinking_config: llm_params.base.thinking_config.clone(),
+                                    no_think: llm_params.base.no_think,
                                 };
 
                                 // Process the item using the decision worker's process_item function

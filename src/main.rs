@@ -260,6 +260,13 @@ async fn main() -> Result<()> {
         analysis_workers.len()
     );
 
+    // Configure thinking model based on global switch
+    // Read the environment variable
+    let use_reasoning_models = env::var(USE_REASONING_MODELS_ENV)
+        .unwrap_or_else(|_| "false".to_string())
+        .to_lowercase()
+        == "true";
+
     // Determine number of decision workers to launch
     // Use the shared parse functions to determine the count
     let decision_worker_count = argus::process_ollama_configs(&decision_ollama_configs).len()
@@ -326,8 +333,25 @@ async fn main() -> Result<()> {
         let decision_worker_slack_channel = slack_channel.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Decision Worker {}", decision_id);
+
+        // Copy the global reasoning flag for the worker
+        let worker_use_reasoning = use_reasoning_models;
+
         let decision_worker_handle = tokio::spawn(async move {
             info!(target: TARGET_LLM_REQUEST, "{}: Starting Decision Worker with model '{}' (decision_loop)", thread_name, decision_model);
+
+            // Create thinking config inside the task closure
+            let worker_thinking_config = if worker_use_reasoning {
+                Some(ThinkingModelConfig {
+                    strip_thinking_tags: true,
+                    top_p: 0.95,
+                    top_k: 20,
+                    min_p: 0.0,
+                })
+            } else {
+                None
+            };
+
             match decision_worker::decision_loop(
                 decision_id,
                 &decision_worker_topics,
@@ -337,6 +361,7 @@ async fn main() -> Result<()> {
                 &decision_worker_slack_token,
                 &decision_worker_slack_channel,
                 no_think,
+                worker_thinking_config,
             )
             .await
             {
@@ -351,13 +376,6 @@ async fn main() -> Result<()> {
         });
         decision_handles.push(decision_worker_handle);
     }
-
-    // Configure thinking model based on global switch
-    // Read the environment variable
-    let use_reasoning_models = env::var(USE_REASONING_MODELS_ENV)
-        .unwrap_or_else(|_| "false".to_string())
-        .to_lowercase()
-        == "true";
 
     // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
