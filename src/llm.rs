@@ -1,9 +1,7 @@
 use async_openai::types::CreateCompletionRequestArgs;
-use ollama_rs::generation::{
-    completion::request::GenerationRequest,
-    options::GenerationOptions,
-    parameters::{FormatType, JsonStructure},
-};
+use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::generation::parameters::{FormatType, JsonStructure};
+use ollama_rs::models::ModelOptions;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -197,44 +195,37 @@ async fn generate_llm_response_internal(
                     request.format = None;
                 }
 
-                // Apply model configuration based on mode
-                if params.no_think {
-                    // In no_think mode, use standard parameters
-                    debug!(
-                        target: TARGET_LLM_REQUEST,
-                        "[{} {} {} {}]: Using standard parameters for no-think mode",
-                        worker_detail.name, worker_detail.id, worker_detail.model,
-                        worker_detail.connection_info
-                    );
+                // Create a ModelOptions instance using builder methods
+                let mut options = ModelOptions::default()
+                    .temperature(params.temperature)
+                    .num_ctx(CONTEXT_WINDOW as u64);
 
-                    let options = GenerationOptions::default()
-                        .temperature(params.temperature)
-                        .num_ctx(CONTEXT_WINDOW.into());
-                    request.options = Some(options);
-                } else if let Some(thinking_config) = &params.thinking_config {
-                    // Regular thinking model configuration
-                    debug!(
-                        target: TARGET_LLM_REQUEST,
-                        "[{} {} {} {}]: Configuring thinking model with topP={}, topK={}.",
-                        worker_detail.name, worker_detail.id, worker_detail.model,
-                        worker_detail.connection_info,
-                        thinking_config.top_p, thinking_config.top_k
-                    );
+                // Add thinking-specific parameters if needed
+                if let Some(thinking_config) = &params.thinking_config {
+                    if !params.no_think {
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "[{} {} {} {}]: Configuring thinking model with topP={}, topK={}.",
+                            worker_detail.name, worker_detail.id, worker_detail.model,
+                            worker_detail.connection_info,
+                            thinking_config.top_p, thinking_config.top_k
+                        );
 
-                    // Note: min_p is not available in the current version of ollama-rs
-                    let options = GenerationOptions::default()
-                        .temperature(params.temperature)
-                        .top_p(thinking_config.top_p)
-                        .top_k(thinking_config.top_k as u32)
-                        .num_ctx(CONTEXT_WINDOW.into());
-                    request.options = Some(options);
-                } else {
-                    // Regular non-thinking model configuration
-                    let options = GenerationOptions::default()
-                        .temperature(params.temperature)
-                        .num_ctx(CONTEXT_WINDOW.into());
-                    request.options = Some(options);
+                        options = options
+                            .top_p(thinking_config.top_p)
+                            .top_k(thinking_config.top_k as u32);
+                    }
                 }
+
+                debug!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {} {}]: Setting Ollama options",
+                    worker_detail.name, worker_detail.id, worker_detail.model,
+                    worker_detail.connection_info
+                );
+
+                // Assign the options to the request
+                request.options = Some(options);
 
                 // Log detailed request information
                 debug!(

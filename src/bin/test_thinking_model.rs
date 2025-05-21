@@ -3,10 +3,7 @@ use argus::{
     WorkerDetail,
 };
 use clap::Parser;
-use ollama_rs::{
-    generation::completion::request::GenerationRequest, generation::options::GenerationOptions,
-    Ollama,
-};
+use ollama_rs::{generation::completion::request::GenerationRequest, models::ModelOptions, Ollama};
 use regex::Regex;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -168,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
         let mut request = GenerationRequest::new(args.model.clone(), prompt_to_use);
 
         // Configure options
-        let options = GenerationOptions::default()
+        let options = ModelOptions::default()
             .temperature(args.temperature)
             .top_p(args.top_p)
             .top_k(args.top_k as u32)
