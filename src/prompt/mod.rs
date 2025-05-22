@@ -23,4 +23,4 @@ pub use relevance::{
     how_does_it_affect_prompt, relation_to_topic_prompt, threat_locations, why_not_affect_prompt,
 };
 pub use scoring::{argument_quality_prompt, source_type_prompt, sources_quality_prompt};
-pub use summarization::{summary_prompt, tiny_summary_prompt, tiny_title_prompt};
+pub use summarization::{eli5_prompt, summary_prompt, tiny_summary_prompt, tiny_title_prompt};

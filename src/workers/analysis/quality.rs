@@ -27,6 +27,7 @@ pub async fn process_analysis(
     String,         // additional_insights
     String,         // action_recommendations
     String,         // talking_points
+    String,         // eli5
 ) {
     debug!("Starting analysis for article: {}", article_url);
 
@@ -47,6 +48,7 @@ pub async fn process_analysis(
             String::new(),
             String::new(),
             String::new(),
+            String::new(), // eli5
         );
     }
 
@@ -70,6 +72,7 @@ pub async fn process_analysis(
                 String::new(),
                 String::new(),
                 String::new(),
+                String::new(), // eli5
             );
         }
     };
@@ -210,6 +213,19 @@ pub async fn process_analysis(
         String::new()
     };
 
+    // Generate ELI5 explanation
+    let eli5 = if !summary.is_empty() {
+        generate_text_response(
+            &prompt::eli5_prompt(article_text, pub_date),
+            &text_params,
+            worker_detail,
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
     (
         summary,
         tiny_summary,
@@ -224,5 +240,6 @@ pub async fn process_analysis(
         additional_insights,
         action_recommendations,
         talking_points,
+        eli5,
     )
 }

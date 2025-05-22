@@ -306,6 +306,7 @@ async fn process_life_safety_item(
             additional_insights,
             action_recommendations,
             talking_points,
+            eli5,
         ) = process_analysis(
             &article_text,
             &article_html,
@@ -346,6 +347,7 @@ async fn process_life_safety_item(
             "additional_insights": additional_insights,
             "action_recommendations": action_recommendations,
             "talking_points": talking_points,
+            "eli5": eli5,
             "sources_quality": sources_quality,
             "argument_quality": argument_quality,
             "quality": quality,
@@ -490,6 +492,7 @@ async fn process_matched_topic_item(
         additional_insights,
         action_recommendations,
         talking_points,
+        eli5,
     ) = process_analysis(
         &article_text,
         &article_html,
@@ -533,6 +536,7 @@ async fn process_matched_topic_item(
             "additional_insights": additional_insights,
             "action_recommendations": action_recommendations,
             "talking_points": talking_points,
+            "eli5": eli5,
             "sources_quality": sources_quality,
             "argument_quality": argument_quality,
             "quality": quality,
