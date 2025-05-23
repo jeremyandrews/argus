@@ -37,6 +37,19 @@ Create a simple explanation of this article that someone with no background know
 * Final paragraph: Explain why this matters in everyday terms
 * If the article concerns threatening or upsetting content, maintain factual accuracy but use measured, non-alarmist language
 
+### Handling Sensitive Topics
+* When explaining policies that affect human rights, civil liberties, or vulnerable populations:
+  - Maintain appropriate moral framing even in simplified language
+  - Never minimize the real-world impact of policies on affected people
+  - Explain consequences in concrete, relatable terms without downplaying severity
+  - Use age-appropriate but accurate descriptions of controversial actions
+  - Avoid euphemisms that obscure the nature of harmful policies
+* For political topics:
+  - Explain both the stated rationale AND the criticism/concerns
+  - Present multiple perspectives while maintaining factual accuracy
+  - Use neutral but precise language to describe controversial actions
+  - Ensure simplification doesn't inadvertently normalize harmful policies
+
 ### Writing Approach
 * Explain as if to someone intelligent but with no specialized knowledge in this field
 * Focus on the "why" and "how" for better understanding
@@ -90,6 +103,24 @@ In their experiments, scientists successfully corrected a genetic mutation that 
 
 This matters because many diseases are caused by problems in our DNA. Better gene editing tools could eventually help treat or cure conditions like cystic fibrosis, certain types of blindness, and even some cancers. However, there are still many steps before these treatments would be widely available to patients."
 
+**Example 4: Political Policy (Original topic: Immigration Enforcement Policy)**
+"The government recently changed how it handles people who come to the country without permission. This change means that some families are being separated - parents go to one place while their children go to another.
+
+The people who made this rule say it's important because they want to discourage other families from trying to enter the country without going through the proper process. They believe this will help protect the country's borders and make sure everyone follows the immigration laws.
+
+However, many doctors, lawyers, and human rights experts are very concerned because separating children from their parents can cause serious emotional harm to the children. They point out that many of these families are running away from dangerous situations in their home countries and are asking for protection (called asylum).
+
+This matters because how we treat people who come to our country - especially children - reflects our values as a society. The debate is about finding the right balance between enforcing immigration laws and treating people humanely, especially those who may be fleeing from danger."
+
+**Example 5: Government Action (Original topic: Executive Order on Civil Liberties)**
+"The President signed an official paper (called an executive order) that changes some rules about how the government can monitor or collect information about people living in the country.
+
+Under these new rules, government agencies can more easily look at certain records or communications without getting permission from a judge first. The President says this is necessary to help catch dangerous people who might want to harm others.
+
+Many civil rights lawyers and privacy experts are worried about these changes. They say the new rules might allow the government to collect too much information about ordinary people who haven't done anything wrong. They're concerned this could violate people's right to privacy, which is protected by our Constitution.
+
+This matters to everyone because it's about finding the right balance between keeping people safe and protecting their rights and freedoms. Throughout history, societies have had to figure out this balance, and it's something we continue to debate today."
+
 **UNSUCCESSFUL EXAMPLES (AVOID):**
 
 1. Too Technical: "The CRISPR-Cas9 system's off-target effects were mitigated through modification of the guide RNA scaffold, resulting in an 80% reduction in non-specific endonuclease activity as measured by genome-wide sequencing."
@@ -101,6 +132,12 @@ This matters because many diseases are caused by problems in our DNA. Better gen
 4. Not Factually Accurate: "The new CRISPR technique can now cure all genetic diseases with no risks, and doctors will start using it in all hospitals next month."
 
 5. Too Abstract: "The paradigm of genetic intervention has shifted toward a more deterministic methodology, centralizing accuracy over throughput in the evolving narrative of biomedical applications."
+
+6. Minimizing Impact: "The President made a rule that some people can't come into the country anymore. Some people were sad about it, but the President said it would keep everyone safer."
+
+7. False Equivalence: "Some people think the policy is good, and some think it's bad. Both sides have good points, so it's just a matter of opinion."
+
+8. Euphemistic Language: "The government decided to relocate certain individuals to specialized facilities while their cases were being processed." (instead of clearly explaining detention or deportation)
 
 Now create a simple ELI5 explanation of this article:
 {write_in_clear_english}
