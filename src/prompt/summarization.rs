@@ -14,10 +14,23 @@ pub fn eli5_prompt(article_text: &str, pub_date: Option<&str>) -> String {
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
 * **IGNORE the global context unless explicitly mentioned in article.**
-* **For non-English text, include translations of relevant quotes.**
+* **ALWAYS write your explanation in clear American English.**
+* **For non-English text, first translate the entire article to English, then create your explanation based on the translation.**
 
 ### **Explain Like I'm 5 (ELI5)**
 Create a simple explanation of this article that someone with no background knowledge could understand. The explanation should be clear, accessible, and use vocabulary and concepts that are widely familiar.
+
+### Language Requirements (CRITICAL)
+* ALWAYS write your entire explanation in clear American English
+* If the article contains non-English text:
+  - First translate the entire article to English (do this mentally, don't include the translation)
+  - Then create your explanation based on the English translation
+  - Include original foreign language quotes followed by translations in parentheses when directly quoting
+  - Example: "As the French president said, 'Nous allons continuer' (We will continue)"
+* Use American spelling and grammar conventions throughout
+* Avoid region-specific idioms or expressions
+* For measurements, include both metric and imperial units when relevant: "100 kilometers (62 miles)"
+* NEVER write your explanation in any language other than English
 
 ### ELI5 Guidelines
 * Use simple language throughout - avoid all jargon and technical terms
@@ -36,6 +49,7 @@ Create a simple explanation of this article that someone with no background know
 * Middle paragraphs: Explain important details using analogies and examples
 * Final paragraph: Explain why this matters in everyday terms
 * If the article concerns threatening or upsetting content, maintain factual accuracy but use measured, non-alarmist language
+* For articles in languages other than English, maintain the same structure but base your explanation on your translation
 
 ### Handling Sensitive Topics
 * When explaining policies that affect human rights, civil liberties, or vulnerable populations:
@@ -138,6 +152,10 @@ This matters to everyone because it's about finding the right balance between ke
 7. False Equivalence: "Some people think the policy is good, and some think it's bad. Both sides have good points, so it's just a matter of opinion."
 
 8. Euphemistic Language: "The government decided to relocate certain individuals to specialized facilities while their cases were being processed." (instead of clearly explaining detention or deportation)
+
+9. Foreign Language Response: "El nuevo descubrimiento científico permite editar genes con mayor precisión..." (WRONG - explanation must be in American English)
+
+10. Mixed Language: "Scientists discovered a new way to edit genes that's molto preciso (very precise) and will help cure diseases." (WRONG - only include foreign text for direct quotes)
 
 Now create a simple ELI5 explanation of this article:
 {write_in_clear_english}

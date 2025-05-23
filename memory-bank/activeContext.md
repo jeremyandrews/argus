@@ -1,6 +1,36 @@
 # Active Development Context
 
-## Current Focus: Enhanced ELI5 Prompt for Sensitive Political Topics
+## Current Focus: Enhanced ELI5 Prompt for Language Consistency and Foreign Content
+
+We've improved the ELI5 (Explain Like I'm 5) prompt to ensure consistent use of American English and proper handling of foreign language content. This enhancement addresses an issue where the ELI5 section was sometimes being written in a foreign language despite the presence of language standards in the common prompt helpers.
+
+### Key Improvements
+
+1. **Added Dedicated "Language Requirements" Section**:
+   - Added explicit instructions to ALWAYS write the entire explanation in clear American English
+   - Included specific guidelines for handling non-English text in articles
+   - Added instructions to mentally translate foreign language content before creating the explanation
+   - Specified proper handling of direct quotes from foreign languages (include original with translation)
+   - Added clear examples of proper foreign language handling
+
+2. **Strengthened Language Instructions**:
+   - Added "ALWAYS write your explanation in clear American English" to the top-level instructions
+   - Added "NEVER write your explanation in any language other than English" as a critical requirement
+   - Included guidance on using American spelling and grammar conventions throughout
+   - Added instructions for handling measurements (include both metric and imperial units)
+   - Specified to avoid region-specific idioms or expressions
+
+3. **Added Foreign Language Examples to Avoid**:
+   - Example 9: Foreign Language Response - "El nuevo descubrimiento científico permite editar genes con mayor precisión..." (showing a completely non-English response)
+   - Example 10: Mixed Language - "Scientists discovered a new way to edit genes that's molto preciso (very precise) and will help cure diseases." (showing inappropriate mixing of languages)
+
+4. **Enhanced Content Structure Guidelines**:
+   - Added specific instruction for articles in languages other than English: "For articles in languages other than English, maintain the same structure but base your explanation on your translation"
+   - Ensured all existing ELI5 functionality is preserved while adding the language requirements
+
+These enhancements ensure that all ELI5 explanations are consistently written in American English, regardless of the source article's language, while maintaining proper attribution and handling of any foreign language content that needs to be directly quoted.
+
+## Previous Focus: Enhanced ELI5 Prompt for Sensitive Political Topics
 
 We've improved the ELI5 (Explain Like I'm 5) prompt to better handle sensitive political topics, particularly those related to policies that affect human rights, civil liberties, or vulnerable populations. This enhancement addresses an issue where the simplification process could inadvertently downplay the seriousness of certain actions or policies.
 

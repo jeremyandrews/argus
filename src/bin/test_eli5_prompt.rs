@@ -34,7 +34,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Create Ollama client and wrap it in LLMClient
-    let ollama = Ollama::new(args.host.clone(), args.port);
+    // Ensure the host has the proper protocol prefix
+    let host = if !args.host.starts_with("http://") && !args.host.starts_with("https://") {
+        format!("http://{}", args.host)
+    } else {
+        args.host.clone()
+    };
+    let ollama = Ollama::new(host, args.port);
     let llm_client = LLMClient::Ollama(ollama);
 
     // Setup worker detail
