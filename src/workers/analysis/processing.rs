@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::app::util::send_to_app;
@@ -28,24 +28,13 @@ pub async fn process_analysis_item(
     >,
 ) -> bool {
     // First, try to process an item from the life safety queue
-    if let Ok(Some((
-        article_url,
-        article_title,
-        article_text,
-        article_html,
-        article_hash,
-        title_domain_hash,
-        threat_regions,
-        pub_date,
-    ))) = db.fetch_and_delete_from_life_safety_queue().await
+    match timeout(
+        Duration::from_secs(30),
+        db.fetch_and_delete_from_life_safety_queue(),
+    )
+    .await
     {
-        process_life_safety_item(
-            worker_detail,
-            llm_params,
-            db,
-            slack_token,
-            slack_channel,
-            places_detailed,
+        Ok(Ok(Some((
             article_url,
             article_title,
             article_text,
@@ -54,30 +43,46 @@ pub async fn process_analysis_item(
             title_domain_hash,
             threat_regions,
             pub_date,
-        )
-        .await;
+        )))) => {
+            process_life_safety_item(
+                worker_detail,
+                llm_params,
+                db,
+                slack_token,
+                slack_channel,
+                places_detailed,
+                article_url,
+                article_title,
+                article_text,
+                article_html,
+                article_hash,
+                title_domain_hash,
+                threat_regions,
+                pub_date,
+            )
+            .await;
 
-        return true;
+            return true;
+        }
+        Ok(Ok(None)) => {
+            // No life safety items, continue to matched topics
+        }
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error fetching life safety queue: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: fetch_and_delete_from_life_safety_queue", worker_detail.name, worker_detail.id, worker_detail.model);
+        }
     }
 
-    // If no life safety item, try to process an item from the matched topics queue
-    if let Ok(Some((
-        article_text,
-        article_html,
-        article_url,
-        article_title,
-        article_hash,
-        title_domain_hash,
-        topic,
-        pub_date,
-    ))) = db.fetch_and_delete_from_matched_topics_queue().await
+    // Try to process an item from the matched topics queue
+    match timeout(
+        Duration::from_secs(30),
+        db.fetch_and_delete_from_matched_topics_queue(),
+    )
+    .await
     {
-        let success = process_matched_topic_item(
-            worker_detail,
-            llm_params,
-            db,
-            slack_token,
-            slack_channel,
+        Ok(Ok(Some((
             article_text,
             article_html,
             article_url,
@@ -86,15 +91,38 @@ pub async fn process_analysis_item(
             title_domain_hash,
             topic,
             pub_date,
-        )
-        .await;
+        )))) => {
+            let success = process_matched_topic_item(
+                worker_detail,
+                llm_params,
+                db,
+                slack_token,
+                slack_channel,
+                article_text,
+                article_html,
+                article_url,
+                article_title,
+                article_hash,
+                title_domain_hash,
+                topic,
+                pub_date,
+            )
+            .await;
 
-        if success {
-            return true;
+            if success {
+                return true;
+            }
         }
-    } else {
-        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Matched Topics queue empty, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model);
-        sleep(Duration::from_secs(10)).await;
+        Ok(Ok(None)) => {
+            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Matched Topics queue empty, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model);
+            sleep(Duration::from_secs(10)).await;
+        }
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error fetching matched topics queue: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: fetch_and_delete_from_matched_topics_queue", worker_detail.name, worker_detail.id, worker_detail.model);
+        }
     }
 
     // If we reach here, no item was processed successfully
@@ -125,12 +153,36 @@ async fn process_life_safety_item(
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from life safety queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
     // Check if article was already processed
-    if db.has_hash(&article_hash).await.unwrap_or(false)
-        || db
-            .has_title_domain_hash(&title_domain_hash)
-            .await
-            .unwrap_or(false)
+    let hash_exists = match timeout(Duration::from_secs(10), db.has_hash(&article_hash)).await {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    let title_domain_hash_exists = match timeout(
+        Duration::from_secs(10),
+        db.has_title_domain_hash(&title_domain_hash),
+    )
+    .await
     {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking title_domain_hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_title_domain_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    if hash_exists || title_domain_hash_exists {
         info!(
             target: TARGET_LLM_REQUEST,
             "Article with hash {} or title_domain_hash {} was already processed. Skipping.",
@@ -357,9 +409,10 @@ async fn process_life_safety_item(
             "stats": stats
         });
 
-        // Save the article first
-        let article_id = match db
-            .add_article(
+        // Save the article first with timeout
+        let article_id = match timeout(
+            Duration::from_secs(30),
+            db.add_article(
                 &article_url,
                 true,
                 Some(topic),
@@ -370,16 +423,26 @@ async fn process_life_safety_item(
                 None, // Placeholder for R2 URL, will update later
                 pub_date.as_deref(),
                 None, // event_date
-            )
-            .await
+            ),
+        )
+        .await
         {
-            Ok(id) => id,
-            Err(e) => {
+            Ok(Ok(id)) => id,
+            Ok(Err(e)) => {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "Failed to save article to database: {:?}", e
+                    "[{} {} {}]: Failed to save article to database: {:?}",
+                    worker_detail.name, worker_detail.id, worker_detail.model, e
                 );
                 return false; // Skip processing if saving fails
+            }
+            Err(_) => {
+                error!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: add_article (life_safety_item)",
+                    worker_detail.name, worker_detail.id, worker_detail.model
+                );
+                return false;
             }
         };
 
@@ -468,12 +531,37 @@ async fn process_matched_topic_item(
 
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from matched topics queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
-    if db.has_hash(&article_hash).await.unwrap_or(false)
-        || db
-            .has_title_domain_hash(&title_domain_hash)
-            .await
-            .unwrap_or(false)
+    // Check if article was already processed with timeouts
+    let hash_exists = match timeout(Duration::from_secs(10), db.has_hash(&article_hash)).await {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    let title_domain_hash_exists = match timeout(
+        Duration::from_secs(10),
+        db.has_title_domain_hash(&title_domain_hash),
+    )
+    .await
     {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking title_domain_hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_title_domain_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    if hash_exists || title_domain_hash_exists {
         info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: already processed, skipping {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
         return false;
     }
@@ -546,9 +634,10 @@ async fn process_matched_topic_item(
             "stats": stats
         });
 
-        // Save the article first
-        let article_id = match db
-            .add_article(
+        // Save the article first with timeout
+        let article_id = match timeout(
+            Duration::from_secs(30),
+            db.add_article(
                 &article_url,
                 true,
                 Some(&topic),
@@ -559,16 +648,26 @@ async fn process_matched_topic_item(
                 None, // Placeholder for R2 URL, will update later
                 pub_date.as_deref(),
                 None, // event_date
-            )
-            .await
+            ),
+        )
+        .await
         {
-            Ok(id) => id,
-            Err(e) => {
+            Ok(Ok(id)) => id,
+            Ok(Err(e)) => {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "Failed to save article to database: {:?}", e
+                    "[{} {} {}]: Failed to save article to database: {:?}",
+                    worker_detail.name, worker_detail.id, worker_detail.model, e
                 );
                 return false; // Skip processing if saving fails
+            }
+            Err(_) => {
+                error!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: add_article (matched_topic_item)",
+                    worker_detail.name, worker_detail.id, worker_detail.model
+                );
+                return false;
             }
         };
 

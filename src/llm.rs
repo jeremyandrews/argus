@@ -358,7 +358,7 @@ async fn generate_llm_response_internal(
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {} {}]: Ollama request timed out.",
+                            "[{} {} {} {}]: [TIMEOUT] LLM request timed out after 120s: ollama.generate",
                             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }
@@ -450,7 +450,7 @@ async fn generate_llm_response_internal(
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {} {}]: OpenAI request timed out.",
+                            "[{} {} {} {}]: [TIMEOUT] LLM request timed out after 120s: openai.completions.create",
                             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }

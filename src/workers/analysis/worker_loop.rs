@@ -1,6 +1,6 @@
 use anyhow::Result;
 use tokio::time::{sleep, Duration, Instant};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, info_span, Instrument};
 
 use crate::db::core::Database;
 use crate::llm::generate_text_response;
@@ -71,9 +71,35 @@ pub async fn analysis_loop(
 
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: starting analysis_loop using {:?}.", worker_detail.name, worker_detail.id, worker_detail.model, llm_client);
 
+    let mut heartbeat_timer = Instant::now();
+
     loop {
+        // Log heartbeat every 30 seconds
+        if heartbeat_timer.elapsed() > Duration::from_secs(30) {
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "[{} {} {}]: Heartbeat - Worker is alive. Last activity: {:?} ago. Current mode: {}",
+                worker_detail.name,
+                worker_detail.id,
+                worker_detail.model,
+                last_activity.elapsed(),
+                match mode {
+                    Mode::Analysis => "Analysis",
+                    Mode::FallbackDecision => "FallbackDecision",
+                }
+            );
+            heartbeat_timer = Instant::now();
+        }
+
         match mode {
             Mode::Analysis => {
+                // Create a span for analysis processing
+                let span = info_span!(
+                    "process_analysis_item",
+                    worker_id = %worker_detail.id,
+                    model = %worker_detail.model
+                );
+
                 // Attempt to process an analysis item
                 let processed = super::processing::process_analysis_item(
                     &worker_detail,
@@ -83,6 +109,7 @@ pub async fn analysis_loop(
                     default_slack_channel,
                     &places_detailed,
                 )
+                .instrument(span)
                 .await;
 
                 if processed {

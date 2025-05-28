@@ -34,6 +34,37 @@
 - All code changes should be verified with tests before being committed
 - Test coverage should be maintained or improved with each change
 
+## Worker Health Monitoring & Timeout Patterns
+- **Timeout Protection**: All critical operations that could hang indefinitely now have timeouts:
+  - Database queue operations: 30 seconds
+  - Database hash checks: 10 seconds  
+  - LLM operations: 120 seconds
+  - Entity extraction operations: 30 seconds
+
+- **Standardized Timeout Error Format**: All timeout errors follow the pattern:
+  ```
+  [TIMEOUT] <operation_type> timed out after <duration>s: <specific_function>
+  ```
+  This enables easy searching for `[TIMEOUT]` in logs to identify all timeout occurrences
+
+- **Worker Health Monitoring**:
+  - Heartbeat logging every 30 seconds showing worker ID, model, time since last activity, and current mode
+  - Tracing spans around major operations for better observability
+  - Last activity tracking to detect idle workers
+
+- **Graceful Degradation**: When operations timeout:
+  - The worker logs the timeout with context
+  - Processing continues with the next item rather than hanging
+  - Database state remains consistent
+  - No zombie processes or indefinite waits
+
+- **Timeout Configuration Guidelines**:
+  - Queue fetches: 30s (allow for database contention)
+  - Hash existence checks: 10s (should be fast operations)
+  - Article saves: 30s (complex transaction with multiple tables)
+  - LLM requests: 120s (allow for model loading and generation)
+  - Vector operations: No explicit timeout (local computation)
+
 ## Entity Matching & Alias System
 - The entity matching system uses a multi-factor approach with configurable parameters:
   - Vector similarity has 60% weight in the final score

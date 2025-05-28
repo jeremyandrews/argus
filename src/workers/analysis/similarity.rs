@@ -6,7 +6,7 @@ use crate::vector::{
 };
 use crate::JsonSchemaType;
 use serde_json::json;
-use tokio::time::Instant;
+use tokio::time::{timeout, Duration, Instant};
 use tracing::{debug, error, info};
 
 /// Converts an ArticleMatch and article details into a standardized JSON representation
@@ -99,12 +99,14 @@ pub async fn process_article_similarity(
                 let entities_json =
                     serde_json::to_string(&extracted_entities).unwrap_or_else(|_| "{}".to_string());
 
-                // Store entities and get the IDs
-                match db
-                    .process_entity_extraction(article_id, &entities_json)
-                    .await
+                // Store entities and get the IDs with timeout
+                match timeout(
+                    Duration::from_secs(30),
+                    db.process_entity_extraction(article_id, &entities_json),
+                )
+                .await
                 {
-                    Ok(ids) => {
+                    Ok(Ok(ids)) => {
                         info!(
                             "Successfully processed entity extraction for article {} with {} entities",
                             article_id, ids.len()
@@ -233,8 +235,11 @@ pub async fn process_article_similarity(
                             }
                         }
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         error!("Failed to process entity extraction: {:?}", e);
+                    }
+                    Err(_) => {
+                        error!("[TIMEOUT] Database operation timed out after 30s: process_entity_extraction");
                     }
                 }
             }
