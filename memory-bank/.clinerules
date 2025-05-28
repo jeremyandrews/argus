@@ -34,6 +34,13 @@
 - All code changes should be verified with tests before being committed
 - Test coverage should be maintained or improved with each change
 
+## Safety and Code Quality Rules
+- **NO UNSAFE CODE**: Unsafe code is strictly forbidden in this project except in extremely rare cases
+- The only exceptions are if we fully discuss the need in Plan mode and determine it's truly necessary
+- Use safe Rust alternatives like `Arc<Mutex<>>`, `Arc<RwLock<>>`, or `once_cell::sync::OnceCell` instead of static mut
+- All compilation warnings must be fixed before code is considered complete
+- Prefer safe, explicit patterns over clever but potentially dangerous code
+
 ## Worker Health Monitoring & Timeout Patterns
 - **Timeout Protection**: All critical operations that could hang indefinitely now have timeouts:
   - Database queue operations: 30 seconds

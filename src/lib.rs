@@ -1,3 +1,4 @@
+pub mod alerts;
 pub mod workers; // New modular workers organization
 
 // Re-exports for backward compatibility

@@ -240,6 +240,37 @@ impl Database {
             );
             CREATE INDEX IF NOT EXISTS idx_ip_logs_device_id ON ip_logs (device_id);
             CREATE INDEX IF NOT EXISTS idx_ip_logs_ip_address ON ip_logs (ip_address);
+
+            -- Alert system tables for LLM endpoint monitoring
+            CREATE TABLE IF NOT EXISTS endpoint_timeout_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                endpoint_url TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                worker_id TEXT NOT NULL,
+                worker_type TEXT NOT NULL,
+                timeout_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_timeout_events_endpoint_model ON endpoint_timeout_events (endpoint_url, model_name);
+            CREATE INDEX IF NOT EXISTS idx_timeout_events_occurred_at ON endpoint_timeout_events (occurred_at);
+            CREATE INDEX IF NOT EXISTS idx_timeout_events_worker ON endpoint_timeout_events (worker_id, worker_type);
+
+            CREATE TABLE IF NOT EXISTS endpoint_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                endpoint_url TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                alert_type TEXT NOT NULL,
+                first_occurrence TEXT NOT NULL,
+                last_occurrence TEXT NOT NULL,
+                last_alert_sent TEXT,
+                occurrence_count INTEGER NOT NULL DEFAULT 1,
+                consecutive_failures INTEGER NOT NULL DEFAULT 1,
+                is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+                resolved_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_endpoint_alerts_endpoint_model ON endpoint_alerts (endpoint_url, model_name);
+            CREATE INDEX IF NOT EXISTS idx_endpoint_alerts_type_resolved ON endpoint_alerts (alert_type, is_resolved);
+            CREATE INDEX IF NOT EXISTS idx_endpoint_alerts_occurrence ON endpoint_alerts (last_occurrence);
             "#,
         )
         .execute(&mut *conn)

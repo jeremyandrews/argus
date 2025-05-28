@@ -1,4 +1,5 @@
 // Re-export the Database struct and other public items
+pub mod alerts;
 mod article;
 pub mod cluster;
 pub mod core;
