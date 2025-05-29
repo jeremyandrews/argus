@@ -7,7 +7,7 @@ use crate::llm::generate_text_response;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
 use crate::workers::common::{build_connection_info, FeedItem, ProcessItemParams};
 use crate::{
-    FallbackConfig, LLMClient, LLMParamsBase, TextLLMParams, ThinkingModelConfig, WorkerDetail,
+    FallbackConfig, LLMClient, LLMParamsBase, ModelConfig, TextLLMParams, WorkerDetail,
     TARGET_LLM_REQUEST,
 };
 
@@ -27,7 +27,7 @@ pub async fn analysis_loop(
     default_slack_channel: &str,
     temperature: f32,
     fallback: Option<FallbackConfig>,
-    thinking_config: Option<ThinkingModelConfig>,
+    model_config: Option<ModelConfig>,
     no_think: bool,
 ) -> Result<()> {
     let db = Database::instance().await;
@@ -36,7 +36,7 @@ pub async fn analysis_loop(
             llm_client: llm_client.clone(),
             model: model.to_string(),
             temperature,
-            thinking_config: thinking_config.clone(),
+            model_config: model_config.clone(),
             no_think,
         },
     };
@@ -126,13 +126,13 @@ pub async fn analysis_loop(
                         // Update active model to fallback model
                         worker_detail.model = fallback_config.model.to_string();
 
-                        // Update LLM params to use fallback model (no thinking config in fallback)
+                        // Update LLM params to use fallback model (no model config in fallback)
                         llm_params = TextLLMParams {
                             base: LLMParamsBase {
                                 llm_client: fallback_config.llm_client.clone(),
                                 model: fallback_config.model.clone(),
                                 temperature,
-                                thinking_config: None, // No thinking in fallback mode
+                                model_config: None, // No model config in fallback mode
                                 no_think: fallback_config.no_think,
                             },
                         };
@@ -154,7 +154,7 @@ pub async fn analysis_loop(
                                     llm_client: llm_client.clone(),
                                     model: model.to_string(),
                                     temperature,
-                                    thinking_config: thinking_config.clone(),
+                                    model_config: model_config.clone(),
                                     no_think,
                                 },
                             };
@@ -178,13 +178,13 @@ pub async fn analysis_loop(
                             mode = Mode::Analysis;
                             fallback_start_time = None;
 
-                            // Restore original LLM params with thinking config
+                            // Restore original LLM params with model config
                             llm_params = TextLLMParams {
                                 base: LLMParamsBase {
                                     llm_client: llm_client.clone(),
                                     model: model.to_string(),
                                     temperature,
-                                    thinking_config: thinking_config.clone(),
+                                    model_config: model_config.clone(),
                                     no_think,
                                 },
                             };
@@ -221,7 +221,7 @@ pub async fn analysis_loop(
                                     slack_token,
                                     slack_channel: default_slack_channel,
                                     places: places_clone,
-                                    thinking_config: llm_params.base.thinking_config.clone(),
+                                    model_config: llm_params.base.model_config.clone(),
                                     no_think: llm_params.base.no_think,
                                 };
 
@@ -265,13 +265,13 @@ pub async fn analysis_loop(
                     // Update active model to original model
                     worker_detail.model = model.to_string();
 
-                    // Restore original LLM params with thinking config
+                    // Restore original LLM params with model config
                     llm_params = TextLLMParams {
                         base: LLMParamsBase {
                             llm_client: llm_client.clone(),
                             model: model.to_string(),
                             temperature,
-                            thinking_config: thinking_config.clone(),
+                            model_config: model_config.clone(),
                             no_think,
                         },
                     };

@@ -200,21 +200,20 @@ async fn generate_llm_response_internal(
                     .temperature(params.temperature)
                     .num_ctx(CONTEXT_WINDOW as u64);
 
-                // Add thinking-specific parameters if needed
-                if let Some(thinking_config) = &params.thinking_config {
-                    if !params.no_think {
-                        debug!(
-                            target: TARGET_LLM_REQUEST,
-                            "[{} {} {} {}]: Configuring thinking model with topP={}, topK={}.",
-                            worker_detail.name, worker_detail.id, worker_detail.model,
-                            worker_detail.connection_info,
-                            thinking_config.top_p, thinking_config.top_k
-                        );
+                // Apply model parameters if available
+                if let Some(model_config) = &params.model_config {
+                    debug!(
+                        target: TARGET_LLM_REQUEST,
+                        "[{} {} {} {}]: Applying model parameters: topP={}, topK={}.",
+                        worker_detail.name, worker_detail.id, worker_detail.model,
+                        worker_detail.connection_info,
+                        model_config.top_p, model_config.top_k
+                    );
 
-                        options = options
-                            .top_p(thinking_config.top_p)
-                            .top_k(thinking_config.top_k as u32);
-                    }
+                    options = options
+                        .top_p(model_config.top_p)
+                        .top_k(model_config.top_k as u32);
+                    // Note: min_p is not yet supported in ollama-rs, but ready for future
                 }
 
                 debug!(
@@ -288,9 +287,9 @@ async fn generate_llm_response_internal(
                                     );
                                 }
                             }
-                        } else if let Some(thinking_config) = &params.thinking_config {
+                        } else if let Some(model_config) = &params.model_config {
                             // Process thinking tags for normal thinking mode
-                            if thinking_config.strip_thinking_tags {
+                            if model_config.strip_thinking_tags {
                                 debug!(
                                     target: TARGET_LLM_REQUEST,
                                     "[{} {} {} {}]: Response contains thinking tags: {}",
@@ -389,8 +388,8 @@ async fn generate_llm_response_internal(
                             response_text = choice.text.clone();
 
                             // Process thinking tags if needed
-                            if let Some(thinking_config) = &params.thinking_config {
-                                if thinking_config.strip_thinking_tags {
+                            if let Some(model_config) = &params.model_config {
+                                if model_config.strip_thinking_tags {
                                     debug!(
                                         target: TARGET_LLM_REQUEST,
                                         "[{} {} {} {}]: Checking OpenAI response for thinking tags: {}",

@@ -21,7 +21,7 @@ pub async fn decision_loop(
     slack_token: &str,
     slack_channel: &str,
     no_think: bool,
-    thinking_config: Option<crate::ThinkingModelConfig>,
+    model_config: Option<crate::ModelConfig>,
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut rng = StdRng::seed_from_u64(rand::random());
@@ -117,7 +117,7 @@ pub async fn decision_loop(
                     slack_token,
                     slack_channel,
                     places: places_clone,
-                    thinking_config: thinking_config.clone(),
+                    model_config: model_config.clone(),
                     no_think,
                 };
 

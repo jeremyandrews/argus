@@ -63,7 +63,7 @@ pub async fn generate_cluster_summary(
             llm_client: llm_client.clone(),
             model: "".to_string(), // Will be set by the LLM client
             temperature: 0.2,      // Lower temperature for more consistent summaries
-            thinking_config: None, // No thinking needed for cluster summaries
+            model_config: None,    // No model config needed for cluster summaries
             no_think: false,       // No need for special no_think mode for summaries
         },
     };

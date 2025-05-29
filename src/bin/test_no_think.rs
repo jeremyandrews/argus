@@ -1,119 +1,165 @@
-//! # No-Think Mode Test Utility
-//!
-//! This utility tests the no-think mode functionality with Qwen models.
-//!
-//! ## Usage
-//!
-//! ```
-//! # Test with no-think mode enabled
-//! cargo run --bin test_no_think -- --model qwen3:32b-a3b-fp16 --no-think
-//!
-//! # Compare with standard thinking mode
-//! cargo run --bin test_no_think -- --model qwen3:32b-a3b-fp16
-//! ```
-//!
-//! This will run a test with both modes for comparison.
-
-use argus::{LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
+use argus::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, ModelConfig, WorkerDetail};
 use clap::Parser;
 use ollama_rs::Ollama;
-use std::time::Instant;
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use serde_json::to_string_pretty;
 
 #[derive(Parser, Debug)]
-#[clap(about = "Test the no-think mode for Qwen models")]
+#[command(author, version, about, long_about = None)]
 struct Args {
-    /// Ollama host
-    #[clap(long, default_value = "localhost")]
+    /// Host for the Ollama server
+    #[arg(short = 'H', long, default_value = "localhost")]
     host: String,
 
-    /// Ollama port
-    #[clap(long, default_value = "11434")]
+    /// Port for the Ollama server
+    #[arg(short = 'p', long, default_value = "11434")]
     port: u16,
 
-    /// Model to use (should be a Qwen model for no-think to work)
-    #[clap(long, default_value = "qwen3:32b-a3b-fp16")]
+    /// Model to use
+    #[arg(short = 'm', long, default_value = "llama3:8b")]
     model: String,
 
+    /// Temperature for generation
+    #[arg(short = 'T', long, default_value = "0.0")]
+    temperature: f32,
+
     /// Enable no-think mode
-    #[clap(long)]
+    #[arg(long)]
     no_think: bool,
+
+    /// Test article text
+    #[arg(short = 'a', long)]
+    article: Option<String>,
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Set up logging
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
-
-    // Parse command-line arguments
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Test prompt that normally triggers thinking
-    let test_prompt = "Explain why quantum computing is important for cryptography. Consider both the advantages and potential risks.";
+    // Create Ollama client and wrap it in LLMClient
+    let ollama = Ollama::new(args.host.clone(), args.port);
+    let llm_client = LLMClient::Ollama(ollama);
 
-    // Create Ollama client
-    let ollama_client = Ollama::new(args.host.clone(), args.port);
-    let llm_client = LLMClient::Ollama(ollama_client);
-
-    // Create worker detail
+    // Setup worker detail
     let worker_detail = WorkerDetail {
-        name: "no-think test".to_string(),
+        name: "no_think_test_worker".to_string(),
         id: 0,
         model: args.model.clone(),
         connection_info: format!("{}:{}", args.host, args.port),
     };
 
-    // Create LLM params
-    let llm_params = TextLLMParams {
+    // Default article text if none provided
+    let article_text = args.article.unwrap_or_else(|| {
+        "Apple Inc. announced today the launch of their new iPad Pro featuring the M4 chip. CEO Tim Cook revealed the device at a special event in Cupertino, California. The new tablet will be available starting next week at Apple Stores worldwide, with prices beginning at $999. Industry experts predict strong sales despite the premium pricing due to significant performance improvements over the previous generation.".to_string()
+    });
+
+    println!("Testing no-think mode with:");
+    println!("- Model: {}", args.model);
+    println!("- Temperature: {}", args.temperature);
+    println!("- No-think enabled: {}", args.no_think);
+    println!("- Article: {} characters", article_text.len());
+
+    // Create model config with appropriate parameters for no-think mode
+    let model_config = if args.no_think {
+        Some(ModelConfig {
+            strip_thinking_tags: true,
+            top_p: 0.8,
+            top_k: 20,
+            min_p: 0.0,
+        })
+    } else {
+        Some(ModelConfig {
+            strip_thinking_tags: true,
+            top_p: 0.95,
+            top_k: 20,
+            min_p: 0.0,
+        })
+    };
+
+    // Create LLM params for entity extraction
+    let mut llm_params = JsonLLMParams {
         base: LLMParamsBase {
             llm_client,
             model: args.model.clone(),
-            temperature: 0.6,
-            thinking_config: Some(argus::ThinkingModelConfig {
-                strip_thinking_tags: true,
-                top_p: 0.95,
-                top_k: 20,
-                min_p: 0.0,
-            }),
+            temperature: args.temperature,
+            model_config,
             no_think: args.no_think,
         },
+        schema_type: JsonSchemaType::EntityExtraction,
     };
 
-    // Log mode
-    if args.no_think {
-        info!("Running in NO-THINK mode (/no_think will be appended to prompt)");
-    } else {
-        info!("Running in standard thinking mode");
-    }
+    println!("\nTesting entity extraction with no-think mode...");
+    let start_time = std::time::Instant::now();
 
-    // Generate response
-    info!("Sending prompt: {}", test_prompt);
-    let start = Instant::now();
+    // Extract entities to test no-think mode
+    match argus::entity::extraction::extract_entities(
+        &article_text,
+        Some("2024-01-15"),
+        &mut llm_params,
+        &worker_detail,
+    )
+    .await
+    {
+        Ok(extraction_result) => {
+            let elapsed = start_time.elapsed();
 
-    match argus::llm::generate_text_response(test_prompt, &llm_params, &worker_detail).await {
-        Some(response) => {
-            let elapsed = start.elapsed();
-            info!("Response received in {:?}:", elapsed);
-            println!("\n---RESPONSE---\n{}\n---END RESPONSE---", response);
+            println!("\nEntity extraction completed in {:.2?}", elapsed);
+            println!("Extracted {} entities", extraction_result.entities.len());
 
-            // Provide feedback on response characteristics
-            let contains_thinking_tags = response.contains("<think>");
-            info!(
-                "Response contains thinking tags: {}",
-                contains_thinking_tags
-            );
-            info!(
-                "Response length: {} characters, {} words",
-                response.len(),
-                response.split_whitespace().count()
-            );
+            // Print results
+            println!("\n=== EXTRACTION RESULTS ===");
+            println!("{}", to_string_pretty(&extraction_result)?);
+
+            // Verify results
+            if extraction_result.entities.is_empty() {
+                println!("\n❌ TEST FAILED: No entities extracted");
+                return Err("No entities extracted".into());
+            }
+
+            // Check for specific expected entities from the test article
+            let entity_names: Vec<&str> = extraction_result
+                .entities
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect();
+
+            let expected_entities = ["Apple", "Tim Cook", "iPad Pro", "M4", "Cupertino"];
+            let mut found_entities = Vec::new();
+
+            for expected in &expected_entities {
+                if entity_names.iter().any(|name| name.contains(expected)) {
+                    found_entities.push(*expected);
+                }
+            }
+
+            println!("\nExpected entities found: {:?}", found_entities);
+
+            if found_entities.len() >= 3 {
+                println!("\n✅ TEST PASSED: No-think mode entity extraction successful!");
+                println!(
+                    "Found {} out of {} expected entities",
+                    found_entities.len(),
+                    expected_entities.len()
+                );
+            } else {
+                println!(
+                    "\n⚠️  WARNING: Only found {} out of {} expected entities",
+                    found_entities.len(),
+                    expected_entities.len()
+                );
+                println!(
+                    "This might indicate the model is not performing optimally with no-think mode"
+                );
+            }
+
+            if args.no_think {
+                println!("\n✅ No-think mode test completed successfully!");
+            } else {
+                println!("\n✅ Regular mode test completed successfully!");
+            }
         }
-        None => {
-            eprintln!("Failed to get response!");
+        Err(e) => {
+            println!("\n❌ TEST FAILED: Error during entity extraction: {:?}", e);
+            return Err(e.into());
         }
     }
 

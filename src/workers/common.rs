@@ -13,7 +13,7 @@ pub struct ProcessItemParams<'a> {
     pub slack_channel: &'a str,
     pub places:
         BTreeMap<std::string::String, BTreeMap<std::string::String, Vec<std::string::String>>>,
-    pub thinking_config: Option<crate::ThinkingModelConfig>,
+    pub model_config: Option<crate::ModelConfig>,
     pub no_think: bool,
 }
 
@@ -23,8 +23,8 @@ pub fn extract_llm_params_base<'a>(params: &'a ProcessItemParams<'a>) -> crate::
         llm_client: params.llm_client.clone(),
         model: params.model.to_string(),
         temperature: params.temperature,
-        thinking_config: params.thinking_config.clone(), // Use thinking_config from params
-        no_think: params.no_think,                       // Use no_think from params
+        model_config: params.model_config.clone(), // Use model_config from params
+        no_think: params.no_think,                 // Use no_think from params
     }
 }
 

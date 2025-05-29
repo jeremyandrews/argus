@@ -1,209 +1,472 @@
 # Argus
 
-Argus is a Rust-based artificial intelligence (AI) agent designed to monitor and analyze numerous information sources. As an "AI agent", Argus performs tasks autonomously, making decisions based on the data it receives.
+Argus is a sophisticated multi-worker AI agent system designed to autonomously monitor, analyze, and report on information from numerous sources. Built in Rust, Argus employs multiple concurrent workers using both local (Ollama) and cloud-based (OpenAI) language models to provide intelligent decision-making and comprehensive analysis.
 
 <img src="https://github.com/jeremyandrews/argus/blob/main/assets/argus-logo.png" alt="Argus Logo" width="200"/>
 
-The name "Argus" is inspired by Argus Panoptes, the all-seeing giant in Greek mythology, reflecting the program's ability to monitor and analyze numerous information sources.
+The name "Argus" is inspired by Argus Panoptes, the all-seeing giant in Greek mythology, reflecting the program's ability to monitor and analyze numerous information sources simultaneously.
 
-## Features
+## Architecture Overview
 
-- **RSS Feed Parsing:** Reads articles from specified RSS feed URLs.
-- **Content Extraction:** Extracts readable content from article URLs.
-- **Topic Matching:** Uses a language model to match articles with specified topics.
-- **Summary and Analysis:** Generates concise summaries and analyses of matching articles.
-- **Slack Integration:** Posts summaries to a Slack channel using a webhook.
+Argus employs a modern multi-worker architecture with specialized components:
+
+```
+RSS Sources → Content Extraction → Worker Pool → Analysis & Decision → Slack Notifications
+                                       ↓
+                                 SQLite Database
+                                (Persistence & History)
+```
+
+**Core Components:**
+- **RSS Monitor**: Continuously monitors multiple RSS feeds
+- **Decision Workers**: Determine article relevance using AI models
+- **Analysis Workers**: Perform deep content analysis and entity extraction
+- **Database Layer**: SQLite-based persistence with clustering and relationships
+- **Notification System**: Rich Slack integration with geographic relevance
+
+## Key Features
+
+### 🚀 **Multi-Worker Processing**
+- Concurrent Decision and Analysis workers for scalable processing
+- Independent worker pools with automatic load balancing
+- Fallback support for high availability
+
+### 🧠 **Dual LLM Support** 
+- **Ollama Integration**: Local model deployment (privacy-focused)
+- **OpenAI Integration**: Cloud-based models (GPT-4, etc)
+- Mix and match providers within the same deployment
+
+### ⚡ **Intelligent Model Selection**
+- **Thinking Models**: Enhanced reasoning with structured analysis (temp=0.6, top_p=0.95)
+- **Non-Thinking Models**: Faster processing for simple tasks (temp=0.7, top_p=0.8) 
+- Automatic parameter optimization based on model type
+
+### 📊 **Advanced Analysis**
+- Entity extraction and normalization
+- Article clustering and relationship mapping
+- Geographic relevance detection
+- Temporal analysis and trending
+
+### 🔧 **Flexible Configuration**
+- Environment variable-based configuration
+- Per-worker model and parameter customization
+- Runtime parameter overrides
+- Hot-swappable worker configurations
+
+### 🌍 **Place-Specific Intelligence**
+- Geographic relevance detection for global teams
+- Continent/country/city-level analysis
+- Automated team member notification
+
+### 📱 **Rich Slack Integration**
+- Formatted notifications with context
+- Geographic impact summaries
+- Real-time status updates
+
+## Model Configuration
+
+### Thinking vs Non-Thinking Models
+
+Argus automatically optimizes model parameters based on the model type:
+
+#### **Thinking Mode** (Default)
+- **When**: Models without `/no_think` suffix
+- **Use Case**: Complex analysis requiring structured reasoning
+- **Parameters**: 
+  - Temperature: 0.6 (prevents greedy decoding)
+  - Top-P: 0.95 (broad token consideration)
+  - Top-K: 20, Min-P: 0.0
+
+#### **Non-Thinking Mode** 
+- **When**: Models with `/no_think` suffix (e.g., `qwen2.5:7b/no_think`)
+- **Use Case**: Fast processing for simple decisions
+- **Parameters**:
+  - Temperature: 0.7 (optimized for speed)
+  - Top-P: 0.8 (focused responses)
+  - Top-K: 20, Min-P: 0.0
+
+### Parameter Explanations
+
+| Parameter | Range | Description |
+|-----------|-------|-------------|
+| **Temperature** | 0.0-2.0 | Controls randomness/creativity. Lower = more focused |
+| **Top-P** | 0.0-1.0 | Nucleus sampling - limits tokens by probability mass |
+| **Top-K** | Integer | Limits consideration to K most likely tokens |
+| **Min-P** | 0.0-1.0 | Minimum probability threshold for token consideration |
+
+### Environment Overrides
+
+Override automatic parameter selection:
+
+```bash
+export LLM_TEMPERATURE="0.8"  # Override temperature for all workers
+export LLM_TOP_P="0.9"        # Override Top-P 
+export LLM_TOP_K="40"         # Override Top-K
+export LLM_MIN_P="0.05"       # Override Min-P
+```
+
+## Worker Configuration
+
+### Decision Workers
+
+Handle initial article relevance determination:
+
+```bash
+# Ollama configuration
+export DECISION_OLLAMA_CONFIGS="localhost|11434|llama3.1:70b;localhost|11434|qwen2.5:7b/no_think"
+
+# OpenAI configuration  
+export DECISION_OPENAI_CONFIGS="sk-xxxxx|gpt-4;sk-yyyyy|gpt-3.5-turbo"
+```
+
+### Analysis Workers
+
+Perform deep content analysis with optional fallback:
+
+```bash
+# Ollama with fallback
+export ANALYSIS_OLLAMA_CONFIGS="localhost|11434|llama3.1:70b||localhost|11435|qwen2.5:7b/no_think"
+
+# OpenAI with fallback
+export ANALYSIS_OPENAI_CONFIGS="sk-xxxxx|gpt-4||sk-yyyyy|gpt-3.5-turbo"
+```
+
+### Configuration Format
+
+#### **Ollama Format**
+- Basic: `host|port|model[/no_think]`
+- With Fallback: `main_host|main_port|main_model||fallback_host|fallback_port|fallback_model`
+
+#### **OpenAI Format**
+- Basic: `api_key|model`
+- With Fallback: `main_api_key|main_model||fallback_api_key|fallback_model`
 
 ## Environment Variables
 
-Configure the program using environment variables. Copy `env.template` to `.env` and edit it as necessary. You will need to source the `.env` file to make the variables available to your shell.
+### Core Configuration
 
-### Environment Variables in `env.template`:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SLACK_TOKEN` | ✅ | OAuth token for Slack app |
+| `SLACK_CHANNEL` | ✅ | Slack channel ID for notifications |
+| `URLS` | ✅ | Semicolon-separated RSS feed URLs |
+| `TOPICS` | ✅ | Topic definitions for monitoring |
 
-- `SLACK_TOKEN`: The OAuth token of the Slack App to send news notifications.
-- `SLACK_CHANNEL`: The Slack channel ID to send the notifications to.
-- `URLS`: A list of RSS URLs to scrape. Use feeds without access restrictions.
-- `TOPICS`: A list of topics to search for and report on.
-- `OLLAMA_PORT`: Optionally specify a custom port for the Ollama API.
-- `OLLAMA_HOST`: Optionally specify a custom hostname for the Ollama API.
-- `OLLAMA_MODEL`: Optionally specify an Ollama model to use.
-- `DATABASE_PATH`: Optionally specify a custom path to the SQLite database file. Default is `argus.db`.
-- `LLM_TEMPERATURE`: Optionally specify a temperature for the language model. Default is `0.0`.
-- `PLACES_JSON_PATH`: Optionally specify the path to a JSON file with place information.
-- `RUST_LOG`: Logging level for the application. Possible values are: `trace`, `debug`, `info`, `warn`, `error`. Default is `info`.
+### Worker Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `DECISION_OLLAMA_CONFIGS` | Ollama instances for decision workers |
+| `ANALYSIS_OLLAMA_CONFIGS` | Ollama instances for analysis workers |
+| `DECISION_OPENAI_CONFIGS` | OpenAI configurations for decision workers |
+| `ANALYSIS_OPENAI_CONFIGS` | OpenAI configurations for analysis workers |
+
+### LLM Parameter Overrides
+
+| Variable | Range | Default Behavior |
+|----------|-------|------------------|
+| `LLM_TEMPERATURE` | 0.0-2.0 | Auto: 0.6 (thinking), 0.7 (non-thinking) |
+| `LLM_TOP_P` | 0.0-1.0 | Auto: 0.95 (thinking), 0.8 (non-thinking) |
+| `LLM_TOP_K` | Integer | Auto: 20 (both modes) |
+| `LLM_MIN_P` | 0.0-1.0 | Auto: 0.0 (both modes) |
+
+### Optional Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_PATH` | `argus.db` | SQLite database path |
+| `PLACES_JSON_PATH` | None | Geographic analysis configuration |
+| `RUST_LOG` | `info` | Logging level (trace, debug, info, warn, error) |
 
 ## Place-Specific Analysis
 
-To enable place-specific analysis, you need to create a JSON file that includes information about the continents, countries, and cities you want to monitor. Here’s how to set it up:
+Enable geographic relevance detection by creating a `places.json` file:
 
-1. **Copy the Template:**
-    ```sh
-    cp places.json.template places.json
-    ```
-
-2. **Edit `places.json`:** Update the JSON file with your data. The structure should be as follows:
-    ```json
-    {
-        "Continent": {
-            "Country": [
-                "First name, Last name, City, Country, Time Zone, Slack ID"
-            ],
-            "Another Country": [
-                "First name, Last name, City, Another Country, Time Zone, Slack ID"
-            ]
-        },
-        "Another Continent": {
-            "Country": [
-                "First name, Last name, City, Country, Time Zone, Slack ID"
-            ]
-        }
-    }
-    ```
-
-3. **Example `places.json`:**
-    ```json
-        {
-        "Africa": {
-            "Nigeria": [
-                "Chinwe, Okoro, Lagos, Nigeria, WAT (UTC+1), Chinwe O"
-            ],
-            "Egypt": [
-                "Omar, Farouk, Cairo, Egypt, EET (UTC+2), Omar F"
-            ]
-        },
-        "Asia": {
-            "Japan": [
-                "Yuki, Nakamura, Tokyo, Japan, JST (UTC+9), YukiN"
-            ],
-            "Vietnam": [
-                "Linh, Tran, Hanoi, Vietnam, ICT (UTC+7), Linh Tran"
-            ]
-        },
-        "Europe": {
-            "Spain": [
-                "Carlos, Ruiz, Madrid, Spain, CET (UTC+1), carlosr"
-            ],
-            "France": [
-                "Marie, Dubois, Paris, France, CET (UTC+1), maried"
-            ]
-        },
-        "North America": {
-            "Canada": [
-                "Alex, Johnson, Toronto, Canada, EST (UTC-5), AlexJ",
-                "Sarah, Wong, Vancouver, Canada, PST (UTC-8), SarahW"
-            ]
-        }
-    }
-    ```
-
-4. **Set the Environment Variable:**
-    ```sh
-    export PLACES_JSON_PATH="places.json"
-    ```
-
-### How It Works
-
-When the `PLACES_JSON_PATH` environment variable is set, the program will:
-
-1. Load the JSON structure from the specified file into memory.
-2. For each relevant continent, ask the language model, "Is this a current event directly affecting people living on the continent of <CONTINENT>? Answer yes or no."
-3. If the answer is "yes," it will loop through the countries in that continent and ask, "Is this a current event directly affecting people living in the country of <COUNTRY> on <CONTINENT>? Answer yes or no."
-4. If the answer is "yes," it will loop through the cities in that country and ask, "Is this a current event directly affecting people living in or near the city of <CITY> in the country of <COUNTRY> on <CONTINENT>? Answer yes or no."
-5. If the answer is "yes," it will add all people in that city to a list of affected individuals.
-6. After checking all relevant places, the program will post the article to Slack and include a summary of all affected people in the format: "This article affects: FIRST LAST (SLACK HANDLE), FIRST LAST (SLACK HANDLE), ..."
-
-By setting up and configuring the `places.json` file, you can tailor the analysis to focus on specific regions and ensure that relevant individuals are notified about articles that directly impact them.
-
-## Installation
-
-1. Clone the repository:
-    ```sh
-    git clone <repository_url>
-    cd <repository_directory>
-    ```
-2. Set up environment variables:
-    ```sh
-    cp env.template .env
-    ```
-3. Source the environment variables:
-    ```sh
-    source .env
-    ```
-4. Build and run the program:
-    ```sh
-    cargo run --release
-    ```
-
-## Usage
-
-When run, the program will:
-
-1. Parse RSS feeds from specified URLs.
-2. Extract and summarize article content.
-3. Match content against specified topics.
-4. Post summaries and analyses to Slack.
-
-## Logging
-
-Argus uses the `tracing` crate for logging with two log layers: one for stdout and one for log files.
-
-- **Stdout Log Layer:**
-  - Logs at the `info` level and above.
-  - Excludes `llm_request` debug logs.
-
-- **File Log Layer:**
-  - Logs at the `debug` level for `llm_request`.
-  - Logs at the `info` level for other logs.
-  - Logs are stored in `logs/app.log`.
-
-### Example Logging Configuration in `main.rs`
-
-```rust
-let stdout_log = fmt::layer()
-    .with_writer(io::stdout)
-    .with_filter(EnvFilter::new("info,llm_request=off"));
-
-let file_appender = rolling::daily("logs", "app.log");
-let file_log = fmt::layer()
-    .with_writer(file_appender)
-    .with_filter(EnvFilter::new("web_request=info,llm_request=debug,info"));
-
-Registry::default().with(stdout_log).with(file_log).init();
+### 1. Create Configuration File
+```bash
+cp places.json.template places.json
+export PLACES_JSON_PATH="places.json"
 ```
 
-## Dependencies
+### 2. Structure
+```json
+{
+  "Continent": {
+    "Country": [
+      "First, Last, City, Country, Timezone, SlackID"
+    ]
+  }
+}
+```
 
-- `ollama_rs` for integrating with the Ollama language model.
-- `readability` for extracting readable content.
-- `rss` for parsing RSS feeds.
-- `serde_json` for handling JSON data.
-- `reqwest` for making HTTP requests.
-- `tracing` for logging.
-- `tracing-subscriber` for initializing logging.
+### 3. Example Configuration
+```json
+{
+  "Europe": {
+    "Italy": [
+      "Marco, Rossi, Florence, Italy, CET (UTC+1), marco.r"
+    ],
+    "France": [
+      "Marie, Dubois, Paris, France, CET (UTC+1), marie.d"
+    ]
+  },
+  "Asia": {
+    "Japan": [
+      "Yuki, Tanaka, Tokyo, Japan, JST (UTC+9), yuki.t"
+    ]
+  }
+}
+```
 
-## Example
+### 4. How It Works
+When enabled, Argus analyzes each article for geographic relevance:
+1. **Continent Check**: "Does this affect people in [Continent]?"
+2. **Country Check**: "Does this affect people in [Country]?"  
+3. **City Check**: "Does this affect people in/near [City]?"
+4. **Notification**: Affected individuals are tagged in Slack notifications
 
-To run the program:
+## Installation & Setup
 
-1. Set up environment variables in the `.env` file.
-2. Execute the program:
-    ```sh
-    cargo run --release
-    ```
+### Prerequisites
+- **Rust**: Latest stable version
+- **SQLite**: For data persistence
+- **Ollama** (optional): For local model deployment
+- **OpenAI API Key** (optional): For cloud models
 
-You will see output indicating the progress of loading RSS feeds, extracting articles, matching topics, and posting to Slack.
+### 1. Clone and Build
+```bash
+git clone <repository_url>
+cd argus
+cargo build --release
+```
+
+### 2. Environment Configuration
+```bash
+cp env.template .env
+# Edit .env with your configuration
+source .env
+```
+
+### 3. First Run
+```bash
+cargo run --release
+```
+
+## Usage Examples
+
+### Basic Setup (Single Worker)
+```bash
+export DECISION_OLLAMA_CONFIGS="localhost|11434|llama3.1:8b"
+export ANALYSIS_OLLAMA_CONFIGS="localhost|11434|llama3.1:8b"
+```
+
+### Advanced Setup (Multi-Worker with Fallback)
+```bash
+export DECISION_OLLAMA_CONFIGS="localhost|11434|llama3.1:70b;localhost|11434|qwen2.5:7b/no_think"
+export ANALYSIS_OLLAMA_CONFIGS="localhost|11434|llama3.1:70b||localhost|11435|qwen2.5:7b/no_think"
+```
+
+### Mixed Providers
+```bash
+export DECISION_OPENAI_CONFIGS="sk-xxxxx|gpt-4"
+export ANALYSIS_OLLAMA_CONFIGS="localhost|11434|llama3.1:70b"
+```
+
+### Parameter Tuning
+```bash
+export LLM_TEMPERATURE="0.8"
+export LLM_TOP_P="0.9"
+export LLM_TOP_K="40"
+```
+
+## Logging & Monitoring
+
+Argus uses structured logging with multiple targets:
+
+### Log Targets
+- **stdout**: General application logs (info level)
+- **file**: Detailed logs including LLM requests (debug level)
+- **web_request**: RSS and API activity
+- **llm_request**: Model interaction details
+
+### File Logging
+Logs are stored in `logs/app.log` with daily rotation:
+```
+logs/
+├── app.log          # Current day
+├── app.log.2025-05-29
+└── app.log.2025-05-28
+```
+
+### Monitoring Worker Activity
+```bash
+# Watch live logs
+tail -f logs/app.log
+
+# Filter for specific worker
+tail -f logs/app.log | grep "Decision Worker 0"
+
+# Monitor parameter usage
+tail -f logs/app.log | grep "Using.*mode"
+```
 
 ## Troubleshooting
 
-- **RSS Feed Errors:** Ensure RSS feed URLs are correct and accessible.
-- **Ollama Service Connection:** Confirm the Ollama service is running and accessible at the specified host and port.
-- **Slack Webhook Errors:** Verify the Slack webhook URL is correct and your Slack app has the necessary permissions.
-- **Logging Level:** Adjust the `RUST_LOG` environment variable to control the verbosity of logs (`trace`, `debug`, `info`, `warn`, `error`).
+### Connection Issues
+
+#### **Ollama Connection Failed**
+```bash
+# Check Ollama status
+curl http://localhost:11434/api/tags
+
+# Verify model availability
+ollama list
+
+# Test specific model
+ollama run llama3.1:8b "Hello"
+```
+
+#### **OpenAI API Errors**
+- Verify API key validity
+- Check rate limits and quotas
+- Ensure model access permissions
+
+### Worker Problems
+
+#### **Workers Not Starting**
+1. Check environment variable syntax
+2. Verify model availability
+3. Review logs for specific error messages
+
+#### **Performance Issues**
+- Monitor system resources (RAM/CPU)
+- Consider adjusting worker counts
+- Use lighter models for high-throughput scenarios
+
+### Configuration Errors
+
+#### **Invalid Model Configuration**
+```
+Error: Invalid Ollama configuration format
+```
+**Solution**: Check format: `host|port|model[/no_think]`
+
+#### **Missing Environment Variables**
+```
+Error: SLACK_TOKEN environment variable required
+```
+**Solution**: Ensure all required variables are set in `.env`
+
+### Parameter Tuning Issues
+
+#### **Poor Response Quality**
+- Increase temperature for more creativity
+- Adjust Top-P for different response styles
+- Use thinking mode for complex analysis
+
+#### **Slow Performance**
+- Use non-thinking models (`/no_think` suffix)
+- Reduce Top-K values
+- Consider lighter models
+
+## Advanced Topics
+
+### Performance Optimization
+
+#### **Worker Scaling**
+- 1-2 Decision workers typically sufficient
+- Scale Analysis workers based on article volume
+- Monitor CPU/memory usage to find optimal counts
+
+#### **Model Selection Strategy**
+- Use large models (70B+) for complex analysis
+- Use smaller models (7B-13B) with `/no_think` for decisions
+- Mix model sizes based on task complexity
+
+### Custom Prompts
+Argus generates specialized prompts for different tasks:
+- **Relevance Detection**: Topic matching prompts
+- **Entity Extraction**: Named entity recognition
+- **Geographic Analysis**: Location-based relevance
+- **Summarization**: Context-aware article summaries
+
+### Database Management
+
+#### **SQLite Maintenance**
+```bash
+# Backup database
+cp argus.db argus.db.backup
+
+# Vacuum database (reclaim space)
+sqlite3 argus.db "VACUUM;"
+
+# Check database size
+ls -lh argus.db
+```
+
+#### **Schema Updates**
+Migration scripts are provided in `migrations/`:
+```bash
+cargo run --bin migrate_cluster_schema
+cargo run --bin migrate_cluster_merge_schema
+```
+
+### Scaling Considerations
+
+#### **Multiple Instances**
+- Use separate databases per instance
+- Coordinate RSS feed parsing
+- Share Slack notifications carefully
+
+#### **Load Balancing**
+- Distribute RSS feeds across instances
+- Use different Ollama instances per worker type
+- Implement external load balancing for high availability
+
+## Dependencies
+
+### Core Dependencies
+- `ollama_rs`: Ollama API integration
+- `async_openai`: OpenAI API integration  
+- `readability`: Content extraction
+- `rss`: RSS feed parsing
+- `sqlx`: Database operations
+- `reqwest`: HTTP client
+- `tokio`: Async runtime
+- `tracing`: Structured logging
+- `serde_json`: JSON processing
+
+### Development Dependencies
+- `clap`: CLI argument parsing
+- `anyhow`: Error handling
+- `chrono`: Date/time operations
 
 ## Contributing
 
-Contributions are welcome! Open an issue or submit a pull request on GitHub.
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+### Development Setup
+```bash
+# Run tests
+cargo test
+
+# Run specific test binaries
+cargo run --bin test_thinking_model
+cargo run --bin test_ollama_endpoints
+
+# Format code
+cargo fmt
+
+# Lint code
+cargo clippy
+```
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See LICENSE.txt for details.

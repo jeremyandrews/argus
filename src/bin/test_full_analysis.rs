@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             llm_client,
             model: args.model.clone(),
             temperature: args.temperature,
-            thinking_config: None,
+            model_config: None,
             no_think: false,
         },
     };

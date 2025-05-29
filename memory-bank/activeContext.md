@@ -1,111 +1,114 @@
-# Active Development Context
+# Active Context
 
-## Current Focus: Analysis Worker Freeze Protection
+## Current Work Focus
 
-We've implemented timeout protections and enhanced monitoring for the analysis worker to prevent it from freezing indefinitely. This addresses an issue where the analysis workers would stop processing news articles after running for extended periods (12+ hours) without any visible panics.
+### ✅ COMPLETED: Environment Variable Overrides & Documentation Update
+- **Task**: Add LLM_TOP_P, LLM_TOP_K, LLM_MIN_P environment variable overrides and completely rewrite README.md
+- **Status**: COMPLETED and fully functional
+- **Branch**: main
+- **Completion Date**: May 29, 2025
 
-### Key Improvements
+## Recent Changes
 
-1. **Database Operation Timeouts**:
-   - Added 30-second timeouts to queue fetch operations (`fetch_and_delete_from_life_safety_queue`, `fetch_and_delete_from_matched_topics_queue`)
-   - Added 10-second timeouts to hash existence checks (`has_hash`, `has_title_domain_hash`)
-   - Added 30-second timeouts to article save operations (`add_article`)
-   - Added 30-second timeout to entity processing (`process_entity_extraction`)
-   - All timeouts use standard `tokio::time::timeout` for consistency
+### Environment Variable Overrides Implementation
+Successfully implemented comprehensive LLM parameter overrides via environment variables:
 
-2. **Enhanced Error Handling**:
-   - Timeout errors are now logged with detailed worker information
-   - Database errors are caught and logged separately from timeout errors
-   - Operations continue gracefully after timeout failures instead of hanging
+**New Environment Variables Added:**
+- `LLM_TOP_P` - Override Top-P for both thinking and non-thinking modes
+- `LLM_TOP_K` - Override Top-K for both thinking and non-thinking modes  
+- `LLM_MIN_P` - Override Min-P for both thinking and non-thinking modes
+- `LLM_TEMPERATURE` - Previously existed, now fully documented
 
-3. **Worker Health Monitoring**:
-   - Added heartbeat logging every 30 seconds showing:
-     - Worker ID and model
-     - Time since last activity
-     - Current operating mode (Analysis or FallbackDecision)
-   - Added tracing spans around major operations for better observability
+**Complete Override Capabilities:**
+- All major LLM parameters can now be overridden via environment variables
+- Automatic parameter selection maintained when overrides not set
+- Comprehensive logging shows which parameters are being used (automatic vs override)
 
-4. **Standardized Timeout Error Messages**:
-   - All timeout errors now follow the pattern: `[TIMEOUT] <operation_type> timed out after <duration>s: <specific_function>`
-   - This makes it easy to search logs for `[TIMEOUT]` to find all timeout occurrences
-   - Each message includes the exact operation, timeout duration, and function name for precise debugging
+### Documentation Complete Rewrite
 
-5. **Complete List of Timeout Messages**:
-   - Database operations: `fetch_and_delete_from_life_safety_queue` (30s), `fetch_and_delete_from_matched_topics_queue` (30s), `has_hash` (10s), `has_title_domain_hash` (10s), `add_article` (30s), `process_entity_extraction` (30s)
-   - LLM operations: `ollama.generate` (120s), `openai.completions.create` (120s)
+#### Files Updated
+1. **env.template**: 
+   - Added new LLM parameter override variables with clear explanations
+   - Reorganized into logical sections with comprehensive examples
+   - Added automatic default documentation
+   - Clear format explanations for worker configurations
+
+2. **README.md**: 
+   - **Complete rewrite** from basic RSS reader description to comprehensive multi-worker AI system documentation
+   - Added architecture overview with clear component diagrams
+   - Comprehensive model configuration section explaining thinking vs non-thinking modes
+   - Detailed worker configuration with examples for all scenarios
+   - Complete environment variable reference with tables
+   - Advanced troubleshooting and optimization guides
+   - Updated dependencies and contribution guidelines
+
+#### Key README.md Improvements
+- **Architecture Section**: Multi-worker system overview with clear component relationships
+- **Model Configuration**: Detailed explanation of thinking vs non-thinking modes with parameter tables
+- **Worker Configuration**: Complete examples for Ollama, OpenAI, fallback, and mixed configurations
+- **Environment Variables**: Organized tables with requirements, ranges, and default behaviors
+- **Usage Examples**: From basic single-worker to advanced multi-worker setups
+- **Troubleshooting**: Comprehensive problem-solving guide with specific solutions
+- **Advanced Topics**: Performance optimization, scaling, and database management
 
 ### Implementation Details
 
-The changes primarily affect:
-- `src/workers/analysis/processing.rs`: Added timeouts to all database operations
-- `src/workers/analysis/worker_loop.rs`: Added heartbeat logging and tracing spans
-- `src/workers/analysis/similarity.rs`: Added timeout to entity extraction processing
-- `src/llm.rs`: Standardized timeout error messages for LLM operations
+#### Code Changes (src/main.rs)
+- Added constants for new environment variables: `LLM_TOP_P_ENV`, `LLM_TOP_K_ENV`, `LLM_MIN_P_ENV`
+- Updated `create_model_config()` function to accept environment override parameters
+- Enhanced logging to show all parameter values and their sources (automatic vs override)
+- Maintained backward compatibility with existing temperature override
 
-### Thinking Tag Processing Status
+#### Testing Status
+- ✅ Clean compilation with no warnings or errors
+- ✅ All library tests passing (8/8)
+- ✅ Release build successful
+- ✅ All binary tests functional
 
-The thinking tag functionality (including `/no_think` mode) is properly protected:
-- LLM calls have 120-second timeouts (already existed before these changes)
-- Tag stripping is just regex-based string processing (no network/blocking operations)
-- No infinite loops or blocking operations in the thinking tag handling
+## Override Instructions
 
-These improvements ensure that:
-- No database operation can hang indefinitely
-- Worker health is continuously monitored
-- Issues are clearly logged with context
-- The system degrades gracefully rather than freezing
-- Timeout errors can be easily searched and analyzed
+### Complete LLM Parameter Control
+Users can now override all major model parameters:
 
-## Previous Focus: Enhanced ELI5 Prompt for Language Consistency and Foreign Content
+```bash
+# Temperature (0.0-2.0) - Controls randomness/creativity
+export LLM_TEMPERATURE="0.8"
 
-We've improved the ELI5 (Explain Like I'm 5) prompt to ensure consistent use of American English and proper handling of foreign language content. This enhancement addresses an issue where the ELI5 section was sometimes being written in a foreign language despite the presence of language standards in the common prompt helpers.
+# Top-P (0.0-1.0) - Nucleus sampling threshold
+export LLM_TOP_P="0.9"
 
-### Key Improvements
+# Top-K (integer) - Limits token consideration
+export LLM_TOP_K="40"
 
-1. **Added Dedicated "Language Requirements" Section**:
-   - Added explicit instructions to ALWAYS write the entire explanation in clear American English
-   - Included specific guidelines for handling non-English text in articles
-   - Added instructions to mentally translate foreign language content before creating the explanation
-   - Specified proper handling of direct quotes from foreign languages (include original with translation)
-   - Added clear examples of proper foreign language handling
+# Min-P (0.0-1.0) - Minimum probability threshold
+export LLM_MIN_P="0.05"
+```
 
-2. **Strengthened Language Instructions**:
-   - Added "ALWAYS write your explanation in clear American English" to the top-level instructions
-   - Added "NEVER write your explanation in any language other than English" as a critical requirement
-   - Included guidance on using American spelling and grammar conventions throughout
-   - Added instructions for handling measurements (include both metric and imperial units)
-   - Specified to avoid region-specific idioms or expressions
+### Default Behavior (when not overridden)
+- **Thinking mode**: temp=0.6, top_p=0.95, top_k=20, min_p=0.0
+- **Non-thinking mode**: temp=0.7, top_p=0.8, top_k=20, min_p=0.0
 
-3. **Added Foreign Language Examples to Avoid**:
-   - Example 9: Foreign Language Response - "El nuevo descubrimiento científico permite editar genes con mayor precisión..." (showing a completely non-English response)
-   - Example 10: Mixed Language - "Scientists discovered a new way to edit genes that's molto preciso (very precise) and will help cure diseases." (showing inappropriate mixing of languages)
+### Monitoring Override Usage
+Application logs now show parameter sources:
+```
+Environment parameter overrides: temp=0.8 (0.0=auto), top_p=0.9 (0.0=auto), top_k=40 (0=auto), min_p=0.05 (-1.0=auto)
+Decision Worker 0: Using thinking mode with temp=0.8, top_p=0.9, top_k=40, min_p=0.05
+```
 
-4. **Enhanced Content Structure Guidelines**:
-   - Added specific instruction for articles in languages other than English: "For articles in languages other than English, maintain the same structure but base your explanation on your translation"
-   - Ensured all existing ELI5 functionality is preserved while adding the language requirements
+## Current System Status
+- **Build Status**: ✅ Clean release build
+- **Test Coverage**: ✅ All tests passing
+- **Documentation**: ✅ Completely updated and comprehensive
+- **Integration**: ✅ All override functionality working
+- **Production Readiness**: ✅ Ready for deployment
 
-These enhancements ensure that all ELI5 explanations are consistently written in American English, regardless of the source article's language, while maintaining proper attribution and handling of any foreign language content that needs to be directly quoted.
+## Next Steps
 
-## Previous Focus: Enhanced ELI5 Prompt for Sensitive Political Topics
+The environment variable override implementation and documentation rewrite are complete. The system now provides:
 
-We've improved the ELI5 (Explain Like I'm 5) prompt to better handle sensitive political topics, particularly those related to policies that affect human rights, civil liberties, or vulnerable populations. This enhancement addresses an issue where the simplification process could inadvertently downplay the seriousness of certain actions or policies.
+1. **Complete Parameter Control**: All major LLM parameters can be overridden
+2. **Comprehensive Documentation**: README.md transformed into professional multi-worker AI system documentation
+3. **Clear Configuration Guide**: env.template with detailed examples and explanations
+4. **Production Ready**: Clean build with full functionality
 
-### Key Improvements
-
-1. **Added "Handling Sensitive Topics" Section**:
-   - Added specific guidelines for explaining policies that affect human rights, civil liberties, or vulnerable populations
-   - Included instructions to maintain appropriate moral framing even in simplified language
-   - Emphasized never minimizing the real-world impact of policies on affected people
-   - Added guidance to explain consequences in concrete terms without downplaying severity
-   - Instructed to avoid euphemisms that obscure the nature of harmful policies
-
-2. **Added Political Examples**:
-   - Added Example 4: Immigration Enforcement Policy - demonstrates how to explain family separation policies with appropriate context and moral framing
-   - Added Example 5: Executive Order on Civil Liberties - shows how to explain surveillance policies while presenting both rationale and concerns
-
-3. **Added Unsuccessful Examples to Avoid**:
-   - Example 6: Minimizing Impact - "The President made a rule that some people can't come into the country anymore. Some people were sad about it, but the President said it would keep everyone safer."
-   - Example 7: False Equivalence - "Some people think the policy is good, and some think it's bad. Both sides have good points, so it's just a matter of opinion."
-   - Example 8: Euphemistic Language - "The government decided to relocate certain individuals to specialized facilities while their cases were being processed." (instead of clearly explaining detention or deportation)
-
-These enhancements ensure that when simplifying complex political topics, the ELI5 explanations maintain appropriate moral framing, don't minimize impacts, present multiple perspectives accurately, and use precise language that doesn't obscure the nature of controversial policies.
+The implementation successfully provides the requested parameter override capabilities while maintaining the automatic parameter optimization for users who don't need custom settings.

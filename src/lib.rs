@@ -80,9 +80,9 @@ pub enum JsonSchemaType {
     Generic,
 }
 
-/// Configuration for models that use thinking/reasoning capabilities
+/// Configuration for LLM model parameters
 #[derive(Clone, Debug)]
-pub struct ThinkingModelConfig {
+pub struct ModelConfig {
     pub strip_thinking_tags: bool,
     pub top_p: f32,
     pub top_k: i32,
@@ -117,8 +117,8 @@ pub struct LLMParamsBase {
     pub llm_client: LLMClient,
     pub model: String,
     pub temperature: f32,
-    pub thinking_config: Option<ThinkingModelConfig>, // Configuration for thinking models
-    pub no_think: bool,                               // Flag to indicate /no_think mode
+    pub model_config: Option<ModelConfig>, // Configuration for model parameters
+    pub no_think: bool,                    // Flag to indicate /no_think mode
 }
 
 // Parameters specifically for text-only responses

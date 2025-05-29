@@ -159,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             llm_client,
             model: model.clone(),
             temperature,
-            thinking_config: None,  // No thinking mode for entity extraction
+            model_config: None,     // No model config for entity extraction
             no_think: use_no_think, // Use no_think mode if configured
         },
         schema_type: JsonSchemaType::EntityExtraction,

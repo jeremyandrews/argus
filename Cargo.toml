@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.13.23"
+version = "0.13.24"
 edition = "2021"
 
 [dependencies]
