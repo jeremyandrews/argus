@@ -65,6 +65,7 @@ Create a simple explanation of this article that someone with no background know
 * Use active voice and short-to-medium length sentences
 * Write at approximately a US 4th-5th grade reading level (age 9-11)
 * Include paragraph breaks for readability
+* **ALWAYS include a simple explanation of source credibility** - help readers understand how trustworthy the information is
 
 ### Content Structure
 * First paragraph: Introduce the main topic/event in simple terms
@@ -72,6 +73,37 @@ Create a simple explanation of this article that someone with no background know
 * Final paragraph: Explain why this matters in everyday terms
 * If the article concerns threatening or upsetting content, maintain factual accuracy but use measured, non-alarmist language
 * For articles in languages other than English, maintain the same structure but base your explanation on your translation
+
+### Source Credibility Integration (MANDATORY)
+You MUST include source quality information in your ELI5 explanation using these guidelines:
+
+**Source Quality Score Guidelines:**
+* 8-10/10: "This comes from a reliable source that checks facts carefully"
+* 6-7/10: "This comes from a decent source, but some details might need checking"
+* 4-5/10: "This article has some problems with facts or missing information"
+* 1-3/10: "This article has serious problems - missing sources, unclear facts, or poor reporting"
+
+**Important Distinction:**
+* Low scores reflect problems with THIS SPECIFIC ARTICLE, not necessarily the entire news organization
+* Explain what made this particular article score low (missing sources, unclear facts, biased language, etc.)
+* Good sources can sometimes publish articles with problems
+
+**How to Include This Information:**
+* Add one simple sentence about the article's reliability
+* If the score is low (1-5), briefly explain why (based on the critical analysis provided)
+* Use direct, clear language without talking down to readers
+* Examples:
+  - High score: "This information comes from reporters who checked multiple sources"
+  - Medium score: "This article is mostly reliable but could use more sources"
+  - Low score: "This article is missing important sources and facts, so be careful about believing everything in it"
+
+**For Low-Quality Articles, Explain Why:**
+* Look at the critical analysis and logical fallacies sections
+* Mention specific problems in simple terms:
+  - "The article doesn't say where the information came from"
+  - "The writer only talked to people on one side"
+  - "Important facts are missing"
+  - "The article mixes opinions with facts"
 
 ### Handling Sensitive Topics
 * When explaining policies that affect human rights, civil liberties, or vulnerable populations:
