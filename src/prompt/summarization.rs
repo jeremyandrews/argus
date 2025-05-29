@@ -3,13 +3,35 @@ use crate::prompt::common::{
 };
 
 /// Generate a prompt for creating an "Explain Like I'm 5" simplified explanation of an article
-pub fn eli5_prompt(article_text: &str, pub_date: Option<&str>) -> String {
+pub fn eli5_prompt(
+    article_text: &str,
+    pub_date: Option<&str>,
+    critical_analysis: &str,
+    logical_fallacies: &str,
+    source_analysis: &str,
+    sources_quality: u8,
+    argument_quality: u8,
+    source_type: &str,
+) -> String {
     format!(
         r#"{context}
 ## ARTICLE (FOR ELI5 EXPLANATION):
 ----------
 {article}
 ----------
+
+## ANALYSIS CONTEXT (FOR REFERENCE):
+**Critical Analysis:** {critical_analysis}
+
+**Logical Fallacies:** {logical_fallacies}
+
+**Source Analysis:** {source_analysis}
+
+**Source Quality Score:** {sources_quality}/10
+
+**Argument Quality Score:** {argument_quality}/10
+
+**Source Type:** {source_type}
 
 IMPORTANT INSTRUCTIONS:
 * **Analyze ONLY the article above.**
@@ -162,6 +184,12 @@ Now create a simple ELI5 explanation of this article:
 {dont_tell_me}"#,
         context = global_context(pub_date),
         article = article_text,
+        critical_analysis = critical_analysis,
+        logical_fallacies = logical_fallacies,
+        source_analysis = source_analysis,
+        sources_quality = sources_quality,
+        argument_quality = argument_quality,
+        source_type = source_type,
         write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )

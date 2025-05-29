@@ -66,8 +66,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nGenerating ELI5 explanation...");
     let start_time = std::time::Instant::now();
 
-    // Generate ELI5 prompt
-    let eli5_prompt = argus::prompt::eli5_prompt(&article_text, None);
+    // Generate mock analysis data for testing
+    let mock_critical_analysis =
+        "Credibility Score: 8/10 - Well-sourced article with clear attribution";
+    let mock_logical_fallacies = "No apparent logical fallacies detected";
+    let mock_source_analysis =
+        "Domain Name: example.com - Established news organization with professional standards";
+    let mock_sources_quality = 3u8;
+    let mock_argument_quality = 3u8;
+    let mock_source_type = "press";
+
+    // Generate ELI5 prompt with analysis context
+    let eli5_prompt = argus::prompt::eli5_prompt(
+        &article_text,
+        None,
+        mock_critical_analysis,
+        mock_logical_fallacies,
+        mock_source_analysis,
+        mock_sources_quality,
+        mock_argument_quality,
+        mock_source_type,
+    );
 
     // Generate ELI5 explanation using the LLM
     let eli5_result =

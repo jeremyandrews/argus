@@ -213,10 +213,19 @@ pub async fn process_analysis(
         String::new()
     };
 
-    // Generate ELI5 explanation
+    // Generate ELI5 explanation with analysis context
     let eli5 = if !summary.is_empty() {
         generate_text_response(
-            &prompt::eli5_prompt(article_text, pub_date),
+            &prompt::eli5_prompt(
+                article_text,
+                pub_date,
+                &critical_analysis,
+                &logical_fallacies,
+                &source_analysis,
+                sources_quality,
+                argument_quality,
+                &source_type,
+            ),
             &text_params,
             worker_detail,
         )
