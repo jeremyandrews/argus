@@ -2,6 +2,7 @@
 mod analysis;
 mod common;
 mod decisions;
+mod eli5_analysis;
 mod entity;
 mod insights;
 pub mod relevance;
