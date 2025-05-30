@@ -67,7 +67,7 @@ Create a simple explanation of this article that someone with no background know
 * Use active voice and short-to-medium length sentences
 * Write at approximately a US 4th-5th grade reading level (age 9-11)
 * Include paragraph breaks for readability
-* **ALWAYS include a simple explanation of source credibility** - help readers understand how trustworthy the information is
+* **ALWAYS include a simple explanation of article credibility** - help readers understand what to think about this specific article
 * **Use appropriate timing language** - if the article talks about events, make it clear when they happened or will happen compared to when the article was written and today's date
 
 ### Content Structure
@@ -80,58 +80,73 @@ Create a simple explanation of this article that someone with no background know
 
 {analysis_guidelines}
 
-### Source Credibility Integration (MANDATORY)
-You MUST include source quality information in your ELI5 explanation using these guidelines:
+### Article Credibility Assessment (MANDATORY)
+You MUST include information about this specific article's credibility in your ELI5 explanation. This assessment should be based ENTIRELY on the specific findings in the analysis sections provided above.
 
-**Source Quality Score Guidelines:**
-* 3/3: This article comes from a reliable source with good reporting practices
-* 2/3: This article has some reliability concerns but is generally acceptable
-* 1/3: This article has significant quality or credibility problems
+**CRITICAL: Analysis-Driven Explanations Only**
+You MUST:
 
-**CRITICAL: Derive Explanations from Analysis Data**
-Instead of using generic explanations, you MUST:
+1. **Read the Critical Analysis, Logical Fallacies, and Source Analysis sections carefully**
+2. **Identify specific strengths or problems mentioned in these analyses**
+3. **Translate these specific findings into simple, child-friendly language**
+4. **Focus on THIS ARTICLE'S reporting quality, not general source reliability**
 
-1. **Examine the provided analysis sections** (Critical Analysis, Logical Fallacies, Source Analysis)
-2. **Identify specific issues or strengths** mentioned in these analyses
-3. **Translate technical findings into child-friendly language**
+**Never mention numerical scores, ratings, or scale references** - users don't see these numbers.
 
-**For Each Score Level:**
+**What to Look For in the Analyses:**
 
-**3/3 Articles - Look for and explain:**
-* High credibility scores mentioned in Critical Analysis
-* Good source quality noted in Source Analysis  
-* Absence of logical fallacies or strong reasoning
-* Professional reporting standards
-* Example: "This comes from reporters who checked their facts with multiple sources and experts"
+**From Critical Analysis:**
+* Credibility assessments and specific reasons
+* Source citation quality and verification methods
+* Factual accuracy issues or confirmations
+* Bias indicators or balanced reporting
+* Expert consultation or lack thereof
 
-**2/3 Articles - Look for and explain:**
-* Mixed signals in the analyses (some good, some concerns)
-* Moderate credibility issues identified
-* Minor logical inconsistencies or gaps
-* Generally acceptable but not perfect reporting
-* Example: "This article is mostly reliable, but the reporters could have talked to more experts"
+**From Logical Fallacies:**
+* Reasoning errors that affect the article's conclusions
+* Missing evidence or weak arguments
+* Emotional manipulation vs factual presentation
+* Logical consistency problems
 
-**1/3 Articles - Look for and explain specific problems found:**
-* **From Critical Analysis:** Low credibility scores, source reliability issues, citation problems
-* **From Logical Fallacies:** Reasoning errors, argument weaknesses, factual inconsistencies  
-* **From Source Analysis:** Publication credibility concerns, bias indicators
-* **Translate these into simple terms:**
-  - "The article doesn't say where the information came from"
-  - "The writer only talked to people on one side of the issue"
-  - "Important facts are missing or unclear"
-  - "The article mixes opinions with facts without making it clear"
-  - "The reasoning has problems that make the conclusions questionable"
+**From Source Analysis:**
+* Publication reputation and editorial standards
+* Author credentials and expertise
+* Transparency about funding or conflicts of interest
+* Editorial oversight and fact-checking processes
 
-**How to Include This Information:**
-* Add 1-2 simple sentences about the article's reliability based on actual analysis findings
-* Use direct, clear language without being condescending
-* Be specific about what problems were found rather than giving generic warnings
-* Connect the quality assessment to the actual content and reporting in the article
+**How to Translate Findings into Simple Language:**
 
-**Important Distinction:**
-* Low scores reflect problems with THIS SPECIFIC ARTICLE, not necessarily the entire news organization
-* Explain what made this particular article score low based on the specific analysis provided
-* Good sources can sometimes publish articles with problems
+**For Articles with Strong Reporting:**
+* "The reporters talked to multiple experts and checked their facts carefully"
+* "This article includes information from several different sources"
+* "The writers explained where they got their information"
+* "The facts in this article have been verified by other experts"
+
+**For Articles with Some Concerns:**
+* "The reporters could have talked to more people to get different viewpoints"
+* "Some of the claims in this article aren't backed up with enough evidence"
+* "The article doesn't always make it clear what's a fact versus what's an opinion"
+* "The writers didn't explain where some of their information came from"
+
+**For Articles with Significant Problems:**
+* "This article doesn't say where most of its information came from"
+* "The reasoning in this article has some problems that make the conclusions questionable"
+* "The article only presents one side of the story"
+* "Important facts seem to be missing or unclear"
+* "The article mixes opinions with facts without making it clear which is which"
+
+**Integration Guidelines:**
+* Add 1-2 simple sentences about the article's reporting quality
+* Base your assessment on the specific analysis findings, not general assumptions
+* Use concrete examples from the analyses when possible
+* Make it clear you're talking about THIS ARTICLE, not the entire news organization
+* Help readers understand what makes good vs problematic reporting
+
+**Important Notes:**
+* Good news organizations sometimes publish articles with problems
+* Poor reporting in one article doesn't mean the entire source is unreliable
+* Focus on helping readers understand what to look for in any article they read
+* Maintain a helpful, educational tone rather than being alarmist
 
 ### Writing Approach
 * Explain as if to someone intelligent but with no specialized knowledge in this field
