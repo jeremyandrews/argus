@@ -113,6 +113,14 @@ pub async fn send_to_slack(
             .unwrap_or("")
             .trim(),
     );
+    let eli5 = deduplicate_markdown(response_json["eli5"].as_str().unwrap_or(""));
+    let talking_points =
+        deduplicate_markdown(response_json["talking_points"].as_str().unwrap_or(""));
+    let action_recommendations = deduplicate_markdown(
+        response_json["action_recommendations"]
+            .as_str()
+            .unwrap_or(""),
+    );
     let model = response_json["model"]
         .as_str()
         .unwrap_or("Unknown model")
@@ -149,10 +157,13 @@ pub async fn send_to_slack(
             ("*Article*", article.to_string()),
             ("*Relevance*", relation_to_topic),
             ("*Summary*", summary),
+            ("*In Simple Terms*", eli5),
+            ("*Context & Perspective*", additional_insights),
+            ("*Talking Points*", talking_points),
+            ("*Consider This*", action_recommendations),
+            ("*Source Analysis*", source_analysis),
             ("*Critical Analysis*", critical_analysis),
             ("*Logical Fallacies*", logical_fallacies),
-            ("*Source Analysis*", source_analysis),
-            ("*Argus Speaks*", additional_insights),
         ];
 
         // In the sections loop, add chunking for long content:

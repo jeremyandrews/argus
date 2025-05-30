@@ -2,6 +2,12 @@
 
 ## Current Work Focus
 
+### ✅ COMPLETED: Slack Integration Section Reordering & Naming Updates
+- **Task**: Update Slack integration to include missing sections, rename display titles, and reorder content
+- **Status**: COMPLETED and ready for production
+- **Branch**: main
+- **Completion Date**: May 30, 2025
+
 ### ✅ COMPLETED: ELI5 Scoring Scale Mismatch Fix
 - **Task**: Fix ELI5 logic mismatch where scoring system used 1-3 scale but ELI5 prompt expected 1-10 scale
 - **Status**: COMPLETED and ready for production
@@ -21,6 +27,43 @@
 - **Completion Date**: May 29, 2025
 
 ## Recent Changes
+
+### Slack Integration Section Reordering & Naming Updates (May 30, 2025)
+Successfully updated the Slack integration to match front-end naming conventions and improve content organization:
+
+**Changes Implemented:**
+1. **Added Missing JSON Fields**: Added parsing for `eli5`, `talking_points`, and `action_recommendations` fields
+2. **Updated Display Names**: Changed Slack section titles to match front-end conventions:
+   - "ELI5" → "In Simple Terms" 
+   - "Argus Speaks" → "Context & Perspective"
+   - "Recommended Actions" → "Consider This"
+3. **Reordered Sections**: Reorganized content to prioritize key information:
+   - **Summary** (stays in position)
+   - **Relevance** (stays in position)
+   - **In Simple Terms** (moved up from bottom)
+   - **Context & Perspective** (moved up)
+   - **Talking Points** (moved up)
+   - **Consider This** (moved up)
+   - **Source Analysis** (moved down)
+   - **Critical Analysis** (moved down)
+   - **Logical Fallacies** (moved down)
+
+**Key Files Modified:**
+- **File**: `src/slack.rs`
+- **Changes**: Added new field parsing, updated section titles, reordered content flow
+- **JSON Fields**: No changes to JSON field names (eli5, talking_points, action_recommendations)
+- **Impact**: Slack notifications now include all available analysis sections with user-friendly names
+
+**Benefits:**
+- **Consistency**: Slack titles now match front-end application naming
+- **Priority Content First**: Most actionable content (simple explanations, talking points, recommendations) appears earlier
+- **Complete Coverage**: All analysis sections now included in Slack notifications
+- **User Experience**: Improved information hierarchy for better readability
+
+**Testing Status:**
+- ✅ Code compiles successfully with no errors
+- ✅ All existing functionality preserved
+- ✅ New sections properly integrated
 
 ### ELI5 Scoring Scale Mismatch Fix (May 30, 2025)
 Successfully resolved the critical scoring mismatch between quality assessment and ELI5 explanation generation:
