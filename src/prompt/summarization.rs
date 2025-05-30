@@ -27,9 +27,9 @@ pub fn eli5_prompt(
 
 **Source Analysis:** {source_analysis}
 
-**Source Quality Score:** {sources_quality}/10
+**Source Quality Score:** {sources_quality}/3
 
-**Argument Quality Score:** {argument_quality}/10
+**Argument Quality Score:** {argument_quality}/3
 
 **Source Type:** {source_type}
 
@@ -78,32 +78,54 @@ Create a simple explanation of this article that someone with no background know
 You MUST include source quality information in your ELI5 explanation using these guidelines:
 
 **Source Quality Score Guidelines:**
-* 8-10/10: "This comes from a reliable source that checks facts carefully"
-* 6-7/10: "This comes from a decent source, but some details might need checking"
-* 4-5/10: "This article has some problems with facts or missing information"
-* 1-3/10: "This article has serious problems - missing sources, unclear facts, or poor reporting"
+* 3/3: This article comes from a reliable source with good reporting practices
+* 2/3: This article has some reliability concerns but is generally acceptable
+* 1/3: This article has significant quality or credibility problems
+
+**CRITICAL: Derive Explanations from Analysis Data**
+Instead of using generic explanations, you MUST:
+
+1. **Examine the provided analysis sections** (Critical Analysis, Logical Fallacies, Source Analysis)
+2. **Identify specific issues or strengths** mentioned in these analyses
+3. **Translate technical findings into child-friendly language**
+
+**For Each Score Level:**
+
+**3/3 Articles - Look for and explain:**
+* High credibility scores mentioned in Critical Analysis
+* Good source quality noted in Source Analysis  
+* Absence of logical fallacies or strong reasoning
+* Professional reporting standards
+* Example: "This comes from reporters who checked their facts with multiple sources and experts"
+
+**2/3 Articles - Look for and explain:**
+* Mixed signals in the analyses (some good, some concerns)
+* Moderate credibility issues identified
+* Minor logical inconsistencies or gaps
+* Generally acceptable but not perfect reporting
+* Example: "This article is mostly reliable, but the reporters could have talked to more experts"
+
+**1/3 Articles - Look for and explain specific problems found:**
+* **From Critical Analysis:** Low credibility scores, source reliability issues, citation problems
+* **From Logical Fallacies:** Reasoning errors, argument weaknesses, factual inconsistencies  
+* **From Source Analysis:** Publication credibility concerns, bias indicators
+* **Translate these into simple terms:**
+  - "The article doesn't say where the information came from"
+  - "The writer only talked to people on one side of the issue"
+  - "Important facts are missing or unclear"
+  - "The article mixes opinions with facts without making it clear"
+  - "The reasoning has problems that make the conclusions questionable"
+
+**How to Include This Information:**
+* Add 1-2 simple sentences about the article's reliability based on actual analysis findings
+* Use direct, clear language without being condescending
+* Be specific about what problems were found rather than giving generic warnings
+* Connect the quality assessment to the actual content and reporting in the article
 
 **Important Distinction:**
 * Low scores reflect problems with THIS SPECIFIC ARTICLE, not necessarily the entire news organization
-* Explain what made this particular article score low (missing sources, unclear facts, biased language, etc.)
+* Explain what made this particular article score low based on the specific analysis provided
 * Good sources can sometimes publish articles with problems
-
-**How to Include This Information:**
-* Add one simple sentence about the article's reliability
-* If the score is low (1-5), briefly explain why (based on the critical analysis provided)
-* Use direct, clear language without talking down to readers
-* Examples:
-  - High score: "This information comes from reporters who checked multiple sources"
-  - Medium score: "This article is mostly reliable but could use more sources"
-  - Low score: "This article is missing important sources and facts, so be careful about believing everything in it"
-
-**For Low-Quality Articles, Explain Why:**
-* Look at the critical analysis and logical fallacies sections
-* Mention specific problems in simple terms:
-  - "The article doesn't say where the information came from"
-  - "The writer only talked to people on one side"
-  - "Important facts are missing"
-  - "The article mixes opinions with facts"
 
 ### Handling Sensitive Topics
 * When explaining policies that affect human rights, civil liberties, or vulnerable populations:
