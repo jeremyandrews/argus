@@ -355,11 +355,11 @@ pub async fn get_cluster_articles(
 ) -> Result<Vec<ClusterArticle>> {
     let rows = sqlx::query(
         r#"
-        SELECT a.id, a.title, a.url, a.json_data, a.pub_date, a.tiny_summary, acm.similarity_score
+        SELECT a.id, a.title, a.url, a.json_data, a.pub_date, a.tiny_summary, a.quality, acm.similarity_score
         FROM articles a
         JOIN article_cluster_mappings acm ON a.id = acm.article_id
         WHERE acm.cluster_id = ?
-        ORDER BY a.pub_date DESC, acm.similarity_score DESC
+        ORDER BY a.quality DESC, a.pub_date DESC, acm.similarity_score DESC
         LIMIT ?
         "#,
     )
@@ -379,6 +379,7 @@ pub async fn get_cluster_articles(
             pub_date: row.get("pub_date"),
             tiny_summary: row.get("tiny_summary"),
             similarity_score: row.get("similarity_score"),
+            quality_score: row.get("quality"),
         };
 
         articles.push(article);
@@ -896,4 +897,30 @@ pub async fn update_cluster_article_count(
     .await?;
 
     Ok(())
+}
+
+/// Gets cluster summary for an article
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `article_id` - ID of the article
+///
+/// # Returns
+/// * `Ok(Some(String))` - The cluster summary if article belongs to a cluster with a summary
+/// * `Ok(None)` - If article doesn't belong to a cluster or cluster has no summary
+/// * `Err` - If there was an error during retrieval
+pub async fn get_article_cluster_summary(db: &Database, article_id: i64) -> Result<Option<String>> {
+    let row = sqlx::query(
+        r#"
+        SELECT ac.summary
+        FROM articles a
+        JOIN article_clusters ac ON a.cluster_id = ac.id
+        WHERE a.id = ? AND ac.summary IS NOT NULL AND ac.summary != ''
+        "#,
+    )
+    .bind(article_id)
+    .fetch_optional(db.pool())
+    .await?;
+
+    Ok(row.map(|r| r.get::<String, _>("summary")))
 }

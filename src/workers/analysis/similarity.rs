@@ -320,6 +320,13 @@ pub async fn process_article_similarity(
         {
             error!("Failed to store vector embedding: {:?}", e);
         }
+
+        // Add cluster summary to response JSON if article belongs to a cluster
+        if let Ok(Some(cluster_summary)) =
+            crate::db::cluster::get_article_cluster_summary(db, article_id).await
+        {
+            response_json["cluster_summary"] = serde_json::json!(cluster_summary);
+        }
     }
 
     Ok(())

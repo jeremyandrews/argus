@@ -36,6 +36,7 @@ pub struct ClusterArticle {
     pub pub_date: Option<String>,
     pub tiny_summary: Option<String>,
     pub similarity_score: f64,
+    pub quality_score: i8,
 }
 
 /// Struct representing entity details

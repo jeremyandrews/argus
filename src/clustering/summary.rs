@@ -94,15 +94,39 @@ fn build_summary_prompt(
     entity_details: &HashMap<i64, EntityDetail>,
 ) -> Result<String> {
     let mut article_summaries = String::new();
+    let mut high_quality_articles = Vec::new();
+    let mut medium_quality_articles = Vec::new();
+    let mut low_quality_articles = Vec::new();
 
+    // Categorize articles by quality and build detailed summaries
     for (i, article) in articles.iter().enumerate() {
-        article_summaries.push_str(&format!(
-            "Article {}: [{}] {}\n{}\n\n",
+        let quality_label = match article.quality_score {
+            3 => "HIGH QUALITY",
+            2 => "MEDIUM QUALITY",
+            1 => "LOW QUALITY",
+            _ => "UNKNOWN QUALITY",
+        };
+
+        let article_entry = format!(
+            "Article {}: [{}] {} (Quality: {})\nTitle: {}\nSummary: {}\nURL: {}\n\n",
             i + 1,
             article.pub_date.as_deref().unwrap_or("Unknown date"),
+            quality_label,
+            article.quality_score,
             article.title.as_deref().unwrap_or("Untitled"),
-            article.tiny_summary.as_deref().unwrap_or("")
-        ));
+            article.tiny_summary.as_deref().unwrap_or(""),
+            article.url
+        );
+
+        article_summaries.push_str(&article_entry);
+
+        // Categorize for reference section
+        match article.quality_score {
+            3 => high_quality_articles.push((i + 1, article)),
+            2 => medium_quality_articles.push((i + 1, article)),
+            1 => low_quality_articles.push((i + 1, article)),
+            _ => low_quality_articles.push((i + 1, article)),
+        }
     }
 
     // Extract key entities
@@ -123,33 +147,65 @@ fn build_summary_prompt(
         }
     }
 
+    // Build quality context
+    let quality_guidance = if !low_quality_articles.is_empty() {
+        format!(
+            "\n\nIMPORTANT QUALITY CONSIDERATIONS:\n- {} HIGH quality articles (most reliable)\n- {} MEDIUM quality articles (generally trustworthy)\n- {} LOW quality articles (use with caution)\n\nPrioritize information from high-quality sources. When including information from low-quality sources, clearly indicate the source reliability concerns.",
+            high_quality_articles.len(),
+            medium_quality_articles.len(),
+            low_quality_articles.len()
+        )
+    } else {
+        String::new()
+    };
+
     // Build the prompt
     let prompt = format!(
-        r#"You are tasked with creating a comprehensive summary of a collection of related news articles that all discuss the same topic or story.
+        r#"You are creating an executive summary of related news articles for a busy executive who will read this INSTEAD of the individual articles. This summary serves as their primary source of information on this topic.
 
 KEY ENTITIES MENTIONED ACROSS ARTICLES:
 People: {}
 Organizations: {}
 Locations: {}
-Events: {}
+Events: {}{}
 
 ARTICLE SUMMARIES:
 {}
 
-Based on these article summaries and key entities, please write a comprehensive, well-structured summary that:
-1. Captures the overall story or topic being discussed across all articles
-2. Highlights the most important facts and developments
-3. Presents information in chronological order where appropriate
-4. Ensures all critical entities (people, organizations, locations, events) are included
-5. Provides proper context to understand the significance of this story
-6. Is written in a neutral, journalistic tone
-7. Is approximately 250-400 words in length
+Create a comprehensive summary following this EXACT structure:
 
-Your summary should be cohesive and readable as a single piece, not just a collection of facts from individual articles. Focus on creating a narrative that helps the reader understand this topic thoroughly."#,
+**TL;DR:** [Write 1-2 sentences capturing the essential story - what happened, who was involved, and why it matters]
+
+**Full Summary:**
+[Write a detailed narrative that:]
+- Prioritizes information from HIGH quality sources over medium/low quality sources
+- Presents information chronologically when relevant
+- Uses phrases like "according to [Article X]" or "reported by reliable sources" for attribution
+- For any claims from LOW quality sources, use qualifying language like "according to unverified reports" or "sources suggest"
+- Scales length based on story complexity (simple stories: 200-400 words, complex stories: 400-800 words)
+- Maintains neutral, professional tone suitable for executive briefing
+- Ensures all critical entities and developments are covered
+
+**Quality Notes:**
+[If any information comes from low-quality sources, briefly note: "Some details in this summary come from sources with reliability concerns: [specific claims and source references]"]
+
+**References:**
+[List all source articles in quality order:]
+High Quality Sources:
+[List high-quality articles with titles and dates]
+
+Medium Quality Sources:
+[List medium-quality articles with titles and dates]
+
+Low Quality Sources:
+[List low-quality articles with titles and dates, if any]
+
+Remember: This summary replaces reading individual articles, so ensure completeness while maintaining appropriate skepticism about lower-quality sources."#,
         key_people.join(", "),
         key_organizations.join(", "),
         key_locations.join(", "),
         key_events.join(", "),
+        quality_guidance,
         article_summaries
     );
 

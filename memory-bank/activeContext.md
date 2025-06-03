@@ -2,6 +2,12 @@
 
 ## Current Work Focus
 
+### ✅ COMPLETED: Quality-Aware Cluster Summaries & r2_url Integration (June 3, 2025)
+- **Task**: Improve cluster summary generation with quality prioritization, TL;DR sections, source attribution, and expose summaries in r2_url JSON
+- **Status**: COMPLETED and production-ready
+- **Branch**: main
+- **Completion Date**: June 3, 2025
+
 ### ✅ COMPLETED: [NEWS] Tag Proliferation Fix (June 3, 2025)
 - **Task**: Fix excessive [NEWS] tags in summaries and prevent them from appearing in tiny_summary
 - **Status**: COMPLETED and production-ready
