@@ -517,6 +517,47 @@ impl Database {
         Ok(batch_id)
     }
 
+    /// Get pending alias suggestions directly (without batching)
+    pub async fn get_pending_aliases(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<(i64, String, String, String, String, f64)>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT 
+                id,
+                canonical_name,
+                alias_text,
+                entity_type,
+                source,
+                confidence
+            FROM entity_aliases
+            WHERE status = 'PENDING'
+            ORDER BY confidence DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+
+        let results = rows
+            .into_iter()
+            .map(|row| {
+                (
+                    row.get("id"),
+                    row.get("canonical_name"),
+                    row.get("alias_text"),
+                    row.get("entity_type"),
+                    row.get("source"),
+                    row.get::<f64, _>("confidence"),
+                )
+            })
+            .collect();
+
+        Ok(results)
+    }
+
     /// Get alias suggestions for a specific review batch
     pub async fn get_alias_review_batch(
         &self,

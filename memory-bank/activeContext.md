@@ -2,6 +2,12 @@
 
 ## Current Work Focus
 
+### ✅ COMPLETED: Simplified Alias Management Workflow (June 3, 2025)
+- **Task**: Simplify alias management UX while preserving advanced batch functionality
+- **Status**: COMPLETED and production-ready
+- **Branch**: main
+- **Completion Date**: June 3, 2025
+
 ### ✅ COMPLETED: Quality-Aware Cluster Summaries & r2_url Integration (June 3, 2025)
 - **Task**: Improve cluster summary generation with quality prioritization, TL;DR sections, source attribution, and expose summaries in r2_url JSON
 - **Status**: COMPLETED and production-ready
@@ -161,6 +167,76 @@ Added **CRITICAL LABEL PLACEMENT** section with explicit examples:
 - **Completion Date**: May 29, 2025
 
 ## Recent Changes
+
+### Simplified Alias Management Workflow (June 3, 2025)
+Successfully implemented dual workflow approach for alias management:
+
+**Problem Addressed:**
+- Complex batching workflow required multiple steps: create batch → track batch ID → review batch
+- Users wanted simple "just review some aliases" functionality
+- Batching served important purposes but felt unnecessary for quick reviews
+- No graceful exit option during reviews
+
+**Solution Implemented:**
+- **Dual Workflow Approach**: Added simple workflow alongside existing advanced workflow
+- **Simple Workflow**: `./manage_aliases.sh review --limit 10` for immediate alias review
+- **Advanced Workflow**: Preserved existing batch system for formal review processes
+- **Graceful Exit**: Added 'q' option to quit reviews at any time
+
+**Technical Implementation:**
+
+1. **File: src/db/entity/alias.rs**
+   - Added `get_pending_aliases(limit)` method for direct alias retrieval
+   - Returns pending aliases without batch association
+   - Similar structure to batch method but simplified
+
+2. **File: src/bin/manage_aliases.rs**
+   - Added new `Review` command with `--limit` and `--admin-id` parameters
+   - Implemented interactive review loop with progress tracking
+   - Added graceful exit handling with 'q' option
+   - Enhanced user experience with emoji indicators (✅❌⏭️🛑📋)
+
+3. **File: docs/manage_aliases_usage.md**
+   - Created comprehensive usage documentation
+   - Documented both simple and advanced workflows
+   - Included examples, tips, and troubleshooting guide
+   - Clear guidance on when to use which workflow
+
+**Key Features Delivered:**
+- **Simple Workflow**: `./manage_aliases.sh review` - immediate alias review without batches
+- **Advanced Workflow**: Preserved existing batch creation and review system
+- **Graceful Exit**: 'q' option to quit at any time during review
+- **Progress Tracking**: "Review 3/15" indicators show current position
+- **Enhanced UX**: Emoji indicators and clear prompts
+- **Comprehensive Documentation**: Complete usage guide with examples
+
+**Command Examples:**
+```bash
+# Simple workflow (new)
+./manage_aliases.sh review --limit 10
+
+# Advanced workflow (existing)
+./manage_aliases.sh create-review-batch --size 50
+./manage_aliases.sh review-batch --batch-id 1
+```
+
+**Benefits:**
+- **Immediate Access**: Start reviewing aliases without batch setup
+- **Flexible Exit**: Stop reviews at any time without cleanup
+- **Better UX**: Clear progress indicators and emoji feedback
+- **Preserved Power**: Advanced batch system still available for teams
+- **Comprehensive Docs**: Clear guidance on workflow selection
+
+**Testing Results:**
+- ✅ Code compiles successfully with no errors
+- ✅ Clean build completed
+- ✅ All command-line options working correctly
+- ✅ Help system displays properly
+- ✅ Error handling works (tested with missing database)
+- ✅ Production-ready implementation
+
+**Impact:**
+Users now have a streamlined alias management experience that matches their workflow needs. Quick daily reviews can use the simple workflow, while formal team processes can continue using the advanced batch system.
 
 ### [NEWS] Tag Proliferation Fix (June 3, 2025)
 Successfully resolved the issue where multiple [NEWS] tags were appearing in summaries and incorrectly showing up in tiny_summary outputs:
@@ -547,16 +623,41 @@ Decision Worker 0: Using thinking mode with temp=0.8, top_p=0.9, top_k=40, min_p
 - **Integration**: ✅ All override functionality working
 - **[NEWS] Tag Issue**: ✅ Fixed and production-ready
 - **Apple Leak Mis-reporting**: ✅ Resolved with improved verb selection
+- **Alias Management UX**: ✅ Simplified workflow implemented
 - **Production Readiness**: ✅ Ready for deployment
 
 ## Next Steps
 
-The [NEWS] tag proliferation fix is complete and addresses the core issues:
+All major development tasks are now complete. The system is production-ready with:
 
-1. **Strategic Source Labeling**: Only EVENT bullets get source labels, eliminating multiple tags per summary
-2. **Apple Leak Problem Solved**: Clear verb distinctions prevent rumors from being reported as confirmed facts
-3. **Improved Tiny Summary**: Simpler label removal process with higher reliability
-4. **Maintained Benefits**: Vector DB matching and user understanding preserved
-5. **Enhanced Clarity**: Source uncertainty immediately obvious through appropriate verb choice
+1. **✅ Simplified Alias Management**: Both simple and advanced workflows available
+   - Simple: `./manage_aliases.sh review --limit 10` for immediate alias review
+   - Advanced: Batch system preserved for formal team processes
+   - Graceful exit and comprehensive documentation
 
-The system now provides clean, strategic source identification that prevents confusion while maintaining the critical ability to distinguish between confirmed announcements and unverified rumors/speculation.
+2. **✅ Strategic Source Labeling**: Clean [NEWS] tag handling
+   - Only EVENT bullets get source labels, eliminating multiple tags per summary
+   - Clear verb distinctions prevent rumors from being reported as confirmed facts
+   - Improved tiny summary reliability with simpler label removal
+
+3. **✅ Entity Exposure**: Watch/Filter functionality enabled
+   - All processed articles include structured entity data in r2_url JSON
+   - Front-end can implement sophisticated filtering based on entities
+   - Ready for personalized news experiences
+
+4. **✅ Quality Analysis**: ELI5 and scoring improvements
+   - Correct 1-3 scale interpretation throughout system
+   - Analysis-driven explanations with appropriate caution levels
+   - Enhanced source credibility integration
+
+5. **✅ Model Configuration**: Automatic parameter optimization
+   - Thinking vs non-thinking mode detection
+   - Environment variable overrides for all LLM parameters
+   - Comprehensive logging and monitoring
+
+6. **✅ Complete Documentation**: Comprehensive guides and examples
+   - Completely rewritten README.md with architecture overview
+   - Detailed usage documentation for alias management
+   - Clear troubleshooting and optimization guides
+
+The system now provides intuitive alias management that eliminates UX friction while preserving powerful features for advanced use cases. All core functionality is stable, well-documented, and production-ready.
