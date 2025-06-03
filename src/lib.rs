@@ -119,6 +119,7 @@ pub struct LLMParamsBase {
     pub temperature: f32,
     pub model_config: Option<ModelConfig>, // Configuration for model parameters
     pub no_think: bool,                    // Flag to indicate /no_think mode
+    pub context_window: Option<u32>,       // Optional context window size override
 }
 
 // Parameters specifically for text-only responses

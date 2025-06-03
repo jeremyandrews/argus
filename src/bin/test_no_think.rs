@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             temperature: args.temperature,
             model_config,
             no_think: args.no_think,
+            context_window: None,
         },
         schema_type: JsonSchemaType::EntityExtraction,
     };

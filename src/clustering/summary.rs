@@ -61,10 +61,11 @@ pub async fn generate_cluster_summary(
     let llm_params = TextLLMParams {
         base: LLMParamsBase {
             llm_client: llm_client.clone(),
-            model: "".to_string(), // Will be set by the LLM client
-            temperature: 0.2,      // Lower temperature for more consistent summaries
-            model_config: None,    // No model config needed for cluster summaries
-            no_think: false,       // No need for special no_think mode for summaries
+            model: "".to_string(),       // Will be set by the LLM client
+            temperature: 0.2,            // Lower temperature for more consistent summaries
+            model_config: None,          // No model config needed for cluster summaries
+            no_think: false,             // No need for special no_think mode for summaries
+            context_window: Some(16384), // 2x context window for cluster summaries
         },
     };
 

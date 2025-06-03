@@ -38,6 +38,7 @@ pub async fn analysis_loop(
             temperature,
             model_config: model_config.clone(),
             no_think,
+            context_window: None,
         },
     };
 
@@ -134,6 +135,7 @@ pub async fn analysis_loop(
                                 temperature,
                                 model_config: None, // No model config in fallback mode
                                 no_think: fallback_config.no_think,
+                                context_window: None,
                             },
                         };
 
@@ -156,6 +158,7 @@ pub async fn analysis_loop(
                                     temperature,
                                     model_config: model_config.clone(),
                                     no_think,
+                                    context_window: None,
                                 },
                             };
                             // Give time for the original model to restore.
@@ -186,6 +189,7 @@ pub async fn analysis_loop(
                                     temperature,
                                     model_config: model_config.clone(),
                                     no_think,
+                                    context_window: None,
                                 },
                             };
 
@@ -273,6 +277,7 @@ pub async fn analysis_loop(
                             temperature,
                             model_config: model_config.clone(),
                             no_think,
+                            context_window: None,
                         },
                     };
 

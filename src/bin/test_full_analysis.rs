@@ -52,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             temperature: args.temperature,
             model_config: None,
             no_think: false,
+            context_window: None,
         },
     };
 

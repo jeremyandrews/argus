@@ -215,6 +215,10 @@ pub async fn process_analysis(
 
     // Generate ELI5 explanation with analysis context
     let eli5 = if !summary.is_empty() {
+        // Create ELI5-specific params with larger context window
+        let mut eli5_params = text_params.clone();
+        eli5_params.base.context_window = Some(16384); // 2x context window for ELI5
+
         generate_text_response(
             &prompt::eli5_prompt(
                 article_text,
@@ -226,7 +230,7 @@ pub async fn process_analysis(
                 argument_quality,
                 &source_type,
             ),
-            &text_params,
+            &eli5_params,
             worker_detail,
         )
         .await

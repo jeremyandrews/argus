@@ -196,9 +196,10 @@ async fn generate_llm_response_internal(
                 }
 
                 // Create a ModelOptions instance using builder methods
+                let context_size = params.context_window.unwrap_or(CONTEXT_WINDOW);
                 let mut options = ModelOptions::default()
                     .temperature(params.temperature)
-                    .num_ctx(CONTEXT_WINDOW as u64);
+                    .num_ctx(context_size as u64);
 
                 // Apply model parameters if available
                 if let Some(model_config) = &params.model_config {

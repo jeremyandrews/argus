@@ -161,6 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             temperature,
             model_config: None,     // No model config for entity extraction
             no_think: use_no_think, // Use no_think mode if configured
+            context_window: None,
         },
         schema_type: JsonSchemaType::EntityExtraction,
     };

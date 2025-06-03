@@ -25,6 +25,7 @@ pub fn extract_llm_params_base<'a>(params: &'a ProcessItemParams<'a>) -> crate::
         temperature: params.temperature,
         model_config: params.model_config.clone(), // Use model_config from params
         no_think: params.no_think,                 // Use no_think from params
+        context_window: None,                      // Use default context window
     }
 }
 
