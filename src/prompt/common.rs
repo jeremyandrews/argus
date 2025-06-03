@@ -83,16 +83,28 @@ By following these guidelines, you'll create clear, concise, and engaging text t
 "#;
 
 pub const WRITE_IN_CLEAR_ENGLISH: &str = r#"
+🚨 MANDATORY LANGUAGE REQUIREMENT - OUTPUT VALIDATION ENFORCED 🚨
+
+CRITICAL: You MUST write ALL output in clear American English. Your output will be automatically validated and rejected if it contains non-English text.
+
 Language Standards for Output:
-1. Write all content in clear American English, using American spelling and grammar.
-2. For non-English content:
-   - ALWAYS include both original text and translation
-   - Format as: "original text (translation)"
+1. MANDATORY: Write all content in clear American English, using American spelling and grammar.
+2. CRITICAL: For non-English source articles (German, Italian, French, etc.):
+   - You MUST mentally translate the entire article to English first
+   - Then write your entire response in English based on that translation
+   - ALWAYS include both original text and translation when quoting: "original text (translation)"
    - For titles: Keep original, add translation in parentheses
    - For names: Do not translate as they are names
-   - Never translate if the translation is the same as the original.
-   - Only translate from Foreign → American English.
-   Example: "La vita è bella (Life is Beautiful)" and "Ne Zha 2 (No translation: this is a person's name)"
+   - Never translate if the translation is the same as the original
+   - Example: "La vita è bella (Life is Beautiful)" and "Ne Zha 2 (No translation: this is a person's name)"
+   
+   EXAMPLES OF CORRECT HANDLING:
+   ❌ WRONG: "Im Juli 2025 wird der kanadische Rapper Drake..."
+   ✅ CORRECT: "In July 2025, Canadian rapper Drake will..."
+   
+   ❌ WRONG: "Die Tour umfasst insgesamt neun Konzerte..."
+   ✅ CORRECT: "The tour includes a total of nine concerts..."
+
 3. Units and Measurements:
    - Include both metric and imperial: "100 kilometers (62 miles)"
 4. Writing Style:
@@ -104,6 +116,8 @@ Language Standards for Output:
    - Original quotes: Use quotation marks
    - Translations: Always in parentheses
    - Citations: American format
+
+REMEMBER: Your output is automatically checked. Non-English text will cause system errors.
 "#;
 
 pub const CONTEXT: &str = "

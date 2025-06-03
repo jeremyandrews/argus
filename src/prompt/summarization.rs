@@ -15,7 +15,9 @@ pub fn eli5_prompt(
     source_type: &str,
 ) -> String {
     format!(
-        r#"{context}
+        r#"{write_in_clear_english}
+
+{context}
 ## ARTICLE (FOR ELI5 EXPLANATION):
 ----------
 {article}
@@ -34,11 +36,11 @@ pub fn eli5_prompt(
 
 **Source Type:** {source_type}
 
-IMPORTANT INSTRUCTIONS:
+🚨 MANDATORY INSTRUCTIONS - OUTPUT VALIDATION ENFORCED 🚨
 * **Analyze ONLY the article above.**
 * **IGNORE the global context unless explicitly mentioned in article.**
-* **ALWAYS write your explanation in clear American English.**
-* **For non-English text, first translate the entire article to English, then create your explanation based on the translation.**
+* **CRITICAL: Write your ENTIRE response in clear American English - no exceptions!**
+* **For non-English source articles: Mentally translate the entire article to English first, then write your explanation in English based on that translation.**
 * **Pay attention to timing:** The publication date and today's date are provided above. Use appropriate tense when describing events - if something happened before today, use past tense; if it's happening now or soon, be clear about the timing.
 
 ### **Explain Like I'm 5 (ELI5)**
@@ -183,7 +185,8 @@ Now create a simple ELI5 explanation of this article:
 /// Generate a prompt for summarizing an article into a bullet-point summary
 pub fn summary_prompt(article_text: &str, pub_date: Option<&str>) -> String {
     format!(
-        r#"
+        r#"{write_in_clear_english}
+
 {context}
 
 ARTICLE (TO BE SUMMARIZED):
@@ -191,7 +194,9 @@ ARTICLE (TO BE SUMMARIZED):
 {article}
 -----------------------------
 
-IMPORTANT INSTRUCTIONS:
+🚨 MANDATORY INSTRUCTIONS - OUTPUT VALIDATION ENFORCED 🚨
+- **CRITICAL: Write your ENTIRE summary in clear American English - no exceptions!**
+- **For non-English source articles: Mentally translate the entire article to English first, then write your summary in English based on that translation.**
 - **Summarize ONLY the article above.**
 - **IGNORE the global context unless the article explicitly mentions related events.**
 - **Do NOT reference or include information from the global context unless it is directly relevant to the article content.**
@@ -209,15 +214,22 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
    - Long texts (501–2000 words): 4–6 bullets.
    - Very long texts (>2000 words): 6–8 bullets.
 
-3. **The EVENT Bullet Point MUST:**
+3. **🚨 MANDATORY: The EVENT Bullet Point MUST HAVE EXACTLY ONE SOURCE LABEL 🚨**
    - This MUST be exactly ONE bullet point
    - Start with "EVENT:" followed by a concise description of the main event (who, what, when, where).
    - **Include precise timing:** Use appropriate verbs and temporal context based on when the event occurred relative to the publication date and today's date
-   - EXPLICITLY INDICATE information source type using EXACTLY ONE of these labels:
+   - **CRITICAL:** EXPLICITLY INDICATE information source type using **EXACTLY ONE** of these labels:
      * [OFFICIAL]: For direct company announcements, official statements, press releases from the primary source
      * [NEWS]: For confirmed reporting from established news outlets with verified sources
      * [RUMOR/LEAK]: For unconfirmed information, leaks, speculation, or "according to sources" reporting
      * [ANALYSIS]: For expert analysis, opinions, predictions, or commentary pieces
+   - **VALIDATION ENFORCED:** Your EVENT bullet point will be automatically checked to ensure it contains exactly one source label - multiple labels will cause system errors
+   - **CRITICAL LABEL PLACEMENT:** The source label must appear as a discrete tag AT THE END of the EVENT description, NOT as a replacement for words:
+     ✅ CORRECT: "EVENT: Apple announced new iPhone features at WWDC 2025 [OFFICIAL]."
+     ✅ CORRECT: "EVENT: Italian regions cut ties with Israel over Gaza war [NEWS]."
+     ❌ WRONG: "EVENT: Apple announced new iPhone features at WWDC 2025, according to [OFFICIAL] sources."
+     ❌ WRONG: "EVENT: Italian regions cut ties with Israel over Gaza war, according to [NEWS] sources."
+   - **DO NOT replace words with labels** - [NEWS] is not a replacement for "news", [OFFICIAL] is not a replacement for "official"
    - **CRITICAL VERB SELECTION:** Choose verbs that match the source type and prevent mis-reporting:
      * [OFFICIAL] sources: "announced", "released", "launched", "confirmed", "unveiled"
      * [NEWS] sources: "reported", "disclosed", "revealed" (for confirmed facts)
@@ -285,9 +297,11 @@ CREATE A CONCISE SUMMARY:
 * Each sentence should focus on a distinct aspect of the news
 * If you reach 400 characters, start over and prioritize better
 
+🚨 MANDATORY SOURCE LABEL REMOVAL - VALIDATION ENFORCED 🚨
 * The summary will include an "EVENT:" bullet point with ONE source label ([OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS]) and a "CONTEXT:" bullet point without source labeling
 * You MUST REMOVE BOTH the "EVENT:" and "CONTEXT:" prefixes from your summary
-* You MUST REMOVE the single [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] source label from your summary
+* **CRITICAL:** You MUST REMOVE the single [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] source label from your summary
+* **VALIDATION ENFORCED:** Your output will be automatically checked to ensure it contains ZERO source labels - any remaining labels will cause system errors
 * However, you MUST PRESERVE the level of certainty indicated by these source types in your language
 * For [OFFICIAL] sources: Use confident, definitive language without qualifiers
 * For [NEWS] sources: Include modest attribution when appropriate
