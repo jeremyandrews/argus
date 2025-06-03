@@ -95,6 +95,9 @@ pub async fn process_article_similarity(
                     entity_extraction_start.elapsed()
                 );
 
+                // Add entities to response JSON in flat array format
+                response_json["entities"] = json!(extracted_entities.to_frontend_json_array());
+
                 // Convert to JSON for database storage
                 let entities_json =
                     serde_json::to_string(&extracted_entities).unwrap_or_else(|_| "{}".to_string());

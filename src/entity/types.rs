@@ -161,6 +161,16 @@ impl Entity {
         self.id = Some(id);
         self
     }
+
+    /// Convert entity to JSON format for front-end consumption
+    pub fn to_frontend_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "name": self.name,
+            "normalized_name": self.normalized_name,
+            "type": self.entity_type.to_string(),
+            "importance": self.importance.to_string()
+        })
+    }
 }
 
 /// Collection of extracted entities from an article
@@ -202,6 +212,14 @@ impl ExtractedEntities {
         self.entities
             .iter()
             .filter(|e| e.importance == ImportanceLevel::Primary)
+            .collect()
+    }
+
+    /// Convert all entities to frontend JSON array
+    pub fn to_frontend_json_array(&self) -> Vec<serde_json::Value> {
+        self.entities
+            .iter()
+            .map(|entity| entity.to_frontend_json())
             .collect()
     }
 }
