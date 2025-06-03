@@ -213,21 +213,22 @@ Then, create a comprehensive bullet-point summary that follows these STRICT rule
    - This MUST be exactly ONE bullet point
    - Start with "EVENT:" followed by a concise description of the main event (who, what, when, where).
    - **Include precise timing:** Use appropriate verbs and temporal context based on when the event occurred relative to the publication date and today's date
-   - EXPLICITLY INDICATE information source type using one of these labels:
-     * [OFFICIAL]: For confirmed facts from primary sources (company announcements, official statements, press releases)
-     * [NEWS]: For reporting from established news sources
-     * [RUMOR/LEAK]: For unconfirmed information, leaks, or rumors
-     * [ANALYSIS]: For expert analysis or opinions
-   - CRITICAL: Use precise verbs that accurately reflect both certainty level AND temporal context:
-     * For confirmed past facts: "announced", "released", "launched", "confirmed"
-     * For confirmed future facts: "will announce", "plans to release", "scheduled to launch"
-     * For rumors/reports/leaks: "reportedly", "allegedly", "rumored to", "according to sources", "is said to"
+   - EXPLICITLY INDICATE information source type using EXACTLY ONE of these labels:
+     * [OFFICIAL]: For direct company announcements, official statements, press releases from the primary source
+     * [NEWS]: For confirmed reporting from established news outlets with verified sources
+     * [RUMOR/LEAK]: For unconfirmed information, leaks, speculation, or "according to sources" reporting
+     * [ANALYSIS]: For expert analysis, opinions, predictions, or commentary pieces
+   - **CRITICAL VERB SELECTION:** Choose verbs that match the source type and prevent mis-reporting:
+     * [OFFICIAL] sources: "announced", "released", "launched", "confirmed", "unveiled"
+     * [NEWS] sources: "reported", "disclosed", "revealed" (for confirmed facts)
+     * [RUMOR/LEAK] sources: "reportedly", "allegedly", "rumored to", "according to sources", "is said to", "leaked"
+     * [ANALYSIS] sources: "predicts", "suggests", "expects", "believes", "estimates"
 
 4. **The CONTEXT Bullet Point MUST:**
    - This MUST be exactly ONE bullet point
    - Start with "CONTEXT:" followed by information that places the event in broader context
    - **Include temporal relationship:** How this event relates to other events chronologically
-   - EXPLICITLY INDICATE the reliability/source of this contextual information using the same labels as EVENT
+   - **NO source labeling required** - focus on providing helpful background information
 
 5. **All Other Bullet Points (Summary Content) MUST:**
    - Start with a dash (-).
@@ -284,9 +285,9 @@ CREATE A CONCISE SUMMARY:
 * Each sentence should focus on a distinct aspect of the news
 * If you reach 400 characters, start over and prioritize better
 
-* The summary will include "EVENT:" and "CONTEXT:" bullet points with source labels like [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS]
+* The summary will include an "EVENT:" bullet point with ONE source label ([OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS]) and a "CONTEXT:" bullet point without source labeling
 * You MUST REMOVE BOTH the "EVENT:" and "CONTEXT:" prefixes from your summary
-* You MUST REMOVE the [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] source labels from your summary
+* You MUST REMOVE the single [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] source label from your summary
 * However, you MUST PRESERVE the level of certainty indicated by these source types in your language
 * For [OFFICIAL] sources: Use confident, definitive language without qualifiers
 * For [NEWS] sources: Include modest attribution when appropriate

@@ -2,6 +2,62 @@
 
 ## Current Status: ✅ COMPLETED
 
+### ✅ Entity Exposure in R2 URL JSON (June 3, 2025)
+**Status**: COMPLETED and production-ready
+
+#### Implementation Summary
+Successfully implemented entity exposure in the r2_url JSON to enable future Watch/Filter functionality:
+
+**Problem Solved**:
+- Extracted entities were processed and stored but not exposed to front-end users
+- Users needed structured entity data in JSON to enable Watch/Filter functionality
+- Future personalization features required entity-based filtering capabilities
+
+**Solution Delivered**:
+- Added entities to response JSON in flat array format for maximum filtering flexibility
+- Created clean JSON serialization methods for entities
+- Integrated seamlessly into existing processing pipeline without disruption
+
+**Technical Implementation**:
+- **File: src/entity/types.rs**: Added helper methods for JSON serialization
+- **File: src/workers/analysis/similarity.rs**: Integrated entity exposure into processing
+- **File: src/bin/test_entity_json.rs**: Added comprehensive test utility
+
+**JSON Structure**:
+```json
+{
+  "entities": [
+    {
+      "name": "Apple Inc.",
+      "normalized_name": "apple inc",
+      "type": "ORGANIZATION",
+      "importance": "PRIMARY"
+    }
+  ]
+}
+```
+
+#### Testing Results
+- ✅ All compilation successful with no errors
+- ✅ Clean release build completed (28.55s)
+- ✅ JSON serialization test passed with correct output format
+- ✅ All existing functionality preserved
+- ✅ Production-ready implementation
+
+#### Key Features Delivered
+- **Flat Array Structure**: Maximum flexibility for front-end filtering operations
+- **String Values**: Clean entity types and importance for easy JavaScript filtering
+- **Complete Data**: All necessary fields for comprehensive Watch/Filter functionality
+- **Backward Compatible**: Existing JSON structure unchanged, entities are additive
+- **Future-Ready**: Structure supports all planned personalization features
+
+#### Watch/Filter Use Cases Enabled
+- Entity-specific filtering: `entities.filter(e => e.normalized_name === 'apple inc')`
+- Type-based filtering: `entities.filter(e => e.type === 'ORGANIZATION')`
+- Importance filtering: `entities.filter(e => e.importance === 'PRIMARY')`
+- Complex filtering: `entities.filter(e => e.type === 'PERSON' && e.importance === 'PRIMARY')`
+- Watch lists for specific entities, types, or importance levels
+
 ### ✅ Custom Model Settings Implementation (May 29, 2025)
 **Status**: COMPLETED and fully functional
 
