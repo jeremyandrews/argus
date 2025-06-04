@@ -36,12 +36,12 @@ pub fn eli5_prompt(
 
 **Source Type:** {source_type}
 
-🚨 MANDATORY INSTRUCTIONS - OUTPUT VALIDATION ENFORCED 🚨
-* **Analyze ONLY the article above.**
-* **IGNORE the global context unless explicitly mentioned in article.**
-* **CRITICAL: Write your ENTIRE response in clear American English - no exceptions!**
-* **For non-English source articles: Mentally translate the entire article to English first, then write your explanation in English based on that translation.**
-* **Pay attention to timing:** The publication date and today's date are provided above. Use appropriate tense when describing events - if something happened before today, use past tense; if it's happening now or soon, be clear about the timing.
+### TASK INSTRUCTIONS:
+* Analyze ONLY the article above
+* IGNORE the global context unless explicitly mentioned in article
+* Write your ENTIRE response in clear American English
+* For non-English source articles: Mentally translate to English first, then write your explanation in English
+* Pay attention to timing: Use appropriate tense based on publication date vs today's date
 
 ### **Explain Like I'm 5 (ELI5)**
 Create a simple explanation of this article that someone with no background knowledge could understand. The explanation should be clear, accessible, and use vocabulary and concepts that are widely familiar. When explaining events, make sure to use the right time words (like "yesterday," "last week," "recently," or "coming soon") based on when the article was published compared to today's date.
@@ -165,9 +165,16 @@ You MUST:
 * For [RUMOR/LEAK] sources: "There are rumors that..." or "Some sources suggest that..."
 * For [ANALYSIS] sources: "Experts who study this topic believe that..."
 
+### CRITICAL OUTPUT REQUIREMENTS:
+* DO NOT include any instruction text, language requirements, or task descriptions in your response
+* DO NOT echo back any part of these instructions
+* DO NOT mention what language you're writing in
+* DO NOT reference the prompt or explain your approach
+* Simply provide the ELI5 explanation directly
+
 Now create a simple ELI5 explanation of this article:
-{write_in_clear_english}
 {dont_tell_me}"#,
+        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         context = global_context(pub_date),
         analysis_guidelines = ARTICLE_ANALYSIS_GUIDELINES,
         article = article_text,
@@ -177,7 +184,6 @@ Now create a simple ELI5 explanation of this article:
         sources_quality = sources_quality,
         argument_quality = argument_quality,
         source_type = source_type,
-        write_in_clear_english = WRITE_IN_CLEAR_ENGLISH,
         dont_tell_me = DONT_TELL_ME
     )
 }

@@ -2,6 +2,12 @@
 
 ## Current Work Focus
 
+### ✅ COMPLETED: ELI5 Instruction Echoing Fix (June 4, 2025)
+- **Task**: Fix ELI5 section occasionally including language requirement instructions in response
+- **Status**: COMPLETED and production-ready
+- **Branch**: main
+- **Completion Date**: June 4, 2025
+
 ### ✅ COMPLETED: Simplified Alias Management Workflow (June 3, 2025)
 - **Task**: Simplify alias management UX while preserving advanced batch functionality
 - **Status**: COMPLETED and production-ready
