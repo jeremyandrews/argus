@@ -129,38 +129,60 @@ pub async fn process_article_similarity(
                             alias_extraction_start.elapsed()
                         );
 
-                        // Store each potential alias in the database
-                        for (canonical, alias, entity_type, confidence) in potential_aliases {
-                            match crate::entity::aliases::add_alias(
-                                db,
-                                None, // No entity_id until approved
-                                &canonical,
-                                &alias,
-                                entity_type,
-                                "pattern", // Source is pattern-based extraction
-                                confidence,
-                            )
-                            .await
-                            {
-                                Ok(alias_id) => {
-                                    if alias_id > 0 {
+                        // 🔍 DEBUG: Add debug logging before alias database insertion
+                        info!("🔍 DEBUG: Article {} - Starting alias database insertion for {} aliases", article_id, potential_aliases.len());
+
+                        // Store each potential alias in the database with timeout
+                        match timeout(Duration::from_secs(30), async {
+                            for (canonical, alias, entity_type, confidence) in potential_aliases {
+                                info!("🔍 DEBUG: Article {} - About to insert alias: '{}' ↔ '{}' ({:?})", article_id, canonical, alias, entity_type);
+                                match crate::entity::aliases::add_alias(
+                                    db,
+                                    None, // No entity_id until approved
+                                    &canonical,
+                                    &alias,
+                                    entity_type,
+                                    "pattern", // Source is pattern-based extraction
+                                    confidence,
+                                )
+                                .await
+                                {
+                                    Ok(alias_id) => {
+                                        if alias_id > 0 {
+                                            debug!(
+                                                "Added potential alias: '{}' ↔ '{}' ({:?}) with confidence {:.2}",
+                                                canonical, alias, entity_type, confidence
+                                            );
+                                        }
+                                        info!("🔍 DEBUG: Article {} - Successfully inserted alias: '{}' ↔ '{}'", article_id, canonical, alias);
+                                    }
+                                    Err(e) => {
                                         debug!(
-                                            "Added potential alias: '{}' ↔ '{}' ({:?}) with confidence {:.2}",
-                                            canonical, alias, entity_type, confidence
+                                            "Failed to add potential alias: {} ↔ {} - {:?}",
+                                            canonical, alias, e
                                         );
+                                        error!("🔍 DEBUG: Article {} - Failed to insert alias: '{}' ↔ '{}' - {:?}", article_id, canonical, alias, e);
                                     }
                                 }
-                                Err(e) => {
-                                    debug!(
-                                        "Failed to add potential alias: {} ↔ {} - {:?}",
-                                        canonical, alias, e
-                                    );
-                                }
+                            }
+                        }).await {
+                            Ok(_) => {
+                                info!("🔍 DEBUG: Article {} - Alias insertion completed successfully", article_id);
+                            }
+                            Err(_) => {
+                                error!("🔍 DEBUG: Article {} - Alias insertion TIMED OUT after 30s", article_id);
                             }
                         }
 
+                        // 🔍 DEBUG: Add debug logging before cluster assignment
+                        info!("🔍 DEBUG: Article {} - Completed alias processing, starting cluster assignment", article_id);
+
                         // Assign article to a cluster
                         let cluster_start = Instant::now();
+                        info!(
+                            "🔍 DEBUG: Article {} - About to call assign_article_to_cluster",
+                            article_id
+                        );
                         match crate::clustering::assign_article_to_cluster(db, article_id).await {
                             Ok(cluster_id) => {
                                 if cluster_id > 0 {

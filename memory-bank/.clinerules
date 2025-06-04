@@ -375,3 +375,30 @@
   - URLs to content are generated and included in notifications
   - Content is stored in both full and summarized formats for different use cases
   - Article IDs must be exposed in R2 JSON to allow for match feedback
+
+## Production Debugging Patterns
+- **Systematic Code Flow Investigation**:
+  - When a process appears to hang, trace execution by examining logs for the last successful operation
+  - Use log timestamps to identify exactly where execution stops
+  - Add strategic debug logging with distinctive prefixes for easy grep filtering
+  - Focus logging at critical transition points: before database operations, before async calls, after timeouts
+
+- **Database Hang Debugging Pattern**:
+  - Wrap potentially hanging database operations in timeout blocks
+  - Use consistent timeout durations (30s for complex operations, 10s for simple lookups)
+  - Log both success and timeout scenarios with clear context about which operation failed
+  - Add debug logs immediately before and after suspected hang points
+
+- **Debug Logging Strategy**:
+  - Include article ID or other identifiers in all debug messages for correlation
+  - Use descriptive prefixes for easy log filtering in production
+  - Log entry into loops, database calls, and async operations
+  - Always log completion or failure of wrapped operations
+
+- **Production Deployment of Debug Code**:
+  - Debug logging can be safely deployed to production for investigation
+  - Use appropriate log levels (info for flow tracking, error for timeouts)
+  - Keep debug logging focused and temporary - remove after issue resolution
+  - Ensure debug messages include enough context for remote diagnosis
+  - Production logs can be monitored with grep patterns for specific issues
+  - DO NOT create new test utilities or binaries - use production deployment for debugging
