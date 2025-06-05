@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
+use tracing::info;
 
 use crate::clustering::types::{ClusterArticle, EntityDetail};
 use crate::db::cluster;
@@ -25,6 +26,7 @@ pub async fn get_clusters_needing_summary_updates(db: &Database) -> Result<Vec<i
 /// * `db` - Database instance
 /// * `llm_client` - LLM client to use for summary generation
 /// * `cluster_id` - ID of the cluster to summarize
+/// * `model_name` - Name of the model to use for generation
 ///
 /// # Returns
 /// * `Ok(String)` - The generated summary
@@ -33,6 +35,7 @@ pub async fn generate_cluster_summary(
     db: &Database,
     llm_client: &LLMClient,
     cluster_id: i64,
+    model_name: &str,
 ) -> Result<String> {
     // Create a worker detail for logging
     let worker_detail = WorkerDetail {
@@ -61,13 +64,18 @@ pub async fn generate_cluster_summary(
     let llm_params = TextLLMParams {
         base: LLMParamsBase {
             llm_client: llm_client.clone(),
-            model: "".to_string(),       // Will be set by the LLM client
-            temperature: 0.2,            // Lower temperature for more consistent summaries
-            model_config: None,          // No model config needed for cluster summaries
-            no_think: false,             // No need for special no_think mode for summaries
+            model: model_name.to_string(),
+            temperature: 0.2,   // Lower temperature for more consistent summaries
+            model_config: None, // No model config needed for cluster summaries
+            no_think: false,    // No need for special no_think mode for summaries
             context_window: Some(16384), // 2x context window for cluster summaries
         },
     };
+
+    info!(
+        "Generating cluster summary for cluster {} using model: {}",
+        cluster_id, model_name
+    );
 
     // Generate the summary
     let summary = match generate_text_response(&prompt, &llm_params, &worker_detail).await {

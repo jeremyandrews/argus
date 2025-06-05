@@ -198,6 +198,7 @@ pub async fn process_article_similarity(
                                         db,
                                         &llm_params.base.llm_client,
                                         cluster_id,
+                                        &llm_params.base.model,
                                     )
                                     .await
                                     {

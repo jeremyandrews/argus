@@ -1,34 +1,27 @@
 # Active Context
 
-## 🚨 CRITICAL ISSUE: Analysis Worker Bug (June 5, 2025)
+## 🚨 CRITICAL ISSUE: Cluster Summary Generation Failure (June 5, 2025)
 
 ### Current Problem Status
-**Analysis workers stopped functioning on June 5, 2025 at 07:09 UTC and are not processing the 83 items waiting in analysis queues.**
+**Analysis workers are functioning normally but not generating cluster summaries during article processing, resulting in 143 clusters needing summaries with 0 clusters having summaries.**
 
-### Investigation Summary
-- ✅ **Database Schema Issues**: RESOLVED - Added missing columns (title, json_data, quality, source) to articles table
-- ✅ **Schema Verification**: All required database columns now present and correct
-- ✅ **Root Cause Identified**: The 'PRIMARY' → 'Primary' case fix was correct and enabled clustering logic for the first time
-- ✅ **CRITICAL BUG FIXED**: Replaced `unimplemented!()` panic in cluster merging code with safe stubs
+### Problem Evidence (Database Verification)
+- **Cluster Assignments**: ✅ 149 articles properly assigned to clusters
+- **Cluster Mappings**: ✅ 149 articles have proper mappings (repair script successful)
+- **Cluster Summaries**: ❌ 143 clusters flagged for summary updates, 0 clusters have summaries
+- **Expected Behavior**: Analysis workers should auto-generate cluster summaries when assigning articles to clusters
+- **Current Reality**: `generate_cluster_summary()` calls not producing summaries
 
-### Key Evidence
-- **Last Activity**: 2025-06-05T08:04:19 UTC (analysis worker 2 completed successfully)
-- **No Crashes**: Workers exit cleanly without error logs  
-- **Queues Waiting**: 40 items in life_safety_queue, 43 in matched_topics_queue
-- **Decision Workers**: Continue functioning normally
-- **Root Cause**: Started after cluster matching logic fix in previous commit
+### Investigation Requirements
+1. **Debug cluster summary generation** in analysis worker pipeline
+2. **Add enhanced logging** to cluster summary generation process
+3. **Test cluster summary generation** in isolation
+4. **Verify LLM connectivity** for summary generation
+5. **Monitor analysis worker logs** for summary generation attempts/failures
 
-### Files Modified During Investigation
-- **src/db/schema.rs**: Updated to match production database structure
-- **memory-bank/analysis_worker_bug_june5.md**: Comprehensive bug documentation created
-
-### Next Steps Required
-1. **Application Restart**: Test if restarting argus resolves the worker exit issue
-2. **Code Review**: Examine recent cluster matching logic changes for exit conditions
-3. **Enhanced Logging**: Add debug logging to worker exit paths
-
-### Documentation
-Complete investigation details documented in `memory-bank/analysis_worker_bug_june5.md`
+### Impact
+- **All r2_url JSON missing cluster_summary field** until summaries are generated
+- **Cluster functionality incomplete** despite proper assignments and mappings
 
 ---
 
@@ -173,16 +166,25 @@ Successfully implemented dual workflow approach for alias management:
 
 ## Active Decisions and Considerations
 
-### Immediate Priority: Fix Analysis Workers
-The analysis worker bug is the top priority as it prevents processing of 83 queued analysis items.
+### ✅ RESOLVED: Analysis Worker Issues (June 5, 2025)
+- **Issue #1: Analysis Workers Are Down (Critical)** - **FIXED**
+  - Root cause: `unimplemented!()` macros causing worker panics
+  - Solution: Removed problematic macros
+  - Status: Workers running normally for hours
 
-**Leading Hypothesis:**
-Workers are exiting due to a logic bug introduced in recent cluster matching fixes rather than database issues.
+- **Issue #2: Historical Articles Missing Cluster Mappings** - **FIXED**
+  - Root cause: `create_cluster_for_article()` wasn't creating mappings
+  - Solution: Repair script executed successfully
+  - Verification: 149/149 articles have proper cluster mappings
+
+### Immediate Priority: Cluster Summary Generation
+The cluster summary generation failure is the current priority affecting all r2_url JSON cluster_summary fields.
 
 **Investigation Approach:**
-1. **Application Restart Test**: Simplest fix - restart argus to see if workers resume
-2. **Code Review Focus**: Examine cluster matching logic for unexpected exit conditions
-3. **Enhanced Logging**: Add debug output to worker exit paths
+1. **Debug cluster summary generation** in analysis worker pipeline
+2. **Add enhanced logging** to cluster summary generation process
+3. **Test LLM connectivity** for summary generation
+4. **Monitor summary generation attempts** in worker logs
 
 ### Entity Matching Strategy (On Hold)
 - Using combination of exact matching, alias lookup, and similarity scoring
@@ -196,11 +198,12 @@ Workers are exiting due to a logic bug introduced in recent cluster matching fix
 
 ## Next Steps
 
-### URGENT (Analysis Worker Fix)
-1. **Restart Application**: Test if workers resume after restart
-2. **Code Investigation**: Review cluster matching logic for worker exit conditions
-3. **Monitoring**: Watch for successful analysis worker resumption
-4. **Enhanced Debugging**: Add logging to worker exit paths if restart doesn't resolve
+### URGENT (Cluster Summary Generation Fix)
+1. **Debug cluster summary generation** in analysis worker pipeline
+2. **Add enhanced logging** to cluster summary process to identify failure points
+3. **Test LLM connectivity** and summary generation in isolation
+4. **Monitor analysis worker logs** for summary generation attempts/failures
+5. **Validate summary generation triggers** when articles are assigned to clusters
 
 ### Future (Entity System Enhancement)
 1. **Entity System Validation**: Test entity extraction and matching accuracy
@@ -212,9 +215,10 @@ Workers are exiting due to a logic bug introduced in recent cluster matching fix
 - **Build Status**: ✅ Clean release build
 - **Database Schema**: ✅ Fully aligned with code expectations
 - **Decision Workers**: ✅ Functioning normally
-- **Analysis Workers**: ❌ Not running (critical issue)
-- **Analysis Queues**: ⚠️ 83 items waiting for processing
-- **Documentation**: ✅ Comprehensive bug documentation created
-- **Production Impact**: ⚠️ No new analysis results being generated
+- **Analysis Workers**: ✅ Running normally for hours
+- **Cluster Assignments**: ✅ 149 articles properly assigned to clusters
+- **Cluster Mappings**: ✅ 149 articles have proper mappings (repair successful)
+- **Cluster Summaries**: ❌ 143 clusters need summaries, 0 clusters have summaries
+- **Production Impact**: ⚠️ r2_url JSON missing cluster_summary field for all articles
 
-The system requires immediate attention to resolve the analysis worker issue and restore full functionality.
+The system requires investigation into why cluster summary generation is not working despite proper cluster assignments and mappings.

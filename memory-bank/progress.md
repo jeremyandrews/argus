@@ -1,6 +1,41 @@
 # Progress Tracking
 
-## Current Status: ✅ COMPLETED
+## Current Status: 🚨 CRITICAL ISSUE - Cluster Summary Generation Failure
+
+### 🚨 Cluster Summary Generation Failure (June 5, 2025)
+**Status**: CRITICAL ISSUE - Under Investigation
+
+#### Problem Summary
+Analysis workers are functioning normally but not generating cluster summaries during article processing:
+
+**Database Evidence:**
+- ✅ **149** articles properly assigned to clusters
+- ✅ **149** articles have proper mappings (repair script successful)
+- ❌ **143** clusters flagged for summary updates, **0** clusters have summaries
+- ❌ **All r2_url JSON missing cluster_summary field**
+
+**Expected Behavior:** Analysis workers should auto-generate cluster summaries when assigning articles to clusters
+**Current Reality:** `generate_cluster_summary()` calls not producing summaries
+
+#### Investigation Requirements
+1. Debug cluster summary generation in analysis worker pipeline
+2. Add enhanced logging to cluster summary generation process
+3. Test cluster summary generation in isolation
+4. Verify LLM connectivity for summary generation
+5. Monitor analysis worker logs for summary generation attempts/failures
+
+### ✅ Analysis Worker Issues RESOLVED (June 5, 2025)
+**Status**: FULLY RESOLVED
+
+#### Issue #1: Analysis Workers Down (Critical) - FIXED
+- **Root Cause**: `unimplemented!()` macros causing worker panics
+- **Solution**: Removed problematic macros
+- **Current Status**: Workers running normally for hours
+
+#### Issue #2: Historical Articles Missing Cluster Mappings - FIXED
+- **Root Cause**: `create_cluster_for_article()` wasn't creating mappings
+- **Solution**: Repair script executed successfully
+- **Verification**: Perfect 149/149 match between cluster assignments and mappings
 
 ### ✅ Entity Exposure in R2 URL JSON (June 3, 2025)
 **Status**: COMPLETED and production-ready

@@ -108,6 +108,7 @@ pub async fn process_article_clustering(
     db: &Database,
     article_id: i64,
     llm_client: &crate::LLMClient,
+    model_name: &str,
 ) {
     let cluster_start = Instant::now();
     match crate::clustering::assign_article_to_cluster(db, article_id).await {
@@ -121,7 +122,10 @@ pub async fn process_article_clustering(
                 );
 
                 // Generate summary for the cluster
-                match crate::clustering::generate_cluster_summary(db, llm_client, cluster_id).await
+                match crate::clustering::generate_cluster_summary(
+                    db, llm_client, cluster_id, model_name,
+                )
+                .await
                 {
                     Ok(summary) => {
                         info!(
