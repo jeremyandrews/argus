@@ -88,16 +88,21 @@ create_cluster -> assign_to_cluster -> update_article_cluster_id -> DONE ✅
 - ✅ Production-ready implementation
 
 **Impact:**
-- **Restores Cluster Summaries**: All 97 articles will now get cluster summaries
-- **Enables Summary Pipeline**: 96 clusters will generate summaries automatically
-- **Completes JSON Structure**: Articles now include the missing cluster_summary field
-- **System-Wide Fix**: Resolves issue affecting 96 out of 97 processed articles
+- **Enables Cluster Summaries**: Once repair script runs, cluster summary generation will work for future articles
+- **Fixes Mapping Issue**: 96 clusters will have proper mappings and can generate summaries when new articles are assigned
+- **Completes JSON Structure**: New articles will include cluster_summary field when assigned to clusters with summaries
+- **System-Wide Fix**: Resolves mapping issue affecting 96 out of 97 processed articles
 
 **Benefits:**
-- **User Experience**: Rich cluster summaries now appear in article JSON as intended
-- **Data Completeness**: Full analytical pipeline now functions end-to-end
+- **Future Functionality**: New articles will get cluster summaries as intended
+- **Data Integrity**: Full clustering pipeline now functions end-to-end for new content
 - **Production Stability**: Eliminates silent failure in clustering system
-- **Future Prevention**: New articles will work correctly from the start
+- **Gradual Recovery**: Existing clusters will get summaries over time as new articles match them
+
+**Summary Generation Timeline:**
+- **Immediate**: New articles processed after fix will get cluster summaries
+- **Gradual**: Existing 96 clusters will get summaries as new articles are assigned to them
+- **Note**: Cluster summary generation is triggered by article assignment, not background processing
 
 ### ✅ COMPLETED: ELI5 Instruction Echoing Fix (June 4, 2025)
 - **Task**: Fix ELI5 section occasionally including language requirement instructions in response
