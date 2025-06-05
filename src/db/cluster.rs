@@ -430,7 +430,7 @@ pub async fn get_cluster_entity_details(
     for entity_id in entity_ids {
         let row = sqlx::query(
             r#"
-            SELECT e.id, e.canonical_name, e.entity_type
+            SELECT e.id, e.name, e.type
             FROM entities e
             WHERE e.id = ?
             "#,
@@ -440,7 +440,7 @@ pub async fn get_cluster_entity_details(
         .await?;
 
         if let Some(row) = row {
-            let entity_type_str: String = row.get("entity_type");
+            let entity_type_str: String = row.get("type");
             let entity_type = match entity_type_str.as_str() {
                 "PERSON" => EntityType::Person,
                 "ORGANIZATION" => EntityType::Organization,
@@ -453,7 +453,7 @@ pub async fn get_cluster_entity_details(
 
             let detail = EntityDetail {
                 id: row.get("id"),
-                name: row.get("canonical_name"),
+                name: row.get("name"),
                 entity_type,
             };
 

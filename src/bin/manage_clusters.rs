@@ -339,7 +339,7 @@ async fn show_cluster(
 
         let query = format!(
             r#"
-            SELECT id, canonical_name, entity_type
+            SELECT id, name, type
             FROM entities
             WHERE id IN ({})
             "#,
@@ -362,8 +362,8 @@ async fn show_cluster(
 
         for row in entity_rows {
             let id: i64 = row.get("id");
-            let name: String = row.get("canonical_name");
-            let etype: String = row.get("entity_type");
+            let name: String = row.get("name");
+            let etype: String = row.get("type");
 
             entity_table.add_row(PrettyRow::new(vec![
                 Cell::new(&id.to_string()),
