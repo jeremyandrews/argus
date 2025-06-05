@@ -16,9 +16,10 @@ pub async fn find_clusters_with_entity_overlap(
     _db: &Database,
     _min_overlap_ratio: f64,
 ) -> Result<Vec<Vec<i64>>> {
-    // This function should be implemented in db/cluster.rs
-    // and called from here
-    unimplemented!("Need to implement find_clusters_with_entity_overlap in db/cluster.rs")
+    // TODO: Implement cluster overlap detection logic
+    // For now, return empty vec to indicate no overlapping clusters found
+    // This prevents workers from panicking while we implement the full logic
+    Ok(Vec::new())
 }
 
 /// Checks for clusters similar to the given cluster and merges them if criteria are met
@@ -40,7 +41,8 @@ pub async fn check_and_merge_similar_clusters(
     _cluster_id: i64,
     _llm_client: &LLMClient,
 ) -> Result<Option<i64>> {
-    // This function should be implemented in db/cluster.rs
-    // and called from here
-    unimplemented!("Need to implement check_and_merge_similar_clusters in db/cluster.rs")
+    // TODO: Implement cluster merging logic
+    // For now, return Ok(None) to indicate no clusters were merged
+    // This prevents workers from panicking while we implement the full logic
+    Ok(None)
 }
