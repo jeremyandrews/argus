@@ -310,7 +310,7 @@ async fn generate_llm_response_internal(
                                         worker_detail.connection_info
                                     );
                                 } else {
-                                    info!(
+                                    debug!(
                                         target: TARGET_LLM_REQUEST,
                                         "[{} {} {} {}]: Expected thinking tags but none found in response.",
                                         worker_detail.name, worker_detail.id, worker_detail.model,
@@ -410,7 +410,7 @@ async fn generate_llm_response_internal(
                                             worker_detail.connection_info
                                         );
                                     } else {
-                                        info!(
+                                        debug!(
                                             target: TARGET_LLM_REQUEST,
                                             "[{} {} {} {}]: Expected thinking tags but none found in OpenAI response.",
                                             worker_detail.name, worker_detail.id, worker_detail.model,
