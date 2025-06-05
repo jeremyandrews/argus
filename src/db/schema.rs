@@ -15,10 +15,14 @@ impl Database {
                 seen_at TEXT NOT NULL,
                 pub_date TEXT,
                 event_date TEXT,
+                title TEXT,
+                source TEXT,
                 is_relevant BOOLEAN NOT NULL,
                 category TEXT,
                 tiny_summary TEXT,
                 analysis TEXT,
+                json_data TEXT,
+                quality REAL,
                 hash TEXT,
                 title_domain_hash TEXT,
                 r2_url TEXT,
@@ -67,23 +71,47 @@ impl Database {
             CREATE TABLE IF NOT EXISTS article_clusters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
-                created_at TIMESTAMP NOT NULL,
-                updated_at TIMESTAMP NOT NULL
+                creation_date TEXT NOT NULL,
+                last_updated TEXT NOT NULL,
+                primary_entity_ids TEXT NOT NULL DEFAULT '[]',
+                article_count INTEGER NOT NULL DEFAULT 0,
+                needs_summary_update INTEGER NOT NULL DEFAULT 1,
+                summary TEXT,
+                summary_version INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                importance_score REAL NOT NULL DEFAULT 0.0,
+                has_timeline INTEGER NOT NULL DEFAULT 0
             );
-            CREATE INDEX IF NOT EXISTS idx_article_clusters_updated_at ON article_clusters (updated_at);
+            CREATE INDEX IF NOT EXISTS idx_article_clusters_last_updated ON article_clusters (last_updated);
+            CREATE INDEX IF NOT EXISTS idx_article_clusters_status ON article_clusters (status);
+            CREATE INDEX IF NOT EXISTS idx_article_clusters_importance ON article_clusters (importance_score);
             
             -- Article-cluster relationships
-            CREATE TABLE IF NOT EXISTS article_cluster_members (
+            CREATE TABLE IF NOT EXISTS article_cluster_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 article_id INTEGER NOT NULL,
                 cluster_id INTEGER NOT NULL,
-                added_at TIMESTAMP NOT NULL,
+                added_date TEXT NOT NULL,
+                similarity_score REAL,
                 FOREIGN KEY (article_id) REFERENCES articles (id) ON DELETE CASCADE,
                 FOREIGN KEY (cluster_id) REFERENCES article_clusters (id) ON DELETE CASCADE,
                 UNIQUE(article_id, cluster_id)
             );
-            CREATE INDEX IF NOT EXISTS idx_article_cluster_members_article_id ON article_cluster_members (article_id);
-            CREATE INDEX IF NOT EXISTS idx_article_cluster_members_cluster_id ON article_cluster_members (cluster_id);
+            CREATE INDEX IF NOT EXISTS idx_article_cluster_mappings_article_id ON article_cluster_mappings (article_id);
+            CREATE INDEX IF NOT EXISTS idx_article_cluster_mappings_cluster_id ON article_cluster_mappings (cluster_id);
+            
+            -- Cluster merge history
+            CREATE TABLE IF NOT EXISTS cluster_merge_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                original_cluster_id INTEGER NOT NULL,
+                merged_into_cluster_id INTEGER NOT NULL,
+                merge_date TEXT NOT NULL,
+                merge_reason TEXT,
+                FOREIGN KEY (original_cluster_id) REFERENCES article_clusters (id) ON DELETE CASCADE,
+                FOREIGN KEY (merged_into_cluster_id) REFERENCES article_clusters (id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_cluster_merge_original ON cluster_merge_history (original_cluster_id);
+            CREATE INDEX IF NOT EXISTS idx_cluster_merge_destination ON cluster_merge_history (merged_into_cluster_id);
             
             -- Entity alias system tables
             CREATE TABLE IF NOT EXISTS entity_aliases (
