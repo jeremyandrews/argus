@@ -85,7 +85,7 @@ pub async fn get_article_entities(db: &Database, article_id: i64) -> Result<Vec<
     let rows = sqlx::query(
         r#"
         SELECT entity_id FROM article_entities 
-        WHERE article_id = ? AND importance = 'PRIMARY'
+        WHERE article_id = ? AND importance = 'Primary'
         "#,
     )
     .bind(article_id)
