@@ -197,18 +197,19 @@ pub struct ClusterInfo {
 /// * `Err` - If there was an error during creation
 pub async fn create_cluster_for_article(
     db: &Database,
-    _article_id: i64,
+    article_id: i64,
     entity_ids: &[i64],
 ) -> Result<i64> {
     let now = Utc::now().to_rfc3339();
     let primary_entity_ids = serde_json::to_string(entity_ids)?;
 
-    // Create the cluster
+    // Create the cluster with initial article_count = 0
+    // assign_to_cluster will increment it to 1
     let cluster_id = sqlx::query(
         r#"
         INSERT INTO article_clusters
         (creation_date, last_updated, primary_entity_ids, article_count, needs_summary_update)
-        VALUES (?, ?, ?, 1, 1)
+        VALUES (?, ?, ?, 0, 1)
         "#,
     )
     .bind(&now)
@@ -223,6 +224,10 @@ pub async fn create_cluster_for_article(
         cluster_id,
         entity_ids.len()
     );
+
+    // Now assign the article to the cluster (creates mapping and updates count)
+    // Use similarity score of 1.0 since this is the founding article
+    assign_to_cluster(db, article_id, cluster_id, 1.0).await?;
 
     Ok(cluster_id)
 }
