@@ -33,6 +33,7 @@ pub async fn assign_article_to_cluster_from_similar(
         );
         let entities = get_article_entities(db, article_id).await?;
         let cluster_id = create_cluster_for_article(db, article_id, &entities).await?;
+        update_article_cluster_id(db, article_id, cluster_id).await?;
         return Ok(cluster_id);
     }
 
@@ -48,6 +49,7 @@ pub async fn assign_article_to_cluster_from_similar(
                     );
                     assign_to_cluster(db, article_id, existing_cluster_id, best_match.score as f64)
                         .await?;
+                    update_article_cluster_id(db, article_id, existing_cluster_id).await?;
                     return Ok(existing_cluster_id);
                 }
                 _ => {
@@ -72,6 +74,7 @@ pub async fn assign_article_to_cluster_from_similar(
     );
     let entities = get_article_entities(db, article_id).await?;
     let cluster_id = create_cluster_for_article(db, article_id, &entities).await?;
+    update_article_cluster_id(db, article_id, cluster_id).await?;
     Ok(cluster_id)
 }
 
