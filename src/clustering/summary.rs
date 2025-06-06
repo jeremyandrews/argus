@@ -89,6 +89,16 @@ pub async fn generate_cluster_summary(
     Ok(summary)
 }
 
+/// Convert database quality score (-2 to 4) to readable label based on scoring.rs scale
+fn quality_score_to_label(score: i8) -> &'static str {
+    match score {
+        4 | 3 => "EXCELLENT QUALITY",  // 3 = Excellent (green) in scoring.rs
+        2 | 1 => "MODERATE QUALITY",   // 2 = Moderate (yellow) in scoring.rs
+        0 | -1 | -2 => "POOR QUALITY", // 1 = Poor (red) in scoring.rs
+        _ => "UNKNOWN QUALITY",
+    }
+}
+
 /// Builds a prompt for generating a cluster summary
 ///
 /// # Arguments
@@ -109,12 +119,7 @@ fn build_summary_prompt(
 
     // Categorize articles by quality and build detailed summaries
     for (i, article) in articles.iter().enumerate() {
-        let quality_label = match article.quality_score {
-            3 => "HIGH QUALITY",
-            2 => "MEDIUM QUALITY",
-            1 => "LOW QUALITY",
-            _ => "UNKNOWN QUALITY",
-        };
+        let quality_label = quality_score_to_label(article.quality_score);
 
         let article_entry = format!(
             "Article {}: [{}] {} (Quality: {})\nTitle: {}\nSummary: {}\nURL: {}\n\n",

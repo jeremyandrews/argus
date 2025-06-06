@@ -9,6 +9,93 @@ use crate::clustering::types::{ClusterArticle, EntityDetail};
 use crate::db::core::Database;
 use crate::entity::types::EntityType;
 
+/// Assigns an article to a cluster based on similar articles results
+/// Uses the same algorithm as similar_articles to ensure consistency
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `article_id` - ID of the article to assign to a cluster
+/// * `similar_articles` - Results from get_similar_articles_with_entities
+///
+/// # Returns
+/// * `Ok(cluster_id)` - The ID of the cluster the article was assigned to
+/// * `Err` - If there was an error during the process
+pub async fn assign_article_to_cluster_from_similar(
+    db: &Database,
+    article_id: i64,
+    similar_articles: &[crate::vector::types::ArticleMatch],
+) -> Result<i64> {
+    // If no similar articles, create new cluster
+    if similar_articles.is_empty() {
+        debug!(
+            "No similar articles found, creating new cluster for article {}",
+            article_id
+        );
+        let entities = get_article_entities(db, article_id).await?;
+        let cluster_id = create_cluster_for_article(db, article_id, &entities).await?;
+        return Ok(cluster_id);
+    }
+
+    // Find highest scoring article above threshold (0.70)
+    if let Some(best_match) = similar_articles.first() {
+        if best_match.score >= 0.70 {
+            // Get that article's cluster and join it
+            match get_article_cluster_id(db, best_match.id).await {
+                Ok(existing_cluster_id) if existing_cluster_id > 0 => {
+                    info!(
+                        "Assigning article {} to existing cluster {} (similarity: {:.4})",
+                        article_id, existing_cluster_id, best_match.score
+                    );
+                    assign_to_cluster(db, article_id, existing_cluster_id, best_match.score as f64)
+                        .await?;
+                    return Ok(existing_cluster_id);
+                }
+                _ => {
+                    debug!(
+                        "Similar article {} has no cluster, creating new cluster",
+                        best_match.id
+                    );
+                }
+            }
+        } else {
+            debug!(
+                "Best match similarity ({:.4}) below threshold (0.70), creating new cluster",
+                best_match.score
+            );
+        }
+    }
+
+    // No good matches - create new cluster
+    debug!(
+        "Creating new cluster for article {} - no matches above threshold",
+        article_id
+    );
+    let entities = get_article_entities(db, article_id).await?;
+    let cluster_id = create_cluster_for_article(db, article_id, &entities).await?;
+    Ok(cluster_id)
+}
+
+/// Gets an article's cluster_id from the database
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `article_id` - ID of the article
+///
+/// # Returns
+/// * `Ok(cluster_id)` - The cluster ID (0 if not assigned to a cluster)
+/// * `Err` - If there was an error during retrieval
+pub async fn get_article_cluster_id(db: &Database, article_id: i64) -> Result<i64> {
+    let row = sqlx::query("SELECT cluster_id FROM articles WHERE id = ?")
+        .bind(article_id)
+        .fetch_optional(db.pool())
+        .await?;
+
+    match row {
+        Some(row) => Ok(row.get::<Option<i64>, _>("cluster_id").unwrap_or(0)),
+        None => Ok(0), // Article not found
+    }
+}
+
 /// Assigns an article to the most appropriate cluster based on entity overlap
 ///
 /// This function:

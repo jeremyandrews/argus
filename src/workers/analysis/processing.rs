@@ -12,7 +12,6 @@ use crate::workers::common::calculate_quality_score;
 use crate::{TextLLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 use super::quality::process_analysis;
-use super::similarity::process_article_similarity;
 
 /// Function to process a single analysis item.
 /// Returns true if an item was processed, false otherwise.
@@ -446,15 +445,13 @@ async fn process_life_safety_item(
             }
         };
 
-        // Process vector embeddings and entities
-        if let Err(e) = process_article_similarity(
+        // Process vector embeddings, entities, and clustering (inline)
+        if let Err(e) = process_similarity_and_clustering_inline(
             db,
             article_id,
             &summary,
             &article_text,
             pub_date.as_deref(),
-            &article_hash,
-            &title_domain_hash,
             Some(topic),
             quality,
             &mut response_json,
@@ -465,7 +462,7 @@ async fn process_life_safety_item(
         {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "Failed to process article similarity: {:?}", e
+                "Failed to process similarity and clustering: {:?}", e
             );
         }
 
@@ -671,15 +668,13 @@ async fn process_matched_topic_item(
             }
         };
 
-        // Process vector embeddings and entities
-        if let Err(e) = process_article_similarity(
+        // Process vector embeddings, entities, and clustering (inline)
+        if let Err(e) = process_similarity_and_clustering_inline(
             db,
             article_id,
             &summary,
             &article_text,
             pub_date.as_deref(),
-            &article_hash,
-            &title_domain_hash,
             Some(&topic),
             quality,
             &mut response_json,
@@ -690,7 +685,7 @@ async fn process_matched_topic_item(
         {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "Failed to process article similarity: {:?}", e
+                "Failed to process similarity and clustering: {:?}", e
             );
         }
 
@@ -772,4 +767,272 @@ fn build_affected_summary_indirect(
     } else {
         String::new()
     }
+}
+
+/// Inline processing of similarity search, entity extraction, and clustering
+/// Replaces the old process_article_similarity function to fix timing issues
+async fn process_similarity_and_clustering_inline(
+    db: &Database,
+    article_id: i64,
+    summary: &str,
+    article_text: &str,
+    pub_date: Option<&str>,
+    topic: Option<&str>,
+    quality: i8,
+    response_json: &mut serde_json::Value,
+    llm_params: &mut TextLLMParams,
+    worker_detail: &WorkerDetail,
+) -> Result<(), anyhow::Error> {
+    use crate::vector::{
+        embedding::get_article_vectors, search::get_similar_articles_with_entities,
+        storage::store_embedding,
+    };
+    use crate::JsonSchemaType;
+
+    // Generate vector embedding
+    let vector_start = Instant::now();
+    if let Ok(Some(embedding)) = get_article_vectors(summary).await {
+        info!(
+            "Generated vector embedding with {} dimensions in {:?}",
+            embedding.len(),
+            vector_start.elapsed()
+        );
+
+        // Extract entities BEFORE similarity search
+        let entity_extraction_start = Instant::now();
+        let mut entity_ids: Option<Vec<i64>> = None;
+
+        // Create JsonLLMParams for entity extraction
+        let json_params = crate::JsonLLMParams {
+            base: llm_params.base.clone(),
+            schema_type: JsonSchemaType::EntityExtraction,
+        };
+
+        match crate::entity::extraction::extract_entities(
+            article_text,
+            pub_date,
+            &json_params,
+            worker_detail,
+        )
+        .await
+        {
+            Ok(extracted_entities) => {
+                info!(
+                    "Extracted {} entities in {:?}",
+                    extracted_entities.entities.len(),
+                    entity_extraction_start.elapsed()
+                );
+
+                // Add entities to response JSON
+                response_json["entities"] = json!(extracted_entities.to_frontend_json_array());
+
+                // Store entities and get IDs
+                let entities_json =
+                    serde_json::to_string(&extracted_entities).unwrap_or_else(|_| "{}".to_string());
+
+                match timeout(
+                    Duration::from_secs(30),
+                    db.process_entity_extraction(article_id, &entities_json),
+                )
+                .await
+                {
+                    Ok(Ok(ids)) => {
+                        info!(
+                            "Successfully processed entity extraction for article {} with {} entities",
+                            article_id, ids.len()
+                        );
+                        entity_ids = Some(ids);
+                    }
+                    Ok(Err(e)) => {
+                        error!("Failed to process entity extraction: {:?}", e);
+                    }
+                    Err(_) => {
+                        error!("[TIMEOUT] Database operation timed out after 30s: process_entity_extraction");
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to extract entities: {:?}", e);
+            }
+        }
+
+        // Get event date
+        let (_, event_date) = db
+            .get_article_details_with_dates(article_id)
+            .await
+            .unwrap_or((None, None));
+
+        // Get similar articles using the unified algorithm
+        let similar_articles = match get_similar_articles_with_entities(
+            &embedding,
+            10,
+            entity_ids.as_deref(),
+            event_date.as_deref(),
+            Some(article_id),
+        )
+        .await
+        {
+            Ok(articles) => articles,
+            Err(e) => {
+                error!("Failed to get similar articles: {:?}", e);
+                Vec::new()
+            }
+        };
+
+        // Build similar articles JSON from results
+        let mut similar_articles_with_details = Vec::new();
+        for article in &similar_articles {
+            if let Ok(Some((json_url, title, tiny_summary))) =
+                db.get_article_details_by_id(article.id).await
+            {
+                similar_articles_with_details.push(build_similar_article_json(
+                    article,
+                    Some(json_url),
+                    title,
+                    Some(tiny_summary),
+                ));
+            } else {
+                similar_articles_with_details
+                    .push(build_similar_article_json(article, None, None, None));
+            }
+        }
+        response_json["similar_articles"] = json!(similar_articles_with_details);
+
+        // Use the SAME results for clustering - this is the key fix!
+        let cluster_id = match crate::db::cluster::assign_article_to_cluster_from_similar(
+            db,
+            article_id,
+            &similar_articles,
+        )
+        .await
+        {
+            Ok(id) => {
+                info!("Assigned article {} to cluster {}", article_id, id);
+                id
+            }
+            Err(e) => {
+                error!("Failed to assign article {} to cluster: {}", article_id, e);
+                0
+            }
+        };
+
+        // Generate cluster summary if assigned to a cluster
+        if cluster_id > 0 {
+            match crate::clustering::generate_cluster_summary(
+                db,
+                &llm_params.base.llm_client,
+                cluster_id,
+                &llm_params.base.model,
+            )
+            .await
+            {
+                Ok(summary) => {
+                    info!(
+                        "Generated summary for cluster {} (length: {})",
+                        cluster_id,
+                        summary.len()
+                    );
+
+                    // Update cluster significance
+                    if let Ok(score) =
+                        crate::clustering::calculate_cluster_significance(db, cluster_id).await
+                    {
+                        info!(
+                            "Updated significance score for cluster {}: {:.4}",
+                            cluster_id, score
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to generate summary for cluster {}: {}",
+                        cluster_id, e
+                    );
+                }
+            }
+
+            // Check for potential cluster merges
+            match crate::clustering::check_and_merge_similar_clusters(
+                db,
+                cluster_id,
+                &llm_params.base.llm_client,
+            )
+            .await
+            {
+                Ok(Some(new_cluster_id)) => {
+                    info!(
+                        "Merged cluster {} into new cluster {}",
+                        cluster_id, new_cluster_id
+                    );
+                }
+                Ok(None) => {
+                    debug!("No clusters merged for cluster {}", cluster_id);
+                }
+                Err(e) => {
+                    error!("Error checking for cluster merges: {}", e);
+                }
+            }
+        }
+
+        // Store embedding
+        if let Err(e) = store_embedding(
+            article_id,
+            &embedding,
+            pub_date,
+            topic,
+            quality,
+            entity_ids,
+            event_date.as_deref(),
+        )
+        .await
+        {
+            error!("Failed to store vector embedding: {:?}", e);
+        }
+
+        // Add cluster summary to response JSON if article belongs to a cluster
+        if let Ok(Some(cluster_summary)) =
+            crate::db::cluster::get_article_cluster_summary(db, article_id).await
+        {
+            response_json["cluster_summary"] = serde_json::json!(cluster_summary);
+        }
+    }
+
+    Ok(())
+}
+
+/// Converts an ArticleMatch and article details into a standardized JSON representation
+fn build_similar_article_json(
+    article: &crate::vector::types::ArticleMatch,
+    json_url: Option<String>,
+    title: Option<String>,
+    tiny_summary: Option<String>,
+) -> serde_json::Value {
+    json!({
+        // Basic fields
+        "id": article.id,
+        "json_url": json_url.unwrap_or_else(|| "Unknown URL".to_string()),
+        "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
+        "tiny_summary": tiny_summary.unwrap_or_default(),
+        "category": article.category.clone(),
+        "published_date": article.published_date.clone(),
+        "quality_score": article.quality_score,
+        "similarity_score": article.score,
+
+        // Vector quality fields - Explicitly unwrap Option types with defaults
+        "vector_score": article.vector_score.unwrap_or(0.0),
+        "vector_active_dimensions": article.vector_active_dimensions.unwrap_or(0),
+        "vector_magnitude": article.vector_magnitude.unwrap_or(0.0),
+
+        // Entity similarity fields - Explicitly unwrap Option types with defaults
+        "entity_overlap_count": article.entity_overlap_count.unwrap_or(0),
+        "primary_overlap_count": article.primary_overlap_count.unwrap_or(0),
+        "person_overlap": article.person_overlap.unwrap_or(0.0),
+        "org_overlap": article.org_overlap.unwrap_or(0.0),
+        "location_overlap": article.location_overlap.unwrap_or(0.0),
+        "event_overlap": article.event_overlap.unwrap_or(0.0),
+        "temporal_proximity": article.temporal_proximity.unwrap_or(0.0),
+
+        // Formula explanation
+        "similarity_formula": article.similarity_formula.as_ref().map_or_else(|| "Unknown".to_string(), |s| s.clone())
+    })
 }
