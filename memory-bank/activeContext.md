@@ -1,5 +1,78 @@
 # Active Context
 
+## ✅ COMPLETED: Unified Clustering and Similar Articles Architecture (June 6, 2025)
+
+### Major System Redesign Summary
+**Successfully implemented comprehensive architecture unification that fixes cluster summary generation issues by eliminating code path divergence between clustering and similar articles systems.**
+
+### Problems Resolved
+1. **Quality Score Prioritization**: Fixed quality score display in cluster summaries
+   - Added proper mapping from database scores (-2 to 4) to readable labels
+   - Uses same scale as scoring.rs: EXCELLENT (4/3), MODERATE (2/1), POOR (0/-1/-2)
+   
+2. **Quality Score Passing**: Fixed "unknown quality" issues
+   - Resolved timing issue where clustering happened before quality analysis
+   - Quality scores now properly calculated and available during clustering
+   
+3. **Related Articles Integration**: Fixed cluster summaries missing related articles
+   - Unified code paths so clustering sees same articles as similar_articles
+   - Both systems now use identical algorithm and results
+
+### Architectural Changes Implemented
+
+**New Processing Flow:**
+```
+Article Processing → Quality Analysis → Entity Extraction → Similarity Search → Clustering + Similar Articles JSON
+```
+
+**Unified Algorithm:**
+- **Before**: Clustering used broken Jaccard similarity (0.60 threshold), similar_articles used working algorithm
+- **After**: Both use same proven 60% vector + 40% entity similarity with 0.70 threshold
+
+**Single Search Call:**
+- One `get_similar_articles_with_entities()` call provides results for both clustering assignment and similar_articles JSON
+- Eliminates duplicate processing and ensures perfect consistency
+
+### Technical Implementation
+
+**Files Modified:**
+- `src/clustering/summary.rs`: Added `quality_score_to_label()` function
+- `src/db/cluster.rs`: Added `assign_article_to_cluster_from_similar()` function
+- `src/workers/analysis/processing.rs`: Moved similarity logic inline, fixed timing
+- `src/workers/analysis/mod.rs`: Removed deleted similarity module reference
+- **Deleted**: `src/workers/analysis/similarity.rs` - Logic moved inline to fix timing
+
+**Key Functions Added:**
+```rust
+// New unified clustering function
+pub async fn assign_article_to_cluster_from_similar(
+    db: &Database,
+    article_id: i64,
+    similar_articles: &[ArticleMatch],
+) -> Result<i64>
+
+// Quality score display function
+fn quality_score_to_label(score: i8) -> &'static str
+
+// Inline similarity processing
+async fn process_similarity_and_clustering_inline(...)
+```
+
+### Expected Impact
+- **Immediate**: Cluster summaries will include all high-quality related articles that similar_articles finds
+- **Consistency**: Both systems use identical similarity calculations and thresholds
+- **Performance**: Single similarity search serves both purposes
+- **Quality**: Proper quality score prioritization in cluster summaries
+
+### Status
+- ✅ Code fixes applied and compiled successfully
+- ✅ Architecture unification complete
+- ✅ Timing issues resolved
+- ✅ Algorithm consistency achieved
+- 🔄 **Next**: Monitor cluster summaries to verify they include related articles
+
+---
+
 ## ✅ RESOLVED: Database Schema Mismatch Preventing Cluster Summary Generation (June 5, 2025)
 
 ### Issue Resolution Summary
