@@ -172,6 +172,126 @@ pub async fn get_similar_articles(embedding: &Vec<f32>, limit: u64) -> Result<Ve
     }
 }
 
+/// Get complete article data for a list of article IDs using vector database
+/// This reuses the same reliable data source as similar articles
+pub async fn get_articles_by_ids(article_ids: &[i64]) -> Result<Vec<ArticleMatch>> {
+    if article_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    info!(target: TARGET_VECTOR, "Getting article data for {} article IDs from vector database", article_ids.len());
+
+    let client = Qdrant::from_url(
+        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .build()?;
+
+    // Convert article IDs to point IDs
+    let point_ids: Vec<qdrant_client::qdrant::PointId> = article_ids
+        .iter()
+        .map(|&id| qdrant_client::qdrant::PointId {
+            point_id_options: Some(PointIdOptions::Num(id as u64)),
+        })
+        .collect();
+
+    // Get points from Qdrant
+    let get_points = qdrant_client::qdrant::GetPoints {
+        collection_name: "articles".to_string(),
+        ids: point_ids,
+        with_payload: Some(WithPayloadSelector::from(true)),
+        with_vectors: Some(WithVectorsSelector::from(false)),
+        ..Default::default()
+    };
+
+    let response = client.get_points(get_points).await?;
+
+    let mut articles = Vec::new();
+
+    for point in response.result {
+        let id = match point.id.unwrap().point_id_options.unwrap() {
+            PointIdOptions::Num(num) => num as i64,
+            _ => {
+                warn!(target: TARGET_VECTOR, "Unexpected non-numeric point ID in vector database");
+                continue;
+            }
+        };
+
+        let payload = point.payload;
+
+        // Extract article metadata from payload
+        let published_date = payload
+            .get("published_date")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| {
+                if let qdrant_client::qdrant::value::Kind::StringValue(s) = k {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        let category = payload
+            .get("category")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| {
+                if let qdrant_client::qdrant::value::Kind::StringValue(s) = k {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        let quality_score = payload
+            .get("quality_score")
+            .and_then(|v| v.kind.as_ref())
+            .and_then(|k| {
+                if let qdrant_client::qdrant::value::Kind::IntegerValue(i) = k {
+                    Some(*i as i8)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0);
+
+        info!(target: TARGET_VECTOR, "Retrieved article {} from vector DB: quality={}, date={}", 
+              id, quality_score, published_date);
+
+        // Create ArticleMatch with data from vector database
+        let article = ArticleMatch {
+            id,
+            published_date,
+            category,
+            quality_score,
+            score: 1.0, // Default score for direct retrieval
+
+            // Vector metrics (not applicable for direct retrieval)
+            vector_score: None,
+            vector_active_dimensions: None,
+            vector_magnitude: None,
+
+            // Entity metrics (not applicable for direct retrieval)
+            entity_overlap_count: None,
+            primary_overlap_count: None,
+            person_overlap: None,
+            org_overlap: None,
+            location_overlap: None,
+            event_overlap: None,
+            temporal_proximity: None,
+
+            similarity_formula: Some("Direct retrieval from vector database".to_string()),
+        };
+
+        articles.push(article);
+    }
+
+    info!(target: TARGET_VECTOR, "Successfully retrieved {} articles from vector database", articles.len());
+
+    Ok(articles)
+}
+
 /// Get all entities for a specific article
 pub async fn get_article_entities(article_id: i64) -> Result<Option<entity::ExtractedEntities>> {
     let db = crate::db::core::Database::instance().await;

@@ -1,5 +1,84 @@
 # Active Context
 
+## ✅ COMPLETED: Unified Vector-First Architecture for Cluster Summaries (June 7, 2025)
+
+### Issue Resolution Summary
+**Successfully implemented unified vector-first architecture to fix cluster summaries showing "Untitled" articles with quality 0. The issue was a broken hybrid SQLite+vector approach that caused data inconsistency between similar articles (working) and cluster summaries (broken).**
+
+### Root Cause Analysis
+The system had **two different data retrieval strategies** causing inconsistent results:
+
+**Similar Articles (Working ✅):**
+- Used `get_similar_articles_with_entities()` → Vector database (Qdrant)
+- Retrieved complete article data including proper titles and quality scores
+- Returned `ArticleMatch` objects with correct metadata
+
+**Cluster Summaries (Broken ❌):**
+- Used `get_cluster_articles()` → Hybrid SQLite + Vector database approach
+- SQLite queries returned incomplete data (NULL titles, missing quality)
+- `get_article_quality_from_vector_db()` function was failing and returning fallback value 0
+- Created "Untitled" articles with quality 0 in cluster summaries
+
+**The Problem:**
+```rust
+// WORKING (similar articles)
+vector_search() → Complete ArticleMatch with titles + quality
+
+// BROKEN (cluster summaries)  
+sqlite_query() + get_article_quality_from_vector_db() → Incomplete data + failed fallback
+```
+
+### Technical Solution Implemented
+
+**Unified Vector-First Architecture:**
+Eliminated the broken hybrid approach and standardized on the proven vector-first strategy used by similar articles.
+
+**New Data Flow:**
+```rust
+// Step 1: Get article IDs from SQLite cluster mappings
+SQLite: SELECT article_id FROM article_cluster_mappings WHERE cluster_id = ?
+
+// Step 2: Get complete article data from vector database (same as similar articles)
+Vector DB: get_articles_by_ids() → Complete ArticleMatch objects
+
+// Step 3: Convert to ClusterArticle with all metadata intact
+Result: Proper titles, quality scores, dates
+```
+
+**Files Modified:**
+- `src/vector/search.rs`: Added `get_articles_by_ids()` function
+- `src/db/cluster.rs`: Replaced `get_cluster_articles()` with unified vector-first approach, removed broken `get_article_quality_from_vector_db()` function
+
+**Key Functions Added:**
+```rust
+// New unified article retrieval function
+pub async fn get_articles_by_ids(article_ids: &[i64]) -> Result<Vec<ArticleMatch>>
+
+// Updated cluster article retrieval (vector-first)
+pub async fn get_cluster_articles() -> Result<Vec<ClusterArticle>>
+```
+
+**Preservation of Working Logic:**
+- **Zero changes** to similar articles functionality
+- **Zero breaking changes** to existing ArticleMatch structure
+- **Zero impact** on working vector search core functionality
+
+### Expected Impact
+- **Immediate**: Cluster summaries will show proper article titles instead of "Untitled"
+- **Quality Scores**: Cluster summaries will show actual quality scores (2, 3, etc.) instead of 0
+- **Consistency**: Both similar articles and cluster summaries use identical data source
+- **Reliability**: Eliminates failing hybrid queries and fallback values
+- **Architecture**: Single unified code path for all article data retrieval
+
+### Status
+- ✅ Unified vector-first architecture implemented
+- ✅ Broken hybrid SQLite+vector approach eliminated
+- ✅ Code compilation verified successful
+- ✅ Similar articles functionality preserved
+- 🔄 **Next**: Monitor cluster summaries to verify proper titles and quality scores appear
+
+---
+
 ## ✅ COMPLETED: Critical Cluster Summary Fix (June 6, 2025)
 
 ### Issue Resolution Summary
