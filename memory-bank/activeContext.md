@@ -174,6 +174,17 @@ SELECT e.id, e.name, e.type FROM entities e WHERE e.id = ?
 
 ## Current Work Focus
 
+### ✅ COMPLETED: Cluster Summary Quality Score Fix (June 7, 2025)
+- **Task**: Fix quality scores showing as "0" in cluster summaries while working correctly elsewhere
+- **Status**: COMPLETED and production-ready
+- **Branch**: main
+- **Completion Date**: June 7, 2025
+
+**Root Cause:** Data source mismatch - cluster summaries queried quality scores from SQLite but they're stored in Qdrant
+**Solution:** Updated `get_cluster_articles()` to retrieve quality scores from Qdrant vector database
+**Technical Changes:** Added `get_article_quality_from_vector_db()` helper function, updated SQL query, added post-retrieval sorting
+**Impact:** Quality scores now display correctly in cluster summaries, enabling proper quality-based prioritization
+
 ### ✅ COMPLETED: Critical Cluster Summary Bug Fix (June 6, 2025)
 - **Task**: Fix missing `update_article_cluster_id()` calls preventing cluster summary retrieval
 - **Status**: COMPLETED and production-ready

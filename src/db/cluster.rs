@@ -3,7 +3,7 @@ use chrono::Utc;
 use sqlx::{self, Row};
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::clustering::types::{ClusterArticle, EntityDetail};
 use crate::db::core::Database;
@@ -409,6 +409,50 @@ pub async fn update_article_cluster_id(
     Ok(())
 }
 
+/// Helper function to get quality score from vector database (Qdrant)
+/// Quality scores are stored in Qdrant as payload metadata, not in SQLite
+async fn get_article_quality_from_vector_db(article_id: i64) -> Result<i8> {
+    use crate::vector::QDRANT_URL_ENV;
+    use qdrant_client::qdrant::point_id::PointIdOptions;
+    use qdrant_client::qdrant::{GetPoints, PointId, WithPayloadSelector, WithVectorsSelector};
+    use qdrant_client::Qdrant;
+
+    let client = Qdrant::from_url(
+        &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
+    )
+    .timeout(std::time::Duration::from_secs(60))
+    .build()?;
+
+    let response = client
+        .get_points(GetPoints {
+            collection_name: "articles".to_string(),
+            ids: vec![PointId {
+                point_id_options: Some(PointIdOptions::Num(article_id as u64)),
+            }],
+            with_payload: Some(WithPayloadSelector::from(true)),
+            with_vectors: Some(WithVectorsSelector::from(false)),
+            ..Default::default()
+        })
+        .await?;
+
+    if let Some(point) = response.result.first() {
+        if let Some(quality_value) = point.payload.get("quality_score") {
+            if let Some(qdrant_client::qdrant::value::Kind::IntegerValue(quality)) =
+                &quality_value.kind
+            {
+                return Ok(*quality as i8);
+            }
+        }
+    }
+
+    // Return 0 if quality score not found in vector database
+    warn!(
+        "Quality score not found in vector database for article {}",
+        article_id
+    );
+    Ok(0)
+}
+
 /// Gets a list of clusters that need summary updates
 ///
 /// # Arguments
@@ -450,11 +494,11 @@ pub async fn get_cluster_articles(
 ) -> Result<Vec<ClusterArticle>> {
     let rows = sqlx::query(
         r#"
-        SELECT a.id, a.title, a.url, a.json_data, a.pub_date, a.tiny_summary, a.quality, acm.similarity_score
+        SELECT a.id, a.title, a.url, a.json_data, a.pub_date, a.tiny_summary, acm.similarity_score
         FROM articles a
         JOIN article_cluster_mappings acm ON a.id = acm.article_id
         WHERE acm.cluster_id = ?
-        ORDER BY a.quality DESC, a.pub_date DESC, acm.similarity_score DESC
+        ORDER BY a.pub_date DESC, acm.similarity_score DESC
         LIMIT ?
         "#,
     )
@@ -474,7 +518,9 @@ pub async fn get_cluster_articles(
             pub_date: row.get("pub_date"),
             tiny_summary: row.get("tiny_summary"),
             similarity_score: row.get("similarity_score"),
-            quality_score: row.get("quality"),
+            quality_score: get_article_quality_from_vector_db(row.get("id"))
+                .await
+                .unwrap_or(0),
         };
 
         articles.push(article);
