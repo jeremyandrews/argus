@@ -121,14 +121,16 @@ fn build_summary_prompt(
     for (i, article) in articles.iter().enumerate() {
         let quality_label = quality_score_to_label(article.quality_score);
 
-        let article_entry = format!(
-            "Article {}: [{}] {} (Quality: {})\nTitle: {}\nSummary: {}\nURL: {}\n\n",
+        let article_entry =
+            format!(
+            "Article {}: [{}] {} (Quality: {})\nTitle: {}\nContent: {}\nSummary: {}\nURL: {}\n\n",
             i + 1,
             article.pub_date.as_deref().unwrap_or("Unknown date"),
             quality_label,
             article.quality_score,
             article.title.as_deref().unwrap_or("Untitled"),
-            article.tiny_summary.as_deref().unwrap_or(""),
+            article.body.as_deref().unwrap_or("No content available"),
+            article.tiny_summary.as_deref().unwrap_or("No summary available"),
             article.url
         );
 

@@ -1,5 +1,149 @@
 # Active Context
 
+## ✅ COMPLETED: Missing Article Bodies in Cluster Summaries Fix + LLM Context Optimization (June 8, 2025)
+
+### Issue Resolution Summary
+**Successfully fixed critical bug where cluster summaries had missing article bodies, preventing meaningful summary generation. The issue was in the `get_cluster_articles()` function which was only retrieving metadata from the vector database but not the actual article content from SQLite. Additionally optimized LLM context usage by extracting only article body content instead of storing complete JSON data.**
+
+### Root Cause Analysis
+The `get_cluster_articles()` function in `src/db/cluster.rs` was using a "vector-first approach" but was incomplete:
+
+**The Problem:**
+```rust
+// Step 1: Get article IDs from cluster mappings (SQLite) ✅
+// Step 2: Get metadata from vector database (quality scores, dates) ✅  
+// Step 3: Create ClusterArticle objects with PLACEHOLDER data ❌
+ClusterArticle {
+    title: Some(format!("Article {}", article_id)), // Placeholder!
+    url: format!("vector_article_{}", article_id),   // Placeholder!
+    json_data: None,                                 // Missing article body!
+    tiny_summary: None,                              // Missing summary!
+}
+```
+
+**Comments in Code Revealed the Issue:**
+```rust
+// Placeholder title - will get proper title from SQLite next
+// Placeholder URL - will get proper URL from SQLite next
+```
+
+The comments literally said "will get proper title from SQLite next" - but this step was **never implemented**.
+
+### Technical Solution Implemented
+
+**Complete Data Retrieval Architecture:**
+Enhanced the existing vector-first approach to also retrieve complete article content from SQLite.
+
+**New Data Flow:**
+```rust
+// Step 1: Get article IDs from SQLite cluster mappings ✅
+SQLite: SELECT article_id FROM article_cluster_mappings WHERE cluster_id = ?
+
+// Step 2: Get metadata from vector database ✅
+Vector DB: get_articles_by_ids() → quality scores, dates, categories
+
+// Step 3: NEW - Get complete article content from SQLite ✅
+SQLite: SELECT id, title, url, json_data, pub_date, tiny_summary FROM articles WHERE id IN (...)
+
+// Step 4: Merge both data sources into complete ClusterArticle objects ✅
+Result: Real titles, URLs, article bodies (json_data), summaries
+```
+
+**Files Modified:**
+- `src/db/cluster.rs`: Enhanced `get_cluster_articles()` function with SQLite content retrieval
+
+**Key Code Changes:**
+```rust
+// Added bulk SQLite query for complete article data
+let query = format!(
+    r#"SELECT id, title, url, json_data, pub_date, tiny_summary
+       FROM articles WHERE id IN ({})"#,
+    placeholders
+);
+
+// Merge vector metadata with SQLite content
+let article = ClusterArticle {
+    id: article_id,
+    title,           // Real title from SQLite
+    url,             // Real URL from SQLite  
+    json_data,       // Article body from SQLite!
+    tiny_summary,    // Real summary from SQLite
+    quality_score,   // Quality score from vector DB
+    // ... other fields
+};
+```
+
+**Enhanced Logging:**
+Added detailed logging to verify the fix:
+```rust
+info!(
+    "Successfully retrieved {} cluster articles using vector-first approach with SQLite enhancement: {}/{} have json_data, {}/{} have titles, {}/{} have tiny_summary",
+    articles.len(),
+    articles_with_json_data, articles.len(),
+    articles_with_titles, articles.len(), 
+    articles_with_summaries, articles.len()
+);
+```
+
+### Expected Impact
+- **Immediate**: Cluster summaries will now have access to actual article content instead of placeholder data
+- **Content Quality**: Summary generation can now use real article bodies, titles, and summaries
+- **Debugging**: Enhanced logging shows exactly how many articles have complete data
+- **Consistency**: Maintains the working vector-first architecture while adding missing content
+
+### Production Testing Commands
+```bash
+# Build release version
+cargo build --release
+
+# Test cluster summary generation
+cargo run --release --bin test_cluster_summary
+
+# Look for these log messages indicating the fix works:
+# "X/X have json_data" (should be high percentage)
+# "has_json_data=true" in individual article logs
+```
+
+### LLM Context Optimization (June 8, 2025)
+**Secondary optimization implemented to improve LLM context efficiency:**
+
+**Problem:** The `json_data` field contains complete RSS metadata (relevance tags, full JSON structure) which wastes LLM context tokens.
+
+**Solution:** Changed `ClusterArticle` struct to extract only essential content:
+```rust
+// BEFORE: Waste LLM context with full JSON
+pub struct ClusterArticle {
+    pub json_data: Option<String>,  // Complete RSS data including metadata
+}
+
+// AFTER: Optimized for LLM context
+pub struct ClusterArticle {
+    pub body: Option<String>,  // Only article content (max 2000 chars)
+}
+```
+
+**Implementation:**
+- Updated `ClusterArticle` struct to use `body` field instead of `json_data`
+- Extract only the `"body"` field from JSON data during retrieval
+- Limit body content to 2000 characters to prevent context overflow
+- Updated cluster summary prompt to use extracted body content
+
+**Files Modified:**
+- `src/clustering/types.rs`: Changed struct field from `json_data` to `body`
+- `src/db/cluster.rs`: Added JSON parsing to extract body content
+- `src/clustering/summary.rs`: Updated prompt to use body field
+
+### Status
+- ✅ Missing SQLite content retrieval implemented
+- ✅ Article bodies now available to cluster summaries (optimized for LLM context)
+- ✅ Real titles and URLs replace placeholder values
+- ✅ LLM context usage optimized (body content only, max 2000 chars)
+- ✅ Enhanced logging for production verification
+- ✅ Code compilation verified successful
+- 🔄 **Next**: Verify cluster summaries contain actual article content in production
+
+---
+
 ## ✅ COMPLETED: Unified Vector-First Architecture for Cluster Summaries (June 7, 2025)
 
 ### Issue Resolution Summary

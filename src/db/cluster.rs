@@ -494,7 +494,50 @@ pub async fn get_cluster_articles(
         })
         .collect();
 
-    // Step 3: Convert ArticleMatch objects to ClusterArticle objects
+    // Step 3: Get complete article data from SQLite using article IDs
+    if article_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Create SQL IN clause for bulk query
+    let placeholders = article_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let query = format!(
+        r#"
+        SELECT id, title, url, json_data, pub_date, tiny_summary
+        FROM articles
+        WHERE id IN ({})
+        "#,
+        placeholders
+    );
+
+    let mut query_builder = sqlx::query(&query);
+    for id in &article_ids {
+        query_builder = query_builder.bind(id);
+    }
+
+    let sqlite_rows = query_builder.fetch_all(db.pool()).await?;
+
+    // Create a map of article_id -> SQLite data
+    let mut sqlite_data_map = std::collections::HashMap::new();
+    for row in sqlite_rows {
+        let id: i64 = row.get("id");
+        sqlite_data_map.insert(
+            id,
+            (
+                row.get::<Option<String>, _>("title"),
+                row.get::<String, _>("url"),
+                row.get::<Option<String>, _>("json_data"),
+                row.get::<Option<String>, _>("pub_date"),
+                row.get::<Option<String>, _>("tiny_summary"),
+            ),
+        );
+    }
+
+    // Step 4: Convert ArticleMatch objects to ClusterArticle objects with complete data
     let mut articles = Vec::new();
 
     for vector_article in vector_articles {
@@ -509,21 +552,59 @@ pub async fn get_cluster_articles(
         let quality_score = vector_article.quality_score;
         let published_date = vector_article.published_date;
 
-        // Convert to ClusterArticle with data from vector database
+        // Get complete article data from SQLite
+        let (title, url, json_data, pub_date, tiny_summary) =
+            sqlite_data_map.get(&article_id).cloned().unwrap_or((
+                None,
+                format!("missing_article_{}", article_id),
+                None,
+                None,
+                None,
+            ));
+
+        // Extract article body from json_data to save LLM context
+        let body = if let Some(ref json_str) = json_data {
+            match serde_json::from_str::<serde_json::Value>(json_str) {
+                Ok(json_obj) => {
+                    json_obj.get("body").and_then(|v| v.as_str()).map(|s| {
+                        // Limit body length to prevent context overflow (max ~2000 chars)
+                        if s.len() > 2000 {
+                            format!("{}...", &s[..2000])
+                        } else {
+                            s.to_string()
+                        }
+                    })
+                }
+                Err(_) => {
+                    debug!("Failed to parse JSON data for article {}", article_id);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Convert to ClusterArticle with complete data from both sources
         let article = ClusterArticle {
             id: article_id,
-            title: Some(format!("Article {}", article_id)), // Placeholder title - will get proper title from SQLite next
-            url: format!("vector_article_{}", article_id), // Placeholder URL - will get proper URL from SQLite next
-            json_data: None,                               // Not available from vector DB
-            pub_date: Some(published_date.clone()),
-            tiny_summary: None, // Not available from vector DB
+            title,
+            url,
+            body, // Extracted article body instead of full json_data
+            pub_date: pub_date.or(Some(published_date.clone())), // Prefer SQLite date, fallback to vector date
+            tiny_summary,
             similarity_score,
-            quality_score, // Now comes from vector DB!
+            quality_score, // From vector DB
         };
 
         info!(
-            "Converted article {} from vector DB: quality={}, date={}",
-            article_id, quality_score, published_date
+            "Converted article {} with complete data: has_title={}, has_body={}, has_tiny_summary={}, body_length={}, quality={}, date={}",
+            article_id,
+            article.title.is_some(),
+            article.body.is_some(),
+            article.tiny_summary.is_some(),
+            article.body.as_ref().map(|b| b.len()).unwrap_or(0),
+            quality_score,
+            article.pub_date.as_deref().unwrap_or("None")
         );
 
         articles.push(article);
@@ -538,9 +619,17 @@ pub async fn get_cluster_articles(
         })
     });
 
+    // Log summary statistics about the articles retrieved
+    let articles_with_body = articles.iter().filter(|a| a.body.is_some()).count();
+    let articles_with_titles = articles.iter().filter(|a| a.title.is_some()).count();
+    let articles_with_summaries = articles.iter().filter(|a| a.tiny_summary.is_some()).count();
+
     info!(
-        "Successfully retrieved {} cluster articles using vector-first approach",
-        articles.len()
+        "Successfully retrieved {} cluster articles using vector-first approach with SQLite enhancement: {}/{} have body, {}/{} have titles, {}/{} have tiny_summary",
+        articles.len(),
+        articles_with_body, articles.len(),
+        articles_with_titles, articles.len(),
+        articles_with_summaries, articles.len()
     );
 
     Ok(articles)

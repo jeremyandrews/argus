@@ -32,7 +32,7 @@ pub struct ClusterArticle {
     pub id: i64,
     pub title: Option<String>,
     pub url: String,
-    pub json_data: Option<String>,
+    pub body: Option<String>, // Article body content extracted from json_data
     pub pub_date: Option<String>,
     pub tiny_summary: Option<String>,
     pub similarity_score: f64,
