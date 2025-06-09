@@ -562,50 +562,63 @@ pub async fn get_cluster_articles(
                 None,
             ));
 
-        // Extract article body from json_data to save LLM context
-        let body = if let Some(ref json_str) = json_data {
+        // Extract article body and titles from json_data
+        let (body, json_title, json_tiny_title) = if let Some(ref json_str) = json_data {
             match serde_json::from_str::<serde_json::Value>(json_str) {
                 Ok(json_obj) => {
-                    json_obj.get("body").and_then(|v| v.as_str()).map(|s| {
+                    let body = json_obj.get("body").and_then(|v| v.as_str()).map(|s| {
                         // Limit body length to prevent context overflow (max ~2000 chars)
                         if s.len() > 2000 {
                             format!("{}...", &s[..2000])
                         } else {
                             s.to_string()
                         }
-                    })
+                    });
+                    let json_title = json_obj
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let json_tiny_title = json_obj
+                        .get("tiny_title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    (body, json_title, json_tiny_title)
                 }
                 Err(_) => {
                     debug!("Failed to parse JSON data for article {}", article_id);
-                    None
+                    (None, None, None)
                 }
             }
         } else {
-            None
+            (None, None, None)
         };
 
-        // Convert to ClusterArticle with complete data from both sources
-        let article = ClusterArticle {
-            id: article_id,
-            title,
-            url,
-            body, // Extracted article body instead of full json_data
-            pub_date: pub_date.or(Some(published_date.clone())), // Prefer SQLite date, fallback to vector date
-            tiny_summary,
-            similarity_score,
-            quality_score, // From vector DB
-        };
+        // Use the best available title: prefer SQLite title, fallback to JSON title
+        let final_title = title.or(json_title);
+        let final_tiny_title = tiny_summary.or(json_tiny_title);
 
         info!(
             "Converted article {} with complete data: has_title={}, has_body={}, has_tiny_summary={}, body_length={}, quality={}, date={}",
             article_id,
-            article.title.is_some(),
-            article.body.is_some(),
-            article.tiny_summary.is_some(),
-            article.body.as_ref().map(|b| b.len()).unwrap_or(0),
+            final_title.is_some(),
+            body.is_some(),
+            final_tiny_title.is_some(),
+            body.as_ref().map(|b| b.len()).unwrap_or(0),
             quality_score,
-            article.pub_date.as_deref().unwrap_or("None")
+            pub_date.as_deref().or(Some(published_date.as_str())).unwrap_or("None")
         );
+
+        // Convert to ClusterArticle with complete data from both sources
+        let article = ClusterArticle {
+            id: article_id,
+            title: final_title,
+            url,
+            body, // Extracted article body instead of full json_data
+            pub_date: pub_date.or(Some(published_date.clone())), // Prefer SQLite date, fallback to vector date
+            tiny_summary: final_tiny_title,
+            similarity_score,
+            quality_score, // From vector DB
+        };
 
         articles.push(article);
     }
