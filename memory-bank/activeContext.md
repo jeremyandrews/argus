@@ -1,5 +1,153 @@
 # Active Context
 
+## ✅ COMPLETED: Cluster Summary Quality Mapping and Prompt Improvements (June 10, 2025)
+
+### Issue Resolution Summary
+**Successfully improved cluster summary system to eliminate AI confusion and enhance output quality. Fixed broken quality mapping system, restructured prompt template, and added comprehensive source attribution with complete reference metadata.**
+
+### Problems Identified and Fixed
+
+**Problem #1: Broken Quality Mapping System**
+- **Issue**: AI seeing raw scores (4, 3, 2, 1, 0, -1, -2) with inconsistent labels
+  ```
+  Article 1: [date] EXCELLENT QUALITY (Quality: 4)
+  Article 6: [date] EXCELLENT QUALITY (Quality: 3)  
+  Article 7: [date] MODERATE QUALITY (Quality: 2)
+  ```
+- **Confusion**: `<think>` tags showed AI struggling with "Quality: 4" vs "Quality: 3" categorization
+- **Root Cause**: No standardized tier mapping function - prompt showing raw database scores
+
+**Problem #2: Prompt Structure Issues**
+- **Issue**: Massive content blocks with full article text causing prompt bloat
+- **Confusion**: Inconsistent article numbering between analysis and references sections
+- **Problem**: Mixed analysis content with reference metadata
+
+**Problem #3: Incomplete References Section**
+- **Issue**: References showing incomplete data like `[2025-06-08] *Untitled* (Quality: 4)`
+- **Missing Data**: No source names, URLs, summaries, or proper quality tiers
+- **Result**: AI couldn't generate proper citations with complete metadata
+
+### Technical Solutions Implemented
+
+**1. Fixed Quality Mapping System**
+Created standardized 3-tier mapping system:
+```rust
+/// Maps raw quality scores to standardized 3-tier system
+pub fn map_quality_to_tier(raw_score: i8) -> i8 {
+    match raw_score {
+        4 | 3 => 3,        // Excellent → Tier 3
+        2 | 1 => 2,        // Moderate → Tier 2  
+        0 | -1 | -2 => 1,  // Low → Tier 1
+        _ => {
+            error!("Unknown quality score encountered: {}", raw_score);
+            1  // Default to Low and continue
+        }
+    }
+}
+
+/// Maps quality tier to human-readable label
+pub fn quality_tier_to_label(tier: i8) -> &'static str {
+    match tier {
+        3 => "Excellent",
+        2 => "Moderate", 
+        1 => "Low",
+        _ => {
+            error!("Invalid quality tier: {}", tier);
+            "Unknown"
+        }
+    }
+}
+```
+
+**Result**: AI now sees consistent `Article 1 (Excellent)` instead of confusing mixed labels.
+
+**2. Restructured Prompt Template**
+Separated analysis content from reference metadata:
+```rust
+// ANALYSIS SECTION (for AI reasoning):
+Article 1 (Excellent): Trump's travel ban on citizens from 12 mainly African...
+Article 2 (Excellent): President Donald Trump announced a travel ban...
+
+// REFERENCES SECTION (for citation generation):
+Excellent Quality Sources:
+1. [2025-06-09] "Trump's new travel ban takes effect..." - Burnaby Now
+   URL: https://www.burnabynow.com/politics/trumps-new-travel-ban...
+   Summary: President Donald Trump's travel ban on citizens...
+   Quality: 3
+```
+
+**Benefits**: 
+- Cleaner, more focused analysis section
+- Complete metadata for proper citations
+- Consistent article numbering
+- Reduced prompt bloat
+
+**3. Enhanced Source Name Extraction**
+Added intelligent URL-to-source name mapping:
+```rust
+/// Extracts readable source name from URL
+pub fn extract_source_name(url: &str) -> String {
+    match clean_domain {
+        "burnabynow" => "Burnaby Now".to_string(),
+        "finance" => "Yahoo Finance".to_string(),
+        "9to5mac" => "9to5Mac".to_string(),
+        _ => title_case(clean_domain),
+    }
+}
+```
+
+**Result**: Professional source attribution instead of raw URLs.
+
+**4. Added Error Logging**
+Added comprehensive error logging for robustness:
+- Unknown quality scores logged and gracefully handled
+- Invalid quality tiers logged with fallback
+- System continues operating even with bad data
+
+### Files Modified
+- **`src/clustering/summary.rs`**: Complete rewrite of prompt generation system
+  - Added quality mapping functions
+  - Added source name extraction
+  - Restructured `build_summary_prompt()` function
+  - Enhanced error handling and logging
+
+### Testing Verification
+Created and executed test to verify all functions work correctly:
+```
+Raw score: 4 → Tier: 3 → Label: Excellent ✅
+Raw score: 3 → Tier: 3 → Label: Excellent ✅
+Raw score: 2 → Tier: 2 → Label: Moderate ✅
+Raw score: 1 → Tier: 2 → Label: Moderate ✅
+Raw score: 0 → Tier: 1 → Label: Low ✅
+Raw score: 99 → [ERROR] → Tier: 1 → Label: Low ✅
+
+URL: burnabynow.com → Source: Burnaby Now ✅
+URL: finance.yahoo.com → Source: Yahoo Finance ✅
+```
+
+### Expected Impact
+**Immediate Quality Improvements:**
+- **Eliminates AI Confusion**: No more `<think>` tag struggles with quality categorization
+- **Consistent Data**: AI sees standardized tiers (1, 2, 3) instead of raw scores (-2 to 4)
+- **Complete References**: All metadata (source, URL, title, tiny_title, quality) available for citations
+- **Professional Attribution**: Source names instead of raw domain URLs
+
+**Summary Output Improvements:**
+- **Better Quality Notes**: AI can properly qualify Low quality sources
+- **Accurate References**: Complete source listings with all required metadata
+- **Consistent Format**: Standardized quality tier display throughout
+- **Enhanced Reliability**: Graceful error handling prevents system failures
+
+### Status
+- ✅ Quality mapping system implemented and tested
+- ✅ Prompt template restructured for clarity
+- ✅ Source name extraction working correctly
+- ✅ Error logging added for robustness
+- ✅ All functions verified with comprehensive testing
+- 🔄 **Next**: Monitor cluster summary generation to verify improved output quality
+
+---
+
 ## ✅ COMPLETED: Missing Article Bodies in Cluster Summaries Fix + LLM Context Optimization (June 8, 2025)
 
 ### Issue Resolution Summary
