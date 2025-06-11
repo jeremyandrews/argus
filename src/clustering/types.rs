@@ -46,3 +46,15 @@ pub struct EntityDetail {
     pub name: String,
     pub entity_type: EntityType,
 }
+
+/// Struct representing current article data for cluster summary generation
+#[derive(Debug, Clone)]
+pub struct CurrentArticleData {
+    pub id: i64,
+    pub title: String,      // Original article title (may be foreign language)
+    pub tiny_title: String, // LLM-generated English title
+    pub url: String,
+    pub tiny_summary: String,
+    pub quality_score: i8,
+    pub pub_date: Option<String>,
+}

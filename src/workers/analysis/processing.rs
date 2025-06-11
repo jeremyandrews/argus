@@ -918,11 +918,29 @@ async fn process_similarity_and_clustering_inline(
 
         // Generate cluster summary if assigned to a cluster
         if cluster_id > 0 {
+            // Extract current article data from response_json for cluster summary
+            let current_article_data = crate::clustering::types::CurrentArticleData {
+                id: article_id,
+                title: response_json["title"].as_str().unwrap_or("").to_string(),
+                tiny_title: response_json["tiny_title"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                url: response_json["url"].as_str().unwrap_or("").to_string(),
+                tiny_summary: response_json["tiny_summary"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                quality_score: quality,
+                pub_date: pub_date.map(|s| s.to_string()),
+            };
+
             match crate::clustering::generate_cluster_summary(
                 db,
                 &llm_params.base.llm_client,
                 cluster_id,
                 &llm_params.base.model,
+                Some(current_article_data),
             )
             .await
             {

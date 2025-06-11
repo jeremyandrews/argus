@@ -123,7 +123,7 @@ pub async fn process_article_clustering(
 
                 // Generate summary for the cluster
                 match crate::clustering::generate_cluster_summary(
-                    db, llm_client, cluster_id, model_name,
+                    db, llm_client, cluster_id, model_name, None,
                 )
                 .await
                 {

@@ -48,7 +48,9 @@ async fn main() -> Result<()> {
             info!("🤖 Using model: {}", model_name);
 
             // Generate summary
-            match generate_cluster_summary(&db, &llm_client, test_cluster_id, &model_name).await {
+            match generate_cluster_summary(&db, &llm_client, test_cluster_id, &model_name, None)
+                .await
+            {
                 Ok(summary) => {
                     info!("✅ Successfully generated cluster summary!");
                     info!("📄 Summary length: {} characters", summary.len());
@@ -64,8 +66,14 @@ async fn main() -> Result<()> {
                     // Test a few more clusters
                     for &cluster_id in cluster_ids.iter().take(3).skip(1) {
                         info!("🎯 Testing cluster {}", cluster_id);
-                        match generate_cluster_summary(&db, &llm_client, cluster_id, &model_name)
-                            .await
+                        match generate_cluster_summary(
+                            &db,
+                            &llm_client,
+                            cluster_id,
+                            &model_name,
+                            None,
+                        )
+                        .await
                         {
                             Ok(summary) => {
                                 info!(

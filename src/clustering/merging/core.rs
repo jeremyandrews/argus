@@ -76,6 +76,7 @@ pub async fn merge_clusters(
         &get_default_llm_client(),
         new_cluster_id,
         crate::DEFAULT_OLLAMA_MODEL,
+        None,
     )
     .await
     {

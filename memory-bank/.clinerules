@@ -376,6 +376,37 @@
   - Content is stored in both full and summarized formats for different use cases
   - Article IDs must be exposed in R2 JSON to allow for match feedback
 
+## Cluster Summary Architecture & Best Practices
+- **Current Article Integration Pattern**:
+  - ALWAYS pass current article data to `generate_cluster_summary()` via the `CurrentArticleData` struct
+  - Current article should be processed FIRST in cluster summaries for relevance
+  - Use the 5-parameter function signature: `(db, llm_client, cluster_id, model_name, current_article_data)`
+  - For existing cluster summaries (no current article), pass `None` as the 5th parameter
+
+- **Title Formatting for International Sources**:
+  - Use `format_article_title(tiny_title, original_title)` for proper international display
+  - Format pattern: "English Title (Original Title)" for foreign language sources
+  - Handles edge cases: same titles, missing titles, single language sources
+  - NEVER display "Untitled" when proper titles are available
+
+- **Function Signature Updates**:
+  - ALL calls to `generate_cluster_summary()` must use the 5-parameter version
+  - Check these locations when updating: processing.rs, entity_handling.rs, merging/core.rs, test files, management tools
+  - Maintain backward compatibility by allowing `None` for current article parameter
+  - Update all test files and utilities to use new signature
+
+- **Cluster Summary Generation Pipeline**:
+  - Extract current article data from response_json BEFORE cluster summary generation
+  - Include: id, title, tiny_title, url, tiny_summary, quality_score, pub_date
+  - Call cluster summary generation with current article data
+  - Store cluster summary in article JSON for frontend access
+
+- **Quality Assurance Patterns**:
+  - Run `cargo check` after all function signature changes
+  - Verify compilation succeeds before considering changes complete
+  - Test cluster summary generation with both current article and None scenarios
+  - Check that titles appear correctly in References sections
+
 ## Production Debugging Patterns
 - **Systematic Code Flow Investigation**:
   - When a process appears to hang, trace execution by examining logs for the last successful operation
@@ -402,3 +433,10 @@
   - Ensure debug messages include enough context for remote diagnosis
   - Production logs can be monitored with grep patterns for specific issues
   - DO NOT create new test utilities or binaries - use production deployment for debugging
+
+- **Function Signature Change Debugging**:
+  - When adding parameters to widely-used functions, use compiler errors as a checklist
+  - Each compilation error points to a call site that needs updating
+  - Fix ALL compilation errors before considering the change complete
+  - Common locations to check: worker processing, test utilities, management tools, merge operations
+  - Maintain a systematic approach: fix one file at a time, recompile, move to next error

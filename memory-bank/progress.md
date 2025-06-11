@@ -1,6 +1,82 @@
 # Progress Tracking
 
-## Current Status: ✅ RESOLVED - Unified Clustering and Similar Articles Architecture
+## Current Status: ✅ COMPLETED - Cluster Summary Title Formatting and Current Article Integration
+
+### ✅ Cluster Summary Title Formatting and Current Article Integration COMPLETED (June 11, 2025)
+**Status**: FULLY COMPLETED - Critical Bugs Resolved
+
+#### Comprehensive Bug Resolution Summary
+Successfully fixed critical cluster summary bugs including "Untitled" title display and missing current article integration. Implemented comprehensive title formatting for international sources and ensured current articles are properly included in their own cluster summaries.
+
+**Problems Fixed:**
+1. **"Untitled" Title Bug**: Cluster summaries showing "Untitled" instead of actual article titles
+   - **Root Cause**: Current article data wasn't being passed to cluster summary generation
+   - **Impact**: References showed incomplete information like `[2025-06-11] "Untitled" - Burnaby Now`
+   
+2. **Missing Current Article in Cluster Summaries**: When processing new articles, they weren't included in their own cluster summaries
+   - **Root Cause**: `generate_cluster_summary()` only looked at existing cluster articles, not the current article being processed
+   - **Impact**: Most recent, relevant article missing from cluster context
+   
+3. **International Source Title Handling**: Foreign language titles not properly handled for readability
+   - **Root Cause**: No mechanism to display both English (tiny_title) and original titles
+   - **Impact**: Users couldn't understand content from international sources
+
+**Technical Solutions Implemented:**
+
+1. **Created CurrentArticleData Struct**:
+```rust
+/// Struct representing current article data for cluster summary generation
+#[derive(Debug, Clone)]
+pub struct CurrentArticleData {
+    pub id: i64,
+    pub title: String,           // Original article title (may be foreign language)
+    pub tiny_title: String,      // LLM-generated English title
+    pub url: String,
+    pub tiny_summary: String,
+    pub quality_score: i8,
+    pub pub_date: Option<String>,
+}
+```
+
+2. **Updated Function Signatures** throughout codebase to accept current article data
+
+3. **Implemented Title Formatting Function**:
+```rust
+/// Format: "Tiny Title (Original Title)" or just available title if only one exists
+fn format_article_title(tiny_title: Option<&str>, original_title: Option<&str>) -> String
+```
+
+4. **Enhanced Cluster Summary Generation**:
+   - Current article processed **first** in cluster summaries
+   - Proper title formatting for international sources
+   - Complete metadata integration
+
+**Files Modified:**
+- `src/clustering/types.rs`: Added `CurrentArticleData` struct
+- `src/clustering/summary.rs`: Updated function signature, added title formatting
+- `src/workers/analysis/processing.rs`: Pass current article data to cluster summary
+- `src/bin/test_cluster_summary.rs`: Updated test calls
+- `src/workers/analysis/entity_handling.rs`: Updated function calls
+- `src/clustering/merging/core.rs`: Updated merge functionality
+- `src/bin/manage_clusters.rs`: Updated cluster management tools
+
+**Example Output Improvements:**
+- **Before**: `[2025-06-11] "Untitled" - Burnaby Now`
+- **After**: `[2025-06-11] "Squamish Wildfire Escalates Amid Evacuations (Squamish wildfire grows to 14.4 hectares)" - Burnaby Now`
+
+**Impact and Benefits:**
+- **Eliminates "Untitled" Bug**: Proper article titles displayed in all cluster summaries
+- **Current Article Integration**: Articles being processed included in their own cluster summaries
+- **International Source Support**: Both English and original titles shown
+- **Complete References**: All metadata properly formatted and displayed
+- **Professional Display**: Consistent title formatting throughout system
+
+**Verification:**
+- ✅ All function signature updates completed across codebase
+- ✅ Compilation successful with no errors
+- ✅ Test files updated with new parameter requirements
+- ✅ Backward compatibility maintained (None parameter for existing summaries)
+- ✅ Title formatting handles all edge cases
 
 ### ✅ Cluster Summary Generation Issues RESOLVED (June 6, 2025)
 **Status**: FULLY RESOLVED - Major Architecture Unification Complete

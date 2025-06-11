@@ -633,6 +633,7 @@ async fn regenerate_summary(db: &Database, cluster_id: i64) -> Result<()> {
         &argus::vector::get_default_llm_client(),
         cluster_id,
         argus::DEFAULT_OLLAMA_MODEL,
+        None,
     )
     .await
     {
