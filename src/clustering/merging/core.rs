@@ -8,7 +8,7 @@ use crate::clustering::merging::history::mark_cluster_as_merged;
 use crate::clustering::util::create_empty_cluster;
 use crate::db::cluster;
 use crate::db::core::Database;
-use crate::vector::get_default_llm_client;
+use crate::{LLMParamsBase, TextLLMParams};
 
 /// Merges multiple clusters into a new cluster
 ///
@@ -70,12 +70,25 @@ pub async fn merge_clusters(
     // TODO: Move this to db/cluster.rs module
     // transfer_user_preferences(db, source_cluster_ids, new_cluster_id).await?;
 
-    // Step 6: Generate a new summary
+    // Step 6: Generate a new summary using environment-based configuration
+    let llm_params = TextLLMParams {
+        base: LLMParamsBase {
+            llm_client: crate::vector::get_default_llm_client(),
+            model: std::env::var("DEFAULT_OLLAMA_MODEL")
+                .unwrap_or_else(|_| "qwen2.5:32b".to_string()),
+            temperature: 0.2,
+            model_config: None,
+            no_think: std::env::var("NO_THINK_MODE")
+                .map(|v| v.to_lowercase() == "true")
+                .unwrap_or(false),
+            context_window: Some(16384),
+        },
+    };
+
     let _summary = match crate::clustering::summary::generate_cluster_summary(
         db,
-        &get_default_llm_client(),
+        &llm_params,
         new_cluster_id,
-        crate::DEFAULT_OLLAMA_MODEL,
         None,
     )
     .await

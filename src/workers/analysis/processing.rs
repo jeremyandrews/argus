@@ -937,9 +937,8 @@ async fn process_similarity_and_clustering_inline(
 
             match crate::clustering::generate_cluster_summary(
                 db,
-                &llm_params.base.llm_client,
+                &llm_params,
                 cluster_id,
-                &llm_params.base.model,
                 Some(current_article_data),
             )
             .await
@@ -970,12 +969,8 @@ async fn process_similarity_and_clustering_inline(
             }
 
             // Check for potential cluster merges
-            match crate::clustering::check_and_merge_similar_clusters(
-                db,
-                cluster_id,
-                &llm_params.base.llm_client,
-            )
-            .await
+            match crate::clustering::check_and_merge_similar_clusters(db, cluster_id, &llm_params)
+                .await
             {
                 Ok(Some(new_cluster_id)) => {
                     info!(

@@ -628,15 +628,22 @@ async fn regenerate_summary(db: &Database, cluster_id: i64) -> Result<()> {
     .await?;
 
     // Generate the summary
-    match clustering::generate_cluster_summary(
-        db,
-        &argus::vector::get_default_llm_client(),
-        cluster_id,
-        argus::DEFAULT_OLLAMA_MODEL,
-        None,
-    )
-    .await
-    {
+    // Create environment-based LLMParams for management operations
+    let llm_params = argus::TextLLMParams {
+        base: argus::LLMParamsBase {
+            llm_client: argus::vector::get_default_llm_client(),
+            model: std::env::var("DEFAULT_OLLAMA_MODEL")
+                .unwrap_or_else(|_| argus::DEFAULT_OLLAMA_MODEL.to_string()),
+            temperature: 0.2,
+            model_config: None,
+            no_think: std::env::var("NO_THINK_MODE")
+                .map(|v| v.to_lowercase() == "true")
+                .unwrap_or(false),
+            context_window: Some(16384),
+        },
+    };
+
+    match clustering::generate_cluster_summary(db, &llm_params, cluster_id, None).await {
         Ok(summary) => {
             println!("✅ Successfully regenerated summary:");
             println!("\n{}\n", summary);

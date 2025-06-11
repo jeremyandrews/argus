@@ -6,7 +6,7 @@ use crate::clustering::types::{ClusterArticle, CurrentArticleData, EntityDetail}
 use crate::db::cluster;
 use crate::db::core::Database;
 use crate::llm::generate_text_response;
-use crate::{LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
+use crate::{TextLLMParams, WorkerDetail};
 
 /// Gets a list of clusters that need summary updates
 ///
@@ -24,9 +24,8 @@ pub async fn get_clusters_needing_summary_updates(db: &Database) -> Result<Vec<i
 ///
 /// # Arguments
 /// * `db` - Database instance
-/// * `llm_client` - LLM client to use for summary generation
+/// * `llm_params` - LLM parameters to use for summary generation
 /// * `cluster_id` - ID of the cluster to summarize
-/// * `model_name` - Name of the model to use for generation
 /// * `current_article` - Optional current article data (for articles being processed)
 ///
 /// # Returns
@@ -34,16 +33,15 @@ pub async fn get_clusters_needing_summary_updates(db: &Database) -> Result<Vec<i
 /// * `Err` - If there was an error during summary generation
 pub async fn generate_cluster_summary(
     db: &Database,
-    llm_client: &LLMClient,
+    llm_params: &TextLLMParams,
     cluster_id: i64,
-    model_name: &str,
     current_article: Option<CurrentArticleData>,
 ) -> Result<String> {
     // Create a worker detail for logging
     let worker_detail = WorkerDetail {
         name: "cluster summarizer".to_string(),
         id: 0,
-        model: "summary model".to_string(),
+        model: llm_params.base.model.clone(),
         connection_info: "cluster_summary".to_string(),
     };
 
@@ -62,21 +60,9 @@ pub async fn generate_cluster_summary(
     // Create a prompt for the LLM to generate a summary
     let prompt = build_summary_prompt(&articles, &entity_details, current_article.as_ref())?;
 
-    // Create LLM parameters
-    let llm_params = TextLLMParams {
-        base: LLMParamsBase {
-            llm_client: llm_client.clone(),
-            model: model_name.to_string(),
-            temperature: 0.2,   // Lower temperature for more consistent summaries
-            model_config: None, // No model config needed for cluster summaries
-            no_think: false,    // No need for special no_think mode for summaries
-            context_window: Some(16384), // 2x context window for cluster summaries
-        },
-    };
-
     info!(
         "Generating cluster summary for cluster {} using model: {}",
-        cluster_id, model_name
+        cluster_id, llm_params.base.model
     );
 
     // Generate the summary

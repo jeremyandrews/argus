@@ -48,9 +48,19 @@ async fn main() -> Result<()> {
             info!("🤖 Using model: {}", model_name);
 
             // Generate summary
-            match generate_cluster_summary(&db, &llm_client, test_cluster_id, &model_name, None)
-                .await
-            {
+            // Create environment-based LLMParams for testing
+            let llm_params = argus::TextLLMParams {
+                base: argus::LLMParamsBase {
+                    llm_client: llm_client.clone(),
+                    model: model_name.clone(),
+                    temperature: 0.2,
+                    model_config: None,
+                    no_think: false,
+                    context_window: Some(16384),
+                },
+            };
+
+            match generate_cluster_summary(&db, &llm_params, test_cluster_id, None).await {
                 Ok(summary) => {
                     info!("✅ Successfully generated cluster summary!");
                     info!("📄 Summary length: {} characters", summary.len());
@@ -66,15 +76,7 @@ async fn main() -> Result<()> {
                     // Test a few more clusters
                     for &cluster_id in cluster_ids.iter().take(3).skip(1) {
                         info!("🎯 Testing cluster {}", cluster_id);
-                        match generate_cluster_summary(
-                            &db,
-                            &llm_client,
-                            cluster_id,
-                            &model_name,
-                            None,
-                        )
-                        .await
-                        {
+                        match generate_cluster_summary(&db, &llm_params, cluster_id, None).await {
                             Ok(summary) => {
                                 info!(
                                     "✅ Cluster {} summary generated ({} chars)",

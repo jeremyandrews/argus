@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::db::core::Database;
-use crate::LLMClient;
+use crate::TextLLMParams;
 
 /// Finds clusters with overlapping entities that are candidates for merging
 ///
@@ -30,7 +30,7 @@ pub async fn find_clusters_with_entity_overlap(
 /// # Arguments
 /// * `db` - Database instance
 /// * `cluster_id` - ID of the cluster to check for similar clusters
-/// * `llm_client` - LLM client to use for summary generation
+/// * `llm_params` - LLM parameters to use for summary generation
 ///
 /// # Returns
 /// * `Ok(Some(new_cluster_id))` - If clusters were merged, the ID of the new cluster
@@ -39,7 +39,7 @@ pub async fn find_clusters_with_entity_overlap(
 pub async fn check_and_merge_similar_clusters(
     _db: &Database,
     _cluster_id: i64,
-    _llm_client: &LLMClient,
+    _llm_params: &TextLLMParams,
 ) -> Result<Option<i64>> {
     // TODO: Implement cluster merging logic
     // For now, return Ok(None) to indicate no clusters were merged
