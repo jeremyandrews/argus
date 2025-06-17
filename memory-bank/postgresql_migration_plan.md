@@ -45,25 +45,36 @@ Does everything in sequence:
 - Moves environment config to database
 - Validates everything worked
 
-### 2. `argus_admin` (alias: `aa`) - Runtime Management
+### 2. `argus_admin` (alias: `aa`) - Enhanced Runtime Management
 ```bash
 # Create convenient alias
 alias aa='cargo run --bin argus_admin'
 
-# Topic management
+# Basic operations
 aa topics list
 aa topics add "AI" "Artificial Intelligence news"
-aa topics remove "OldTopic"
-
-# RSS feed management  
 aa rss list
 aa rss add "hn" "https://hnrss.org/frontpage"
-aa rss remove "old_feed"
-
-# System management
 aa config list
 aa health-check
-aa backup create
+
+# NEW: Bulk operations with import/export
+aa topics export --file topics_backup.json
+aa topics import --file topics_backup.json --validate
+aa config export --file config_backup.json
+
+# NEW: Validation features
+aa topics validate "AI" "Artificial Intelligence news"
+aa rss validate "https://hnrss.org/frontpage"
+aa validate-all
+
+# NEW: Dry-run mode (preview changes without applying)
+aa --dry-run topics add "Space" "Space exploration news"
+aa --dry-run config set slack_token "new-token"
+
+# NEW: Enhanced backup operations
+aa backup create --include-config
+aa backup restore --file backup.tar.gz --validate --dry-run
 ```
 
 ## 🚀 Migration Process

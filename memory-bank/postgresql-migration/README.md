@@ -28,25 +28,42 @@ cargo run --bin migrate_to_postgres
 cargo run --release
 ```
 
-### New Admin Tool
+### Enhanced Admin Tool
 ```bash
 # Create alias for convenience
 alias aa='cargo run --bin argus_admin'
 
-# Manage topics
+# Basic operations (same as before)
 aa topics list
 aa topics add "AI" "Artificial Intelligence news analysis"
 aa topics remove "OldTopic"
-
-# Manage RSS feeds
 aa rss list
 aa rss add "hn" "https://hnrss.org/frontpage"
 aa rss remove "old_feed"
-
-# System configuration
 aa config list
 aa config set slack_token "xoxb-..."
 aa health-check
+
+# NEW: Bulk operations with import/export
+aa topics export --file topics_backup.json
+aa topics import --file topics_backup.json --validate
+aa rss export --file rss_feeds.json
+aa config export --file config_backup.json
+
+# NEW: Validation features
+aa topics validate "AI" "Artificial Intelligence news analysis"
+aa rss validate "https://hnrss.org/frontpage"
+aa validate-all
+
+# NEW: Dry-run mode (preview changes without applying)
+aa --dry-run topics add "Space" "Space exploration news"
+aa --dry-run config set slack_token "new-token"
+aa --dry-run config import --file backup.json
+
+# NEW: Enhanced backup operations
+aa backup create --include-config
+aa backup list
+aa backup restore --file argus_backup_20250617.tar.gz --validate --dry-run
 ```
 
 ## Migration Overview

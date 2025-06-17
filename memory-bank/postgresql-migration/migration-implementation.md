@@ -435,7 +435,7 @@ impl Database {
 }
 ```
 
-## Runtime Admin Tool: `argus_admin`
+## Runtime Admin Tool: `argus_admin` (Enhanced)
 
 ### File: `src/bin/argus_admin.rs`
 
@@ -443,13 +443,23 @@ impl Database {
 use anyhow::Result;
 use argus::db::Database;
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "argus_admin")]
-#[command(about = "Argus administration tool")]
+#[command(about = "Argus administration tool with bulk operations, validation, and dry-run support")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    
+    /// Enable dry-run mode (preview changes without applying)
+    #[arg(long, global = true)]
+    dry_run: bool,
+    
+    /// Verbose output
+    #[arg(short, long, global = true)]
+    verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -479,6 +489,9 @@ enum Commands {
     },
     /// System status
     Status,
+    /// Validate system configuration
+    #[command(name = "validate-all")]
+    ValidateAll,
 }
 
 #[derive(Subcommand)]
@@ -491,11 +504,36 @@ enum TopicAction {
         name: String,
         /// Topic prompt
         prompt: String,
+        /// Validate before adding
+        #[arg(long)]
+        validate: bool,
     },
     /// Remove a topic
     Remove {
         /// Topic name to remove
         name: String,
+    },
+    /// Export topics to JSON file
+    Export {
+        /// Output file path
+        #[arg(short, long)]
+        file: PathBuf,
+    },
+    /// Import topics from JSON file
+    Import {
+        /// Input file path
+        #[arg(short, long)]
+        file: PathBuf,
+        /// Validate before importing
+        #[arg(long)]
+        validate: bool,
+    },
+    /// Validate a topic configuration
+    Validate {
+        /// Topic name
+        name: String,
+        /// Topic prompt
+        prompt: String,
     },
 }
 
@@ -509,11 +547,34 @@ enum RssAction {
         name: String,
         /// Feed URL
         url: String,
+        /// Validate feed before adding
+        #[arg(long)]
+        validate: bool,
     },
     /// Remove an RSS feed
     Remove {
         /// Feed name to remove
         name: String,
+    },
+    /// Export RSS feeds to JSON file
+    Export {
+        /// Output file path
+        #[arg(short, long)]
+        file: PathBuf,
+    },
+    /// Import RSS feeds from JSON file
+    Import {
+        /// Input file path
+        #[arg(short, long)]
+        file: PathBuf,
+        /// Validate feeds before importing
+        #[arg(long)]
+        validate: bool,
+    },
+    /// Validate an RSS feed URL
+    Validate {
+        /// Feed URL to validate
+        url: String,
     },
 }
 
@@ -532,13 +593,89 @@ enum ConfigAction {
         key: String,
         /// Configuration value
         value: String,
+        /// Validate before setting
+        #[arg(long)]
+        validate: bool,
+    },
+    /// Export all configuration to JSON file
+    Export {
+        /// Output file path
+        #[arg(short, long)]
+        file: PathBuf,
+        /// Include sensitive values (like tokens)
+        #[arg(long)]
+        include_sensitive: bool,
+    },
+    /// Import configuration from JSON file
+    Import {
+        /// Input file path
+        #[arg(short, long)]
+        file: PathBuf,
+        /// Validate before importing
+        #[arg(long)]
+        validate: bool,
+    },
+    /// Validate configuration values
+    Validate {
+        /// Configuration file to validate
+        #[arg(short, long)]
+        file: Option<PathBuf>,
     },
 }
 
 #[derive(Subcommand)]
 enum BackupAction {
     /// Create a backup
-    Create,
+    Create {
+        /// Include configuration in backup
+        #[arg(long)]
+        include_config: bool,
+        /// Backup file path (optional)
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
+    /// Restore from backup
+    Restore {
+        /// Backup file path
+        #[arg(short, long)]
+        file: PathBuf,
+        /// Validate backup before restoring
+        #[arg(long)]
+        validate: bool,
+    },
+    /// List available backups
+    List,
+}
+
+// Configuration data structures for import/export
+#[derive(Serialize, Deserialize, Debug)]
+struct ConfigurationExport {
+    topics: Vec<TopicConfig>,
+    rss_feeds: Vec<RssConfig>,
+    system: Vec<SystemConfig>,
+    exported_at: String,
+    version: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TopicConfig {
+    name: String,
+    prompt: String,
+    enabled: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RssConfig {
+    name: String,
+    url: String,
+    enabled: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct SystemConfig {
+    key: String,
+    value: String,
+    sensitive: bool,
 }
 
 #[tokio::main]
