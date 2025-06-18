@@ -1,9 +1,7 @@
 use async_openai::types::CreateCompletionRequestArgs;
-use ollama_rs::generation::{
-    completion::request::GenerationRequest,
-    options::GenerationOptions,
-    parameters::{FormatType, JsonStructure},
-};
+use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::generation::parameters::{FormatType, JsonStructure};
+use ollama_rs::models::ModelOptions;
 use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -13,7 +11,7 @@ use tracing::{debug, error, info, warn};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::TARGET_LLM_REQUEST;
-use crate::{JsonSchemaType, LLMClient, LLMParams, WorkerDetail};
+use crate::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
 
 const CONTEXT_WINDOW: u32 = 8192;
 
@@ -99,10 +97,33 @@ fn estimate_token_count(text: &str) -> u32 {
         .unwrap()
 }
 
-pub async fn generate_llm_response(
+pub async fn generate_text_response(
     prompt: &str,
-    params: &LLMParams,
+    params: &TextLLMParams,
     worker_detail: &WorkerDetail,
+) -> Option<String> {
+    generate_llm_response_internal(prompt, &params.base, worker_detail, None).await
+}
+
+pub async fn generate_json_response(
+    prompt: &str,
+    params: &JsonLLMParams,
+    worker_detail: &WorkerDetail,
+) -> Option<String> {
+    generate_llm_response_internal(
+        prompt,
+        &params.base,
+        worker_detail,
+        Some(&params.schema_type),
+    )
+    .await
+}
+
+async fn generate_llm_response_internal(
+    prompt: &str,
+    params: &LLMParamsBase,
+    worker_detail: &WorkerDetail,
+    json_format: Option<&JsonSchemaType>,
 ) -> Option<String> {
     let max_retries = 5;
     let mut response_text = String::new();
@@ -149,8 +170,9 @@ pub async fn generate_llm_response(
 
                 let mut request = GenerationRequest::new(params.model.clone(), actual_prompt);
 
-                // Apply JSON formatting if specified
-                if let Some(json_type) = &params.json_format {
+                // Apply formatting based on request type
+                if let Some(json_type) = json_format {
+                    // JSON format requested
                     match json_type {
                         JsonSchemaType::EntityExtraction => {
                             // Use simpler Json format for entity extraction
@@ -167,51 +189,43 @@ pub async fn generate_llm_response(
                             request.format = Some(FormatType::Json);
                         }
                     }
-                } else if params.require_json.unwrap_or(false) {
-                    // Legacy support for require_json
-                    request.format = Some(FormatType::StructuredJson(JsonStructure::new::<
-                        ThreatLocationResponse,
-                    >()));
+                } else {
+                    // Text format explicitly requested - force format to None
+                    // This ensures we don't get JSON responses when requesting plain text
+                    request.format = None;
                 }
 
-                // Apply model configuration based on mode
-                if params.no_think {
-                    // In no_think mode, use standard parameters
-                    debug!(
-                        target: TARGET_LLM_REQUEST,
-                        "[{} {} {} {}]: Using standard parameters for no-think mode",
-                        worker_detail.name, worker_detail.id, worker_detail.model,
-                        worker_detail.connection_info
-                    );
+                // Create a ModelOptions instance using builder methods
+                let context_size = params.context_window.unwrap_or(CONTEXT_WINDOW);
+                let mut options = ModelOptions::default()
+                    .temperature(params.temperature)
+                    .num_ctx(context_size as u64);
 
-                    let options = GenerationOptions::default()
-                        .temperature(params.temperature)
-                        .num_ctx(CONTEXT_WINDOW.into());
-                    request.options = Some(options);
-                } else if let Some(thinking_config) = &params.thinking_config {
-                    // Regular thinking model configuration
+                // Apply model parameters if available
+                if let Some(model_config) = &params.model_config {
                     debug!(
                         target: TARGET_LLM_REQUEST,
-                        "[{} {} {} {}]: Configuring thinking model with topP={}, topK={}.",
+                        "[{} {} {} {}]: Applying model parameters: topP={}, topK={}.",
                         worker_detail.name, worker_detail.id, worker_detail.model,
                         worker_detail.connection_info,
-                        thinking_config.top_p, thinking_config.top_k
+                        model_config.top_p, model_config.top_k
                     );
 
-                    // Note: min_p is not available in the current version of ollama-rs
-                    let options = GenerationOptions::default()
-                        .temperature(params.temperature)
-                        .top_p(thinking_config.top_p)
-                        .top_k(thinking_config.top_k as u32)
-                        .num_ctx(CONTEXT_WINDOW.into());
-                    request.options = Some(options);
-                } else {
-                    // Regular non-thinking model configuration
-                    let options = GenerationOptions::default()
-                        .temperature(params.temperature)
-                        .num_ctx(CONTEXT_WINDOW.into());
-                    request.options = Some(options);
+                    options = options
+                        .top_p(model_config.top_p)
+                        .top_k(model_config.top_k as u32);
+                    // Note: min_p is not yet supported in ollama-rs, but ready for future
                 }
+
+                debug!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {} {}]: Setting Ollama options",
+                    worker_detail.name, worker_detail.id, worker_detail.model,
+                    worker_detail.connection_info
+                );
+
+                // Assign the options to the request
+                request.options = Some(options);
 
                 // Log detailed request information
                 debug!(
@@ -274,9 +288,9 @@ pub async fn generate_llm_response(
                                     );
                                 }
                             }
-                        } else if let Some(thinking_config) = &params.thinking_config {
+                        } else if let Some(model_config) = &params.model_config {
                             // Process thinking tags for normal thinking mode
-                            if thinking_config.strip_thinking_tags {
+                            if model_config.strip_thinking_tags {
                                 debug!(
                                     target: TARGET_LLM_REQUEST,
                                     "[{} {} {} {}]: Response contains thinking tags: {}",
@@ -296,7 +310,7 @@ pub async fn generate_llm_response(
                                         worker_detail.connection_info
                                     );
                                 } else {
-                                    warn!(
+                                    debug!(
                                         target: TARGET_LLM_REQUEST,
                                         "[{} {} {} {}]: Expected thinking tags but none found in response.",
                                         worker_detail.name, worker_detail.id, worker_detail.model,
@@ -344,7 +358,7 @@ pub async fn generate_llm_response(
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {} {}]: Ollama request timed out.",
+                            "[{} {} {} {}]: [TIMEOUT] LLM request timed out after 120s: ollama.generate",
                             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }
@@ -375,8 +389,8 @@ pub async fn generate_llm_response(
                             response_text = choice.text.clone();
 
                             // Process thinking tags if needed
-                            if let Some(thinking_config) = &params.thinking_config {
-                                if thinking_config.strip_thinking_tags {
+                            if let Some(model_config) = &params.model_config {
+                                if model_config.strip_thinking_tags {
                                     debug!(
                                         target: TARGET_LLM_REQUEST,
                                         "[{} {} {} {}]: Checking OpenAI response for thinking tags: {}",
@@ -396,7 +410,7 @@ pub async fn generate_llm_response(
                                             worker_detail.connection_info
                                         );
                                     } else {
-                                        warn!(
+                                        debug!(
                                             target: TARGET_LLM_REQUEST,
                                             "[{} {} {} {}]: Expected thinking tags but none found in OpenAI response.",
                                             worker_detail.name, worker_detail.id, worker_detail.model,
@@ -436,7 +450,7 @@ pub async fn generate_llm_response(
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {} {}]: OpenAI request timed out.",
+                            "[{} {} {} {}]: [TIMEOUT] LLM request timed out after 120s: openai.completions.create",
                             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }

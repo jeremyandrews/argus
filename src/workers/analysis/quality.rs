@@ -1,6 +1,6 @@
-use crate::llm::generate_llm_response;
+use crate::llm::generate_text_response;
 use crate::prompt;
-use crate::{LLMParams, WorkerDetail};
+use crate::{TextLLMParams, WorkerDetail};
 use tracing::{debug, warn};
 
 /// Function to perform the analysis on an article.
@@ -11,7 +11,7 @@ pub async fn process_analysis(
     article_url: &str,
     topic: Option<&str>,
     pub_date: Option<&str>,
-    llm_params: &mut LLMParams,
+    text_params: &TextLLMParams,
     worker_detail: &WorkerDetail,
 ) -> (
     String,         // summary
@@ -27,6 +27,7 @@ pub async fn process_analysis(
     String,         // additional_insights
     String,         // action_recommendations
     String,         // talking_points
+    String,         // eli5
 ) {
     debug!("Starting analysis for article: {}", article_url);
 
@@ -47,12 +48,13 @@ pub async fn process_analysis(
             String::new(),
             String::new(),
             String::new(),
+            String::new(), // eli5
         );
     }
 
     // Start with summary to establish base understanding
     let summary_prompt = prompt::summary_prompt(article_text, pub_date);
-    let summary = match generate_llm_response(&summary_prompt, llm_params, worker_detail).await {
+    let summary = match generate_text_response(&summary_prompt, &text_params, worker_detail).await {
         Some(s) if !s.trim().is_empty() => s,
         _ => {
             warn!("Failed to generate valid summary");
@@ -70,48 +72,49 @@ pub async fn process_analysis(
                 String::new(),
                 String::new(),
                 String::new(),
+                String::new(), // eli5
             );
         }
     };
 
     // Only proceed with other analyses if we have a valid summary
-    let tiny_summary = generate_llm_response(
+    let tiny_summary = generate_text_response(
         &prompt::tiny_summary_prompt(&summary),
-        llm_params,
+        &text_params,
         worker_detail,
     )
     .await
     .unwrap_or_default();
 
-    let tiny_title = generate_llm_response(
-        &prompt::tiny_title_prompt(&summary),
-        llm_params,
+    let tiny_title = generate_text_response(
+        &prompt::tiny_title_prompt(&tiny_summary, &summary),
+        &text_params,
         worker_detail,
     )
     .await
     .unwrap_or_default();
 
     // Critical analysis and logical fallacies need the full article text
-    let critical_analysis = generate_llm_response(
+    let critical_analysis = generate_text_response(
         &prompt::critical_analysis_prompt(article_text, pub_date),
-        llm_params,
+        &text_params,
         worker_detail,
     )
     .await
     .unwrap_or_default();
 
-    let logical_fallacies = generate_llm_response(
+    let logical_fallacies = generate_text_response(
         &prompt::logical_fallacies_prompt(article_text, pub_date),
-        llm_params,
+        &text_params,
         worker_detail,
     )
     .await
     .unwrap_or_default();
 
     // Source analysis needs HTML and URL
-    let source_analysis = generate_llm_response(
+    let source_analysis = generate_text_response(
         &prompt::source_analysis_prompt(article_html, article_url, pub_date),
-        llm_params,
+        &text_params,
         worker_detail,
     )
     .await
@@ -119,9 +122,9 @@ pub async fn process_analysis(
 
     // Quality scores should only be generated if we have valid analyses
     let sources_quality = if !critical_analysis.is_empty() {
-        generate_llm_response(
+        generate_text_response(
             &prompt::sources_quality_prompt(&critical_analysis),
-            llm_params,
+            &text_params,
             worker_detail,
         )
         .await
@@ -132,9 +135,9 @@ pub async fn process_analysis(
     };
 
     let argument_quality = if !logical_fallacies.is_empty() {
-        generate_llm_response(
+        generate_text_response(
             &prompt::argument_quality_prompt(&logical_fallacies),
-            llm_params,
+            &text_params,
             worker_detail,
         )
         .await
@@ -146,9 +149,9 @@ pub async fn process_analysis(
 
     // Source type should only be generated if we have valid source analysis
     let source_type = if !source_analysis.is_empty() {
-        generate_llm_response(
+        generate_text_response(
             &prompt::source_type_prompt(&source_analysis, article_url),
-            llm_params,
+            &text_params,
             worker_detail,
         )
         .await
@@ -161,9 +164,9 @@ pub async fn process_analysis(
 
     // Topic relation is optional and should only be generated if we have a topic
     let relation_response = if let Some(topic) = topic {
-        generate_llm_response(
+        generate_text_response(
             &prompt::relation_to_topic_prompt(article_text, topic, pub_date),
-            llm_params,
+            &text_params,
             worker_detail,
         )
         .await
@@ -173,9 +176,9 @@ pub async fn process_analysis(
 
     // Generate additional insights after other analyses are complete
     let additional_insights = if !summary.is_empty() && !critical_analysis.is_empty() {
-        generate_llm_response(
+        generate_text_response(
             &prompt::additional_insights_prompt(article_text, pub_date),
-            llm_params,
+            &text_params,
             worker_detail,
         )
         .await
@@ -186,9 +189,9 @@ pub async fn process_analysis(
 
     // Generate action recommendations
     let action_recommendations = if !summary.is_empty() {
-        generate_llm_response(
+        generate_text_response(
             &prompt::action_recommendations_prompt(article_text, pub_date),
-            llm_params,
+            &text_params,
             worker_detail,
         )
         .await
@@ -199,9 +202,35 @@ pub async fn process_analysis(
 
     // Generate talking points
     let talking_points = if !summary.is_empty() {
-        generate_llm_response(
+        generate_text_response(
             &prompt::talking_points_prompt(article_text, pub_date),
-            llm_params,
+            &text_params,
+            worker_detail,
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    // Generate ELI5 explanation with analysis context
+    let eli5 = if !summary.is_empty() {
+        // Create ELI5-specific params with larger context window
+        let mut eli5_params = text_params.clone();
+        eli5_params.base.context_window = Some(16384); // 2x context window for ELI5
+
+        generate_text_response(
+            &prompt::eli5_prompt(
+                article_text,
+                pub_date,
+                &critical_analysis,
+                &logical_fallacies,
+                &source_analysis,
+                sources_quality,
+                argument_quality,
+                &source_type,
+            ),
+            &eli5_params,
             worker_detail,
         )
         .await
@@ -224,5 +253,6 @@ pub async fn process_analysis(
         additional_insights,
         action_recommendations,
         talking_points,
+        eli5,
     )
 }

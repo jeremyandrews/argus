@@ -83,16 +83,28 @@ By following these guidelines, you'll create clear, concise, and engaging text t
 "#;
 
 pub const WRITE_IN_CLEAR_ENGLISH: &str = r#"
+🚨 MANDATORY LANGUAGE REQUIREMENT - OUTPUT VALIDATION ENFORCED 🚨
+
+CRITICAL: You MUST write ALL output in clear American English. Your output will be automatically validated and rejected if it contains non-English text.
+
 Language Standards for Output:
-1. Write all content in clear American English, using American spelling and grammar.
-2. For non-English content:
-   - ALWAYS include both original text and translation
-   - Format as: "original text (translation)"
+1. MANDATORY: Write all content in clear American English, using American spelling and grammar.
+2. CRITICAL: For non-English source articles (German, Italian, French, etc.):
+   - You MUST mentally translate the entire article to English first
+   - Then write your entire response in English based on that translation
+   - ALWAYS include both original text and translation when quoting: "original text (translation)"
    - For titles: Keep original, add translation in parentheses
    - For names: Do not translate as they are names
-   - Never translate if the translation is the same as the original.
-   - Only translate from Foreign → American English.
-   Example: "La vita è bella (Life is Beautiful)" and "Ne Zha 2 (No translation: this is a person's name)"
+   - Never translate if the translation is the same as the original
+   - Example: "La vita è bella (Life is Beautiful)" and "Ne Zha 2 (No translation: this is a person's name)"
+   
+   EXAMPLES OF CORRECT HANDLING:
+   ❌ WRONG: "Im Juli 2025 wird der kanadische Rapper Drake..."
+   ✅ CORRECT: "In July 2025, Canadian rapper Drake will..."
+   
+   ❌ WRONG: "Die Tour umfasst insgesamt neun Konzerte..."
+   ✅ CORRECT: "The tour includes a total of nine concerts..."
+
 3. Units and Measurements:
    - Include both metric and imperial: "100 kilometers (62 miles)"
 4. Writing Style:
@@ -104,6 +116,8 @@ Language Standards for Output:
    - Original quotes: Use quotation marks
    - Translations: Always in parentheses
    - Citations: American format
+
+REMEMBER: Your output is automatically checked. Non-English text will cause system errors.
 "#;
 
 pub const CONTEXT: &str = "
@@ -113,7 +127,9 @@ In Q3 2024, the Paris Olympics fostered unity amidst record-breaking heatwaves a
 In Q4 2024, Trump's re-election and U.S. economic growth highlighted domestic shifts. Hurricane Helene devastated the Gulf Coast, while 2024 set a record as the hottest year. South Korea's political turmoil and Assad's overthrow reshaped global dynamics. The Notre-Dame reopening symbolized cultural resilience.
 - In January 2025, Donald Trump was inaugurated as the 47th U.S. President and issued significant executive orders affecting trade and international relations. The month also recorded the warmest January globally, highlighting climate concerns. A ceasefire was reached in the Israel-Hamas conflict, and Canadian Prime Minister Justin Trudeau resigned amid a political crisis. Trump's actions included imposing tariffs on Mexico, China, and Canada, withdrawing the U.S. from the World Health Organization, and defunding the UN agency for Palestinian refugees, signaling a shift toward protectionism and unilateral foreign policy.
 - In February 2025, Trump's sweeping tariffs sparked global retaliation including from China, the EU, Canada, and Mexico, igniting a trade war. The U.S. restored ties with Russia, but relations with Ukraine frayed. America pledged to oversee Gaza's rebuilding. Sea ice hit record lows. The Baltics cut energy ties to Russia. Nicaragua shifted to a co-presidency. Germany's election shifted right, and global trade tensions surged.
-- In March 2025, Trump moved to dismantle the Dept. of Education and launched a U.S. Bitcoin reserve. Aid to Ukraine was paused, while Israel struck Gaza, killing 400+. Firefly landed on the Moon. Massive protests erupted over Elon Musk's policies as head of the Department of Government Efficiency (DOGE) under Trump's administration. Sudan sued the UAE for genocide. Syria's regime killed 1,000+ in a crackdown. Duterte was arrested by the ICC. Canada's new PM Mark Carney took office.
+- In March 2025, the Syrian civil war intensified with mass civilian casualties, while Ukraine and Russia engaged in Black Sea ceasefire talks. The U.S. faced a historic tornado outbreak causing significant damage. Europe experienced a marine heatwave threatening ecosystems, and President Trump in the U.S. imposed new trade tariffs, escalating global economic tensions.
+- In April 2025, Pope Francis's death prompted global mourning. India and Pakistan's conflict escalated post-Kashmir attack. Gaza faced a dire humanitarian crisis. Trump's abrupt tariffs shook global markets. A massive blackout hit Spain and Portugal, causing widespread disruption.
+- In May 2025, global attention focused on escalating conflicts in Gaza and Syria's challenging transition post-Assad. Germany's NATO deployment marked a significant shift in European defense. Domestically, the U.S. grappled with the implications of a sweeping tax bill, Trump's 'One Big Beautiful Bill Act'. Additionally, the Catholic Church witnessed a historic moment with the election of Pope Leo XIV, the first American pontiff, signaling a new era in its global leadership.
 ";
 
 /// Utility function to get the current date in a human-readable format

@@ -1,3 +1,4 @@
+pub mod alerts;
 pub mod workers; // New modular workers organization
 
 // Re-exports for backward compatibility
@@ -43,6 +44,23 @@ pub const TARGET_DB: &str = "db_query";
 
 pub static START_TIME: AtomicU64 = AtomicU64::new(0);
 
+/// Default model to use for Ollama LLM requests when not specified otherwise.
+/// Using a smaller (4.7GB) model for faster performance during development and testing.
+/// Change this if you need higher quality results but can accept slower processing.
+///
+/// Note: Always explicitly specify format in LLM requests to prevent format leakage issues.
+///
+/// Available models may include:
+/// - llama3.1:8b (4.7GB) - Fast but lower quality
+/// - mistral-small:24b-instruct-2501-q8_0 (25GB) - Higher quality but requires more resources
+pub const DEFAULT_OLLAMA_MODEL: &str = "llama3.1:8b";
+
+/// Default Ollama server host address
+pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
+
+/// Default Ollama server port
+pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
+
 #[derive(Clone, Debug)]
 pub enum LLMClient {
     Ollama(Ollama),
@@ -62,9 +80,9 @@ pub enum JsonSchemaType {
     Generic,
 }
 
-/// Configuration for models that use thinking/reasoning capabilities
+/// Configuration for LLM model parameters
 #[derive(Clone, Debug)]
-pub struct ThinkingModelConfig {
+pub struct ModelConfig {
     pub strip_thinking_tags: bool,
     pub top_p: f32,
     pub top_k: i32,
@@ -93,15 +111,42 @@ pub fn parse_model_name(model_string: &str) -> (String, bool) {
     }
 }
 
+// Base parameters shared between all LLM request types
 #[derive(Clone)]
-pub struct LLMParams {
+pub struct LLMParamsBase {
     pub llm_client: LLMClient,
     pub model: String,
     pub temperature: f32,
-    pub require_json: Option<bool>, // Kept for backward compatibility
-    pub json_format: Option<JsonSchemaType>, // New field for specifying JSON schema type
-    pub thinking_config: Option<ThinkingModelConfig>, // Configuration for thinking models
-    pub no_think: bool,             // Flag to indicate /no_think mode
+    pub model_config: Option<ModelConfig>, // Configuration for model parameters
+    pub no_think: bool,                    // Flag to indicate /no_think mode
+    pub context_window: Option<u32>,       // Optional context window size override
+}
+
+// Parameters specifically for text-only responses
+#[derive(Clone)]
+pub struct TextLLMParams {
+    pub base: LLMParamsBase,
+}
+
+// Parameters specifically for JSON-formatted responses
+#[derive(Clone)]
+pub struct JsonLLMParams {
+    pub base: LLMParamsBase,
+    pub schema_type: JsonSchemaType,
+}
+
+// Methods for creating specialized parameter types
+impl LLMParamsBase {
+    pub fn text_mode(&self) -> TextLLMParams {
+        TextLLMParams { base: self.clone() }
+    }
+
+    pub fn json_mode(&self, schema_type: JsonSchemaType) -> JsonLLMParams {
+        JsonLLMParams {
+            base: self.clone(),
+            schema_type,
+        }
+    }
 }
 
 // New: Struct to hold fallback configuration for Analysis Workers

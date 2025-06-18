@@ -14,6 +14,7 @@ use tracing::{error, info};
 use url::Url;
 use uuid::Uuid;
 
+use crate::db::alerts::EndpointAlert;
 use crate::db::core::Database;
 use crate::metrics::SystemInfo;
 
@@ -152,6 +153,103 @@ pub async fn send_to_app(json: &Value) -> Option<String> {
         }
     }
     Some(json_url)
+}
+
+/// Send an admin alert to a specific device
+///
+/// # Arguments
+/// * `device_token` - The iOS device token for the admin
+/// * `title` - Alert title
+/// * `body` - Alert body text
+/// * `alert_info` - Optional alert information for additional context
+pub async fn send_admin_alert(
+    device_token: &str,
+    title: &str,
+    body: &str,
+    alert_info: Option<&EndpointAlert>,
+) -> Option<String> {
+    // Load required environment variables
+    let team_id = env::var("APP_TEAM_ID").ok()?;
+    let key_id = env::var("APP_KEY_ID").ok()?;
+    let private_key_path = env::var("APP_PRIVATE_KEY_PATH").ok()?;
+    let private_key = fs::read_to_string(&private_key_path).ok()?;
+
+    // Generate JWT token
+    let iat = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let claims = Claims {
+        iss: team_id.clone(),
+        iat,
+    };
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some(key_id.clone());
+    let encoding_key = EncodingKey::from_ec_pem(private_key.as_bytes()).ok()?;
+    let jwt_token = encode(&header, &claims, &encoding_key).ok()?;
+
+    // Send notification
+    let client = reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .build()
+        .ok()?;
+
+    // Create payload with alert-specific data
+    let mut data = json!({
+        "alert_type": "system_alert",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    if let Some(alert) = alert_info {
+        data["endpoint_url"] = json!(alert.endpoint_url);
+        data["model_name"] = json!(alert.model_name);
+        data["alert_id"] = json!(alert.id);
+        data["occurrence_count"] = json!(alert.occurrence_count);
+        data["consecutive_failures"] = json!(alert.consecutive_failures);
+        data["first_occurrence"] = json!(alert.first_occurrence.to_rfc3339());
+        data["last_occurrence"] = json!(alert.last_occurrence.to_rfc3339());
+    }
+
+    let payload = json!({
+        "aps": {
+            "alert": {
+                "title": title,
+                "body": body
+            },
+            "sound": "default",
+            "badge": 1,
+            "content-available": 1
+        },
+        "data": data
+    });
+
+    let apns_url = format!("https://api.push.apple.com/3/device/{}", device_token);
+    match client
+        .post(&apns_url)
+        .header("apns-topic", "com.andrews.Argus.Argus")
+        .header("apns-priority", "10") // High priority
+        .header("authorization", format!("bearer {}", jwt_token))
+        .header("Content-Type", "application/json")
+        .body(payload.to_string())
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => {
+            info!("Admin alert sent successfully to device: {}", device_token);
+            Some("success".to_string())
+        }
+        Ok(response) => {
+            let status = response.status();
+            let response_text = response.text().await.unwrap_or_default();
+            error!(
+                "Failed to send admin alert: Status = {}, Response = {}",
+                status, response_text
+            );
+            None
+        }
+        Err(e) => {
+            error!("Failed to send admin alert request to APNs: {}", e);
+            None
+        }
+    }
 }
 
 pub async fn upload_to_r2(json: &Value) -> Option<String> {

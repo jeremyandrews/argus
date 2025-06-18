@@ -32,10 +32,11 @@ pub struct ClusterArticle {
     pub id: i64,
     pub title: Option<String>,
     pub url: String,
-    pub json_data: Option<String>,
+    pub body: Option<String>, // Article body content extracted from json_data
     pub pub_date: Option<String>,
     pub tiny_summary: Option<String>,
     pub similarity_score: f64,
+    pub quality_score: i8,
 }
 
 /// Struct representing entity details
@@ -44,4 +45,16 @@ pub struct EntityDetail {
     pub id: i64,
     pub name: String,
     pub entity_type: EntityType,
+}
+
+/// Struct representing current article data for cluster summary generation
+#[derive(Debug, Clone)]
+pub struct CurrentArticleData {
+    pub id: i64,
+    pub title: String,      // Original article title (may be foreign language)
+    pub tiny_title: String, // LLM-generated English title
+    pub url: String,
+    pub tiny_summary: String,
+    pub quality_score: i8,
+    pub pub_date: Option<String>,
 }

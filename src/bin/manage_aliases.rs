@@ -57,18 +57,11 @@ enum Commands {
         entity_type: String,
     },
 
-    /// Create a batch of aliases for review
-    CreateReviewBatch {
-        /// Number of aliases to include in the batch
+    /// Review pending aliases
+    Review {
+        /// Number of aliases to review (default: 20)
         #[arg(short, long, default_value = "20")]
-        size: i64,
-    },
-
-    /// Review a specific batch of aliases
-    ReviewBatch {
-        /// Batch ID to review
-        #[arg(short, long)]
-        batch_id: i64,
+        limit: i64,
 
         /// Admin ID for tracking who approved/rejected
         #[arg(short, long, default_value = "cli-user")]
@@ -161,33 +154,19 @@ async fn main() -> Result<()> {
             println!("  - Normalized form of '{}': '{}'", name2, norm2);
         }
 
-        Commands::CreateReviewBatch { size } => {
-            info!("Creating review batch with size {}", size);
-            let batch_id = db.create_alias_review_batch(size).await?;
-            println!(
-                "Created review batch #{} with up to {} items",
-                batch_id, size
-            );
-        }
-
-        Commands::ReviewBatch { batch_id, admin_id } => {
-            info!("Reviewing batch #{}", batch_id);
-            let aliases = db.get_alias_review_batch(batch_id).await?;
+        Commands::Review { limit, admin_id } => {
+            info!("Starting alias review with limit {}", limit);
+            let aliases = db.get_pending_aliases(limit).await?;
 
             if aliases.is_empty() {
-                println!(
-                    "No aliases found in batch #{} (may be empty or already reviewed)",
-                    batch_id
-                );
+                println!("No pending aliases found to review.");
                 return Ok(());
             }
 
-            println!(
-                "Found {} aliases to review in batch #{}",
-                aliases.len(),
-                batch_id
-            );
+            println!("Found {} pending aliases to review.", aliases.len());
+            println!("(Use 'q' to quit at any time)");
 
+            let mut reviewed_count = 0;
             for (idx, (alias_id, canonical, alias_text, entity_type, source, confidence)) in
                 aliases.iter().enumerate()
             {
@@ -201,14 +180,18 @@ async fn main() -> Result<()> {
                 );
                 println!("Source: {}, Confidence: {:.2}", source, confidence);
 
-                println!("Approve (a), Reject (r), or Skip (s)? ");
+                print!("Approve (a), Reject (r), Skip (s), or Quit (q)? ");
+                use std::io::{self, Write};
+                io::stdout().flush()?;
+
                 let mut input = String::new();
                 std::io::stdin().read_line(&mut input)?;
 
                 match input.trim().to_lowercase().as_str() {
                     "a" => {
                         db.approve_alias_suggestion(*alias_id, &admin_id).await?;
-                        println!("Approved alias #{}", alias_id);
+                        println!("✅ Approved alias #{}", alias_id);
+                        reviewed_count += 1;
                     }
                     "r" => {
                         println!(
@@ -225,15 +208,24 @@ async fn main() -> Result<()> {
 
                         db.reject_alias_suggestion(*alias_id, &admin_id, reason)
                             .await?;
-                        println!("Rejected alias #{}", alias_id);
+                        println!("❌ Rejected alias #{}", alias_id);
+                        reviewed_count += 1;
+                    }
+                    "q" => {
+                        println!("\n🛑 Review cancelled by user.");
+                        break;
                     }
                     _ => {
-                        println!("Skipped alias #{}", alias_id);
+                        println!("⏭️ Skipped alias #{}", alias_id);
                     }
                 }
             }
 
-            println!("\nCompleted review of batch #{}", batch_id);
+            println!(
+                "\n📋 Review completed! Processed {} out of {} aliases.",
+                reviewed_count,
+                aliases.len()
+            );
         }
 
         Commands::Stats => {

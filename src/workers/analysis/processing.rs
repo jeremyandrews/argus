@@ -1,24 +1,23 @@
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::app::util::send_to_app;
 use crate::db::core::Database;
-use crate::llm::generate_llm_response;
+use crate::llm::generate_text_response;
 use crate::prompt;
 use crate::slack::send_to_slack;
 use crate::workers::common::calculate_quality_score;
-use crate::{LLMParams, WorkerDetail, TARGET_LLM_REQUEST};
+use crate::{TextLLMParams, WorkerDetail, TARGET_LLM_REQUEST};
 
 use super::quality::process_analysis;
-use super::similarity::process_article_similarity;
 
 /// Function to process a single analysis item.
 /// Returns true if an item was processed, false otherwise.
 pub async fn process_analysis_item(
     worker_detail: &WorkerDetail,
-    llm_params: &mut LLMParams,
+    llm_params: &mut TextLLMParams,
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
@@ -28,24 +27,13 @@ pub async fn process_analysis_item(
     >,
 ) -> bool {
     // First, try to process an item from the life safety queue
-    if let Ok(Some((
-        article_url,
-        article_title,
-        article_text,
-        article_html,
-        article_hash,
-        title_domain_hash,
-        threat_regions,
-        pub_date,
-    ))) = db.fetch_and_delete_from_life_safety_queue().await
+    match timeout(
+        Duration::from_secs(30),
+        db.fetch_and_delete_from_life_safety_queue(),
+    )
+    .await
     {
-        process_life_safety_item(
-            worker_detail,
-            llm_params,
-            db,
-            slack_token,
-            slack_channel,
-            places_detailed,
+        Ok(Ok(Some((
             article_url,
             article_title,
             article_text,
@@ -54,30 +42,46 @@ pub async fn process_analysis_item(
             title_domain_hash,
             threat_regions,
             pub_date,
-        )
-        .await;
+        )))) => {
+            process_life_safety_item(
+                worker_detail,
+                llm_params,
+                db,
+                slack_token,
+                slack_channel,
+                places_detailed,
+                article_url,
+                article_title,
+                article_text,
+                article_html,
+                article_hash,
+                title_domain_hash,
+                threat_regions,
+                pub_date,
+            )
+            .await;
 
-        return true;
+            return true;
+        }
+        Ok(Ok(None)) => {
+            // No life safety items, continue to matched topics
+        }
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error fetching life safety queue: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: fetch_and_delete_from_life_safety_queue", worker_detail.name, worker_detail.id, worker_detail.model);
+        }
     }
 
-    // If no life safety item, try to process an item from the matched topics queue
-    if let Ok(Some((
-        article_text,
-        article_html,
-        article_url,
-        article_title,
-        article_hash,
-        title_domain_hash,
-        topic,
-        pub_date,
-    ))) = db.fetch_and_delete_from_matched_topics_queue().await
+    // Try to process an item from the matched topics queue
+    match timeout(
+        Duration::from_secs(30),
+        db.fetch_and_delete_from_matched_topics_queue(),
+    )
+    .await
     {
-        let success = process_matched_topic_item(
-            worker_detail,
-            llm_params,
-            db,
-            slack_token,
-            slack_channel,
+        Ok(Ok(Some((
             article_text,
             article_html,
             article_url,
@@ -86,15 +90,38 @@ pub async fn process_analysis_item(
             title_domain_hash,
             topic,
             pub_date,
-        )
-        .await;
+        )))) => {
+            let success = process_matched_topic_item(
+                worker_detail,
+                llm_params,
+                db,
+                slack_token,
+                slack_channel,
+                article_text,
+                article_html,
+                article_url,
+                article_title,
+                article_hash,
+                title_domain_hash,
+                topic,
+                pub_date,
+            )
+            .await;
 
-        if success {
-            return true;
+            if success {
+                return true;
+            }
         }
-    } else {
-        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Matched Topics queue empty, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model);
-        sleep(Duration::from_secs(10)).await;
+        Ok(Ok(None)) => {
+            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Matched Topics queue empty, sleeping 10 seconds...", worker_detail.name, worker_detail.id, worker_detail.model);
+            sleep(Duration::from_secs(10)).await;
+        }
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error fetching matched topics queue: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: fetch_and_delete_from_matched_topics_queue", worker_detail.name, worker_detail.id, worker_detail.model);
+        }
     }
 
     // If we reach here, no item was processed successfully
@@ -104,7 +131,7 @@ pub async fn process_analysis_item(
 /// Process an item from the life safety queue
 async fn process_life_safety_item(
     worker_detail: &WorkerDetail,
-    llm_params: &mut LLMParams,
+    llm_params: &mut TextLLMParams,
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
@@ -125,12 +152,36 @@ async fn process_life_safety_item(
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from life safety queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
     // Check if article was already processed
-    if db.has_hash(&article_hash).await.unwrap_or(false)
-        || db
-            .has_title_domain_hash(&title_domain_hash)
-            .await
-            .unwrap_or(false)
+    let hash_exists = match timeout(Duration::from_secs(10), db.has_hash(&article_hash)).await {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    let title_domain_hash_exists = match timeout(
+        Duration::from_secs(10),
+        db.has_title_domain_hash(&title_domain_hash),
+    )
+    .await
     {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking title_domain_hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_title_domain_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    if hash_exists || title_domain_hash_exists {
         info!(
             target: TARGET_LLM_REQUEST,
             "Article with hash {} or title_domain_hash {} was already processed. Skipping.",
@@ -171,7 +222,7 @@ async fn process_life_safety_item(
                         );
                         info!("region_prompt: {}", region_prompt);
                         let region_response =
-                            generate_llm_response(&region_prompt, &llm_params, worker_detail)
+                            generate_text_response(&region_prompt, &llm_params, worker_detail)
                                 .await
                                 .unwrap_or_default();
 
@@ -186,7 +237,7 @@ async fn process_life_safety_item(
                                     continent,
                                 );
                                 let city_response =
-                                    generate_llm_response(&city_prompt, llm_params, worker_detail)
+                                    generate_text_response(&city_prompt, llm_params, worker_detail)
                                         .await
                                         .unwrap_or_default();
                                 if city_response.to_lowercase().contains("yes") {
@@ -239,7 +290,7 @@ async fn process_life_safety_item(
                 "Generated how_does_it_affect prompt: {:?}",
                 how_does_it_affect_prompt
             );
-            generate_llm_response(&how_does_it_affect_prompt, llm_params, worker_detail)
+            generate_text_response(&how_does_it_affect_prompt, &llm_params, worker_detail)
                 .await
                 .unwrap_or_else(|| {
                     warn!("Failed to generate how_does_it_affect");
@@ -255,7 +306,7 @@ async fn process_life_safety_item(
                 "Generated why_not_affect prompt: {:?}",
                 why_not_affect_prompt
             );
-            generate_llm_response(&why_not_affect_prompt, llm_params, worker_detail)
+            generate_text_response(&why_not_affect_prompt, &llm_params, worker_detail)
                 .await
                 .unwrap_or_else(|| {
                     warn!("Failed to generate why_not_affect");
@@ -306,6 +357,7 @@ async fn process_life_safety_item(
             additional_insights,
             action_recommendations,
             talking_points,
+            eli5,
         ) = process_analysis(
             &article_text,
             &article_html,
@@ -346,18 +398,20 @@ async fn process_life_safety_item(
             "additional_insights": additional_insights,
             "action_recommendations": action_recommendations,
             "talking_points": talking_points,
+            "eli5": eli5,
             "sources_quality": sources_quality,
             "argument_quality": argument_quality,
             "quality": quality,
             "source_type": source_type,
             "elapsed_time": start_time.elapsed().as_secs_f64(),
-            "model": llm_params.model,
+            "model": llm_params.base.model.clone(),
             "stats": stats
         });
 
-        // Save the article first
-        let article_id = match db
-            .add_article(
+        // Save the article first with timeout
+        let article_id = match timeout(
+            Duration::from_secs(30),
+            db.add_article(
                 &article_url,
                 true,
                 Some(topic),
@@ -368,28 +422,36 @@ async fn process_life_safety_item(
                 None, // Placeholder for R2 URL, will update later
                 pub_date.as_deref(),
                 None, // event_date
-            )
-            .await
+            ),
+        )
+        .await
         {
-            Ok(id) => id,
-            Err(e) => {
+            Ok(Ok(id)) => id,
+            Ok(Err(e)) => {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "Failed to save article to database: {:?}", e
+                    "[{} {} {}]: Failed to save article to database: {:?}",
+                    worker_detail.name, worker_detail.id, worker_detail.model, e
                 );
                 return false; // Skip processing if saving fails
             }
+            Err(_) => {
+                error!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: add_article (life_safety_item)",
+                    worker_detail.name, worker_detail.id, worker_detail.model
+                );
+                return false;
+            }
         };
 
-        // Process vector embeddings and entities
-        if let Err(e) = process_article_similarity(
+        // Process vector embeddings, entities, and clustering (inline)
+        if let Err(e) = process_similarity_and_clustering_inline(
             db,
             article_id,
             &summary,
             &article_text,
             pub_date.as_deref(),
-            &article_hash,
-            &title_domain_hash,
             Some(topic),
             quality,
             &mut response_json,
@@ -400,7 +462,7 @@ async fn process_life_safety_item(
         {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "Failed to process article similarity: {:?}", e
+                "Failed to process similarity and clustering: {:?}", e
             );
         }
 
@@ -447,7 +509,7 @@ async fn process_life_safety_item(
 /// Process an item from the matched topics queue
 async fn process_matched_topic_item(
     worker_detail: &WorkerDetail,
-    llm_params: &mut LLMParams,
+    llm_params: &mut TextLLMParams,
     db: &Database,
     slack_token: &str,
     slack_channel: &str,
@@ -466,12 +528,37 @@ async fn process_matched_topic_item(
 
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from matched topics queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
 
-    if db.has_hash(&article_hash).await.unwrap_or(false)
-        || db
-            .has_title_domain_hash(&title_domain_hash)
-            .await
-            .unwrap_or(false)
+    // Check if article was already processed with timeouts
+    let hash_exists = match timeout(Duration::from_secs(10), db.has_hash(&article_hash)).await {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    let title_domain_hash_exists = match timeout(
+        Duration::from_secs(10),
+        db.has_title_domain_hash(&title_domain_hash),
+    )
+    .await
     {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(e)) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Database error checking title_domain_hash: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            false
+        }
+        Err(_) => {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: [TIMEOUT] Database operation timed out after 10s: has_title_domain_hash", worker_detail.name, worker_detail.id, worker_detail.model);
+            false
+        }
+    };
+
+    if hash_exists || title_domain_hash_exists {
         info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: already processed, skipping {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
         return false;
     }
@@ -490,6 +577,7 @@ async fn process_matched_topic_item(
         additional_insights,
         action_recommendations,
         talking_points,
+        eli5,
     ) = process_analysis(
         &article_text,
         &article_html,
@@ -533,18 +621,20 @@ async fn process_matched_topic_item(
             "additional_insights": additional_insights,
             "action_recommendations": action_recommendations,
             "talking_points": talking_points,
+            "eli5": eli5,
             "sources_quality": sources_quality,
             "argument_quality": argument_quality,
             "quality": quality,
             "source_type": source_type,
             "elapsed_time": start_time.elapsed().as_secs_f64(),
-            "model": llm_params.model,
+            "model": llm_params.base.model.clone(),
             "stats": stats
         });
 
-        // Save the article first
-        let article_id = match db
-            .add_article(
+        // Save the article first with timeout
+        let article_id = match timeout(
+            Duration::from_secs(30),
+            db.add_article(
                 &article_url,
                 true,
                 Some(&topic),
@@ -555,28 +645,36 @@ async fn process_matched_topic_item(
                 None, // Placeholder for R2 URL, will update later
                 pub_date.as_deref(),
                 None, // event_date
-            )
-            .await
+            ),
+        )
+        .await
         {
-            Ok(id) => id,
-            Err(e) => {
+            Ok(Ok(id)) => id,
+            Ok(Err(e)) => {
                 error!(
                     target: TARGET_LLM_REQUEST,
-                    "Failed to save article to database: {:?}", e
+                    "[{} {} {}]: Failed to save article to database: {:?}",
+                    worker_detail.name, worker_detail.id, worker_detail.model, e
                 );
                 return false; // Skip processing if saving fails
             }
+            Err(_) => {
+                error!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {}]: [TIMEOUT] Database operation timed out after 30s: add_article (matched_topic_item)",
+                    worker_detail.name, worker_detail.id, worker_detail.model
+                );
+                return false;
+            }
         };
 
-        // Process vector embeddings and entities
-        if let Err(e) = process_article_similarity(
+        // Process vector embeddings, entities, and clustering (inline)
+        if let Err(e) = process_similarity_and_clustering_inline(
             db,
             article_id,
             &summary,
             &article_text,
             pub_date.as_deref(),
-            &article_hash,
-            &title_domain_hash,
             Some(&topic),
             quality,
             &mut response_json,
@@ -587,7 +685,7 @@ async fn process_matched_topic_item(
         {
             error!(
                 target: TARGET_LLM_REQUEST,
-                "Failed to process article similarity: {:?}", e
+                "Failed to process similarity and clustering: {:?}", e
             );
         }
 
@@ -669,4 +767,285 @@ fn build_affected_summary_indirect(
     } else {
         String::new()
     }
+}
+
+/// Inline processing of similarity search, entity extraction, and clustering
+/// Replaces the old process_article_similarity function to fix timing issues
+async fn process_similarity_and_clustering_inline(
+    db: &Database,
+    article_id: i64,
+    summary: &str,
+    article_text: &str,
+    pub_date: Option<&str>,
+    topic: Option<&str>,
+    quality: i8,
+    response_json: &mut serde_json::Value,
+    llm_params: &mut TextLLMParams,
+    worker_detail: &WorkerDetail,
+) -> Result<(), anyhow::Error> {
+    use crate::vector::{
+        embedding::get_article_vectors, search::get_similar_articles_with_entities,
+        storage::store_embedding,
+    };
+    use crate::JsonSchemaType;
+
+    // Generate vector embedding
+    let vector_start = Instant::now();
+    if let Ok(Some(embedding)) = get_article_vectors(summary).await {
+        info!(
+            "Generated vector embedding with {} dimensions in {:?}",
+            embedding.len(),
+            vector_start.elapsed()
+        );
+
+        // Extract entities BEFORE similarity search
+        let entity_extraction_start = Instant::now();
+        let mut entity_ids: Option<Vec<i64>> = None;
+
+        // Create JsonLLMParams for entity extraction
+        let json_params = crate::JsonLLMParams {
+            base: llm_params.base.clone(),
+            schema_type: JsonSchemaType::EntityExtraction,
+        };
+
+        match crate::entity::extraction::extract_entities(
+            article_text,
+            pub_date,
+            &json_params,
+            worker_detail,
+        )
+        .await
+        {
+            Ok(extracted_entities) => {
+                info!(
+                    "Extracted {} entities in {:?}",
+                    extracted_entities.entities.len(),
+                    entity_extraction_start.elapsed()
+                );
+
+                // Add entities to response JSON
+                response_json["entities"] = json!(extracted_entities.to_frontend_json_array());
+
+                // Store entities and get IDs
+                let entities_json =
+                    serde_json::to_string(&extracted_entities).unwrap_or_else(|_| "{}".to_string());
+
+                match timeout(
+                    Duration::from_secs(30),
+                    db.process_entity_extraction(article_id, &entities_json),
+                )
+                .await
+                {
+                    Ok(Ok(ids)) => {
+                        info!(
+                            "Successfully processed entity extraction for article {} with {} entities",
+                            article_id, ids.len()
+                        );
+                        entity_ids = Some(ids);
+                    }
+                    Ok(Err(e)) => {
+                        error!("Failed to process entity extraction: {:?}", e);
+                    }
+                    Err(_) => {
+                        error!("[TIMEOUT] Database operation timed out after 30s: process_entity_extraction");
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to extract entities: {:?}", e);
+            }
+        }
+
+        // Get event date
+        let (_, event_date) = db
+            .get_article_details_with_dates(article_id)
+            .await
+            .unwrap_or((None, None));
+
+        // Get similar articles using the unified algorithm
+        let similar_articles = match get_similar_articles_with_entities(
+            &embedding,
+            10,
+            entity_ids.as_deref(),
+            event_date.as_deref(),
+            Some(article_id),
+        )
+        .await
+        {
+            Ok(articles) => articles,
+            Err(e) => {
+                error!("Failed to get similar articles: {:?}", e);
+                Vec::new()
+            }
+        };
+
+        // Build similar articles JSON from results
+        let mut similar_articles_with_details = Vec::new();
+        for article in &similar_articles {
+            if let Ok(Some((json_url, title, tiny_summary))) =
+                db.get_article_details_by_id(article.id).await
+            {
+                similar_articles_with_details.push(build_similar_article_json(
+                    article,
+                    Some(json_url),
+                    title,
+                    Some(tiny_summary),
+                ));
+            } else {
+                similar_articles_with_details
+                    .push(build_similar_article_json(article, None, None, None));
+            }
+        }
+        response_json["similar_articles"] = json!(similar_articles_with_details);
+
+        // Use the SAME results for clustering - this is the key fix!
+        let cluster_id = match crate::db::cluster::assign_article_to_cluster_from_similar(
+            db,
+            article_id,
+            &similar_articles,
+        )
+        .await
+        {
+            Ok(id) => {
+                info!("Assigned article {} to cluster {}", article_id, id);
+                id
+            }
+            Err(e) => {
+                error!("Failed to assign article {} to cluster: {}", article_id, e);
+                0
+            }
+        };
+
+        // Generate cluster summary if assigned to a cluster
+        if cluster_id > 0 {
+            // Extract current article data from response_json for cluster summary
+            let current_article_data = crate::clustering::types::CurrentArticleData {
+                id: article_id,
+                title: response_json["title"].as_str().unwrap_or("").to_string(),
+                tiny_title: response_json["tiny_title"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                url: response_json["url"].as_str().unwrap_or("").to_string(),
+                tiny_summary: response_json["tiny_summary"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string(),
+                quality_score: quality,
+                pub_date: pub_date.map(|s| s.to_string()),
+            };
+
+            match crate::clustering::generate_cluster_summary(
+                db,
+                &llm_params,
+                cluster_id,
+                Some(current_article_data),
+            )
+            .await
+            {
+                Ok(summary) => {
+                    info!(
+                        "Generated summary for cluster {} (length: {})",
+                        cluster_id,
+                        summary.len()
+                    );
+
+                    // Update cluster significance
+                    if let Ok(score) =
+                        crate::clustering::calculate_cluster_significance(db, cluster_id).await
+                    {
+                        info!(
+                            "Updated significance score for cluster {}: {:.4}",
+                            cluster_id, score
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to generate summary for cluster {}: {}",
+                        cluster_id, e
+                    );
+                }
+            }
+
+            // Check for potential cluster merges
+            match crate::clustering::check_and_merge_similar_clusters(db, cluster_id, &llm_params)
+                .await
+            {
+                Ok(Some(new_cluster_id)) => {
+                    info!(
+                        "Merged cluster {} into new cluster {}",
+                        cluster_id, new_cluster_id
+                    );
+                }
+                Ok(None) => {
+                    debug!("No clusters merged for cluster {}", cluster_id);
+                }
+                Err(e) => {
+                    error!("Error checking for cluster merges: {}", e);
+                }
+            }
+        }
+
+        // Store embedding
+        if let Err(e) = store_embedding(
+            article_id,
+            &embedding,
+            pub_date,
+            topic,
+            quality,
+            entity_ids,
+            event_date.as_deref(),
+        )
+        .await
+        {
+            error!("Failed to store vector embedding: {:?}", e);
+        }
+
+        // Add cluster summary to response JSON if article belongs to a cluster
+        if let Ok(Some(cluster_summary)) =
+            crate::db::cluster::get_article_cluster_summary(db, article_id).await
+        {
+            response_json["cluster_summary"] = serde_json::json!(cluster_summary);
+        }
+    }
+
+    Ok(())
+}
+
+/// Converts an ArticleMatch and article details into a standardized JSON representation
+fn build_similar_article_json(
+    article: &crate::vector::types::ArticleMatch,
+    json_url: Option<String>,
+    title: Option<String>,
+    tiny_summary: Option<String>,
+) -> serde_json::Value {
+    json!({
+        // Basic fields
+        "id": article.id,
+        "json_url": json_url.unwrap_or_else(|| "Unknown URL".to_string()),
+        "title": title.unwrap_or_else(|| "Unknown Title".to_string()),
+        "tiny_summary": tiny_summary.unwrap_or_default(),
+        "category": article.category.clone(),
+        "published_date": article.published_date.clone(),
+        "quality_score": article.quality_score,
+        "similarity_score": article.score,
+
+        // Vector quality fields - Explicitly unwrap Option types with defaults
+        "vector_score": article.vector_score.unwrap_or(0.0),
+        "vector_active_dimensions": article.vector_active_dimensions.unwrap_or(0),
+        "vector_magnitude": article.vector_magnitude.unwrap_or(0.0),
+
+        // Entity similarity fields - Explicitly unwrap Option types with defaults
+        "entity_overlap_count": article.entity_overlap_count.unwrap_or(0),
+        "primary_overlap_count": article.primary_overlap_count.unwrap_or(0),
+        "person_overlap": article.person_overlap.unwrap_or(0.0),
+        "org_overlap": article.org_overlap.unwrap_or(0.0),
+        "location_overlap": article.location_overlap.unwrap_or(0.0),
+        "event_overlap": article.event_overlap.unwrap_or(0.0),
+        "temporal_proximity": article.temporal_proximity.unwrap_or(0.0),
+
+        // Formula explanation
+        "similarity_formula": article.similarity_formula.as_ref().map_or_else(|| "Unknown".to_string(), |s| s.clone())
+    })
 }

@@ -1,8 +1,7 @@
 use crate::entity::types::{Entity, EntityType, ExtractedEntities, ImportanceLevel};
-use crate::llm::generate_llm_response;
+use crate::llm::generate_json_response;
 use crate::prompt;
-use crate::LLMParams;
-use crate::WorkerDetail;
+use crate::{JsonLLMParams, WorkerDetail};
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -14,17 +13,14 @@ use super::TARGET_ENTITY;
 pub async fn extract_entities(
     article_text: &str,
     pub_date: Option<&str>,
-    llm_params: &mut LLMParams,
+    json_params: &JsonLLMParams,
     worker_detail: &WorkerDetail,
 ) -> Result<ExtractedEntities> {
     // Set up extraction prompt
     let entity_prompt = prompt::entity_extraction_prompt(article_text, pub_date);
 
-    // Enable structured JSON output mode with entity extraction schema
-    llm_params.json_format = Some(crate::JsonSchemaType::EntityExtraction);
-
-    // Get LLM response
-    let response = match generate_llm_response(&entity_prompt, llm_params, worker_detail).await {
+    // Get LLM response with proper JSON mode
+    let response = match generate_json_response(&entity_prompt, json_params, worker_detail).await {
         Some(response) => response,
         None => {
             error!(target: TARGET_ENTITY, "Failed to generate entity extraction response");
@@ -36,9 +32,6 @@ pub async fn extract_entities(
 
     // Log the raw response for debugging
     info!(target: TARGET_ENTITY, "Raw LLM response for entity extraction: {}", response);
-
-    // Reset JSON format mode
-    llm_params.json_format = None;
 
     // Parse the response
     let mut parsed = match parse_entity_response(&response) {

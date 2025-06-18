@@ -9,6 +9,96 @@ use crate::clustering::types::{ClusterArticle, EntityDetail};
 use crate::db::core::Database;
 use crate::entity::types::EntityType;
 
+/// Assigns an article to a cluster based on similar articles results
+/// Uses the same algorithm as similar_articles to ensure consistency
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `article_id` - ID of the article to assign to a cluster
+/// * `similar_articles` - Results from get_similar_articles_with_entities
+///
+/// # Returns
+/// * `Ok(cluster_id)` - The ID of the cluster the article was assigned to
+/// * `Err` - If there was an error during the process
+pub async fn assign_article_to_cluster_from_similar(
+    db: &Database,
+    article_id: i64,
+    similar_articles: &[crate::vector::types::ArticleMatch],
+) -> Result<i64> {
+    // If no similar articles, create new cluster
+    if similar_articles.is_empty() {
+        debug!(
+            "No similar articles found, creating new cluster for article {}",
+            article_id
+        );
+        let entities = get_article_entities(db, article_id).await?;
+        let cluster_id = create_cluster_for_article(db, article_id, &entities).await?;
+        update_article_cluster_id(db, article_id, cluster_id).await?;
+        return Ok(cluster_id);
+    }
+
+    // Find highest scoring article above threshold (0.70)
+    if let Some(best_match) = similar_articles.first() {
+        if best_match.score >= 0.70 {
+            // Get that article's cluster and join it
+            match get_article_cluster_id(db, best_match.id).await {
+                Ok(existing_cluster_id) if existing_cluster_id > 0 => {
+                    info!(
+                        "Assigning article {} to existing cluster {} (similarity: {:.4})",
+                        article_id, existing_cluster_id, best_match.score
+                    );
+                    assign_to_cluster(db, article_id, existing_cluster_id, best_match.score as f64)
+                        .await?;
+                    update_article_cluster_id(db, article_id, existing_cluster_id).await?;
+                    return Ok(existing_cluster_id);
+                }
+                _ => {
+                    debug!(
+                        "Similar article {} has no cluster, creating new cluster",
+                        best_match.id
+                    );
+                }
+            }
+        } else {
+            debug!(
+                "Best match similarity ({:.4}) below threshold (0.70), creating new cluster",
+                best_match.score
+            );
+        }
+    }
+
+    // No good matches - create new cluster
+    debug!(
+        "Creating new cluster for article {} - no matches above threshold",
+        article_id
+    );
+    let entities = get_article_entities(db, article_id).await?;
+    let cluster_id = create_cluster_for_article(db, article_id, &entities).await?;
+    update_article_cluster_id(db, article_id, cluster_id).await?;
+    Ok(cluster_id)
+}
+
+/// Gets an article's cluster_id from the database
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `article_id` - ID of the article
+///
+/// # Returns
+/// * `Ok(cluster_id)` - The cluster ID (0 if not assigned to a cluster)
+/// * `Err` - If there was an error during retrieval
+pub async fn get_article_cluster_id(db: &Database, article_id: i64) -> Result<i64> {
+    let row = sqlx::query("SELECT cluster_id FROM articles WHERE id = ?")
+        .bind(article_id)
+        .fetch_optional(db.pool())
+        .await?;
+
+    match row {
+        Some(row) => Ok(row.get::<Option<i64>, _>("cluster_id").unwrap_or(0)),
+        None => Ok(0), // Article not found
+    }
+}
+
 /// Assigns an article to the most appropriate cluster based on entity overlap
 ///
 /// This function:
@@ -85,7 +175,7 @@ pub async fn get_article_entities(db: &Database, article_id: i64) -> Result<Vec<
     let rows = sqlx::query(
         r#"
         SELECT entity_id FROM article_entities 
-        WHERE article_id = ? AND importance = 'PRIMARY'
+        WHERE article_id = ? AND importance = 'Primary'
         "#,
     )
     .bind(article_id)
@@ -197,18 +287,19 @@ pub struct ClusterInfo {
 /// * `Err` - If there was an error during creation
 pub async fn create_cluster_for_article(
     db: &Database,
-    _article_id: i64,
+    article_id: i64,
     entity_ids: &[i64],
 ) -> Result<i64> {
     let now = Utc::now().to_rfc3339();
     let primary_entity_ids = serde_json::to_string(entity_ids)?;
 
-    // Create the cluster
+    // Create the cluster with initial article_count = 0
+    // assign_to_cluster will increment it to 1
     let cluster_id = sqlx::query(
         r#"
         INSERT INTO article_clusters
         (creation_date, last_updated, primary_entity_ids, article_count, needs_summary_update)
-        VALUES (?, ?, ?, 1, 1)
+        VALUES (?, ?, ?, 0, 1)
         "#,
     )
     .bind(&now)
@@ -223,6 +314,10 @@ pub async fn create_cluster_for_article(
         cluster_id,
         entity_ids.len()
     );
+
+    // Now assign the article to the cluster (creates mapping and updates count)
+    // Use similarity score of 1.0 since this is the founding article
+    assign_to_cluster(db, article_id, cluster_id, 1.0).await?;
 
     Ok(cluster_id)
 }
@@ -338,7 +433,8 @@ pub async fn get_clusters_needing_summary_updates(db: &Database) -> Result<Vec<i
     Ok(cluster_ids)
 }
 
-/// Gets articles in a cluster, ordered by recency and importance
+/// Gets articles in a cluster using unified vector-first approach
+/// This eliminates the broken hybrid SQLite+vector approach
 ///
 /// # Arguments
 /// * `db` - Database instance
@@ -353,13 +449,13 @@ pub async fn get_cluster_articles(
     cluster_id: i64,
     limit: usize,
 ) -> Result<Vec<ClusterArticle>> {
+    // Step 1: Get article IDs and similarity scores from cluster mappings (SQLite)
     let rows = sqlx::query(
         r#"
-        SELECT a.id, a.title, a.url, a.json_data, a.pub_date, a.tiny_summary, acm.similarity_score
-        FROM articles a
-        JOIN article_cluster_mappings acm ON a.id = acm.article_id
+        SELECT acm.article_id, acm.similarity_score
+        FROM article_cluster_mappings acm
         WHERE acm.cluster_id = ?
-        ORDER BY a.pub_date DESC, acm.similarity_score DESC
+        ORDER BY acm.similarity_score DESC
         LIMIT ?
         "#,
     )
@@ -368,21 +464,186 @@ pub async fn get_cluster_articles(
     .fetch_all(db.pool())
     .await?;
 
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Extract article IDs for vector lookup
+    let article_ids: Vec<i64> = rows
+        .iter()
+        .map(|row| row.get::<i64, _>("article_id"))
+        .collect();
+
+    info!(
+        "Getting cluster {} articles using vector-first approach: {} article IDs",
+        cluster_id,
+        article_ids.len()
+    );
+
+    // Step 2: Get complete article data from vector database (same as similar articles)
+    let vector_articles = crate::vector::search::get_articles_by_ids(&article_ids).await?;
+
+    // Create a map of article_id -> similarity_score from cluster mappings
+    let similarity_map: std::collections::HashMap<i64, f64> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.get::<i64, _>("article_id"),
+                row.get::<f64, _>("similarity_score"),
+            )
+        })
+        .collect();
+
+    // Step 3: Get complete article data from SQLite using article IDs
+    if article_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Create SQL IN clause for bulk query
+    let placeholders = article_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let query = format!(
+        r#"
+        SELECT id, title, url, json_data, pub_date, tiny_summary
+        FROM articles
+        WHERE id IN ({})
+        "#,
+        placeholders
+    );
+
+    let mut query_builder = sqlx::query(&query);
+    for id in &article_ids {
+        query_builder = query_builder.bind(id);
+    }
+
+    let sqlite_rows = query_builder.fetch_all(db.pool()).await?;
+
+    // Create a map of article_id -> SQLite data
+    let mut sqlite_data_map = std::collections::HashMap::new();
+    for row in sqlite_rows {
+        let id: i64 = row.get("id");
+        sqlite_data_map.insert(
+            id,
+            (
+                row.get::<Option<String>, _>("title"),
+                row.get::<String, _>("url"),
+                row.get::<Option<String>, _>("json_data"),
+                row.get::<Option<String>, _>("pub_date"),
+                row.get::<Option<String>, _>("tiny_summary"),
+            ),
+        );
+    }
+
+    // Step 4: Convert ArticleMatch objects to ClusterArticle objects with complete data
     let mut articles = Vec::new();
 
-    for row in rows {
+    for vector_article in vector_articles {
+        // Get similarity score from cluster mapping
+        let similarity_score = similarity_map
+            .get(&vector_article.id)
+            .copied()
+            .unwrap_or(0.0);
+
+        // Clone values that will be used multiple times
+        let article_id = vector_article.id;
+        let quality_score = vector_article.quality_score;
+        let published_date = vector_article.published_date;
+
+        // Get complete article data from SQLite
+        let (title, url, json_data, pub_date, tiny_summary) =
+            sqlite_data_map.get(&article_id).cloned().unwrap_or((
+                None,
+                format!("missing_article_{}", article_id),
+                None,
+                None,
+                None,
+            ));
+
+        // Extract article body and titles from json_data
+        let (body, json_title, json_tiny_title) = if let Some(ref json_str) = json_data {
+            match serde_json::from_str::<serde_json::Value>(json_str) {
+                Ok(json_obj) => {
+                    let body = json_obj.get("body").and_then(|v| v.as_str()).map(|s| {
+                        // Limit body length to prevent context overflow (max ~2000 chars)
+                        if s.len() > 2000 {
+                            format!("{}...", &s[..2000])
+                        } else {
+                            s.to_string()
+                        }
+                    });
+                    let json_title = json_obj
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let json_tiny_title = json_obj
+                        .get("tiny_title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    (body, json_title, json_tiny_title)
+                }
+                Err(_) => {
+                    debug!("Failed to parse JSON data for article {}", article_id);
+                    (None, None, None)
+                }
+            }
+        } else {
+            (None, None, None)
+        };
+
+        // Use the best available title: prefer SQLite title, fallback to JSON title
+        let final_title = title.or(json_title);
+        let final_tiny_title = tiny_summary.or(json_tiny_title);
+
+        info!(
+            "Converted article {} with complete data: has_title={}, has_body={}, has_tiny_summary={}, body_length={}, quality={}, date={}",
+            article_id,
+            final_title.is_some(),
+            body.is_some(),
+            final_tiny_title.is_some(),
+            body.as_ref().map(|b| b.len()).unwrap_or(0),
+            quality_score,
+            pub_date.as_deref().or(Some(published_date.as_str())).unwrap_or("None")
+        );
+
+        // Convert to ClusterArticle with complete data from both sources
         let article = ClusterArticle {
-            id: row.get("id"),
-            title: row.get("title"),
-            url: row.get("url"),
-            json_data: row.get("json_data"),
-            pub_date: row.get("pub_date"),
-            tiny_summary: row.get("tiny_summary"),
-            similarity_score: row.get("similarity_score"),
+            id: article_id,
+            title: final_title,
+            url,
+            body, // Extracted article body instead of full json_data
+            pub_date: pub_date.or(Some(published_date.clone())), // Prefer SQLite date, fallback to vector date
+            tiny_summary: final_tiny_title,
+            similarity_score,
+            quality_score, // From vector DB
         };
 
         articles.push(article);
     }
+
+    // Sort by quality score and similarity (best articles first)
+    articles.sort_by(|a, b| {
+        b.quality_score.cmp(&a.quality_score).then_with(|| {
+            b.similarity_score
+                .partial_cmp(&a.similarity_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    });
+
+    // Log summary statistics about the articles retrieved
+    let articles_with_body = articles.iter().filter(|a| a.body.is_some()).count();
+    let articles_with_titles = articles.iter().filter(|a| a.title.is_some()).count();
+    let articles_with_summaries = articles.iter().filter(|a| a.tiny_summary.is_some()).count();
+
+    info!(
+        "Successfully retrieved {} cluster articles using vector-first approach with SQLite enhancement: {}/{} have body, {}/{} have titles, {}/{} have tiny_summary",
+        articles.len(),
+        articles_with_body, articles.len(),
+        articles_with_titles, articles.len(),
+        articles_with_summaries, articles.len()
+    );
 
     Ok(articles)
 }
@@ -424,7 +685,7 @@ pub async fn get_cluster_entity_details(
     for entity_id in entity_ids {
         let row = sqlx::query(
             r#"
-            SELECT e.id, e.canonical_name, e.entity_type
+            SELECT e.id, e.name, e.type
             FROM entities e
             WHERE e.id = ?
             "#,
@@ -434,7 +695,7 @@ pub async fn get_cluster_entity_details(
         .await?;
 
         if let Some(row) = row {
-            let entity_type_str: String = row.get("entity_type");
+            let entity_type_str: String = row.get("type");
             let entity_type = match entity_type_str.as_str() {
                 "PERSON" => EntityType::Person,
                 "ORGANIZATION" => EntityType::Organization,
@@ -447,7 +708,7 @@ pub async fn get_cluster_entity_details(
 
             let detail = EntityDetail {
                 id: row.get("id"),
-                name: row.get("canonical_name"),
+                name: row.get("name"),
                 entity_type,
             };
 
@@ -896,4 +1157,30 @@ pub async fn update_cluster_article_count(
     .await?;
 
     Ok(())
+}
+
+/// Gets cluster summary for an article
+///
+/// # Arguments
+/// * `db` - Database instance
+/// * `article_id` - ID of the article
+///
+/// # Returns
+/// * `Ok(Some(String))` - The cluster summary if article belongs to a cluster with a summary
+/// * `Ok(None)` - If article doesn't belong to a cluster or cluster has no summary
+/// * `Err` - If there was an error during retrieval
+pub async fn get_article_cluster_summary(db: &Database, article_id: i64) -> Result<Option<String>> {
+    let row = sqlx::query(
+        r#"
+        SELECT ac.summary
+        FROM articles a
+        JOIN article_clusters ac ON a.cluster_id = ac.id
+        WHERE a.id = ? AND ac.summary IS NOT NULL AND ac.summary != ''
+        "#,
+    )
+    .bind(article_id)
+    .fetch_optional(db.pool())
+    .await?;
+
+    Ok(row.map(|r| r.get::<String, _>("summary")))
 }

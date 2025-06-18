@@ -4,10 +4,11 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 // No need to import Database, we use it through params
-use crate::llm::generate_llm_response;
+use crate::llm::generate_text_response;
 use crate::prompt;
 use crate::util::weighted_sleep;
-use crate::workers::common::{extract_llm_params, FeedItem, ProcessItemParams};
+use crate::workers::common::{FeedItem, ProcessItemParams};
+use crate::workers::extract_text_llm_params;
 use crate::{WorkerDetail, TARGET_DB, TARGET_LLM_REQUEST};
 
 use super::extraction::{extract_article_text, handle_access_denied};
@@ -170,9 +171,9 @@ async fn process_topics(
 ) {
     // Early check to filter promotional content
     let promo_check_prompt = prompt::filter_promotional_content(article_text);
-    let llm_params = extract_llm_params(params);
+    let llm_params = extract_text_llm_params(params);
     if let Some(promo_response) =
-        generate_llm_response(&promo_check_prompt, &llm_params, worker_detail).await
+        generate_text_response(&promo_check_prompt, &llm_params, worker_detail).await
     {
         if promo_response.trim().to_lowercase().starts_with("yes") {
             // This is a promotional article, skip further processing
@@ -217,9 +218,9 @@ async fn process_topics(
         debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: asking if about {}: {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, topic_prompt);
 
         let yes_no_prompt = prompt::is_this_about(article_text, topic_prompt);
-        let mut llm_params = extract_llm_params(params);
+        let llm_params = extract_text_llm_params(params);
         if let Some(yes_no_response) =
-            generate_llm_response(&yes_no_prompt, &llm_params, worker_detail).await
+            generate_text_response(&yes_no_prompt, &llm_params, worker_detail).await
         {
             if yes_no_response.trim().to_lowercase().starts_with("yes") {
                 // Article is relevant to the topic
@@ -236,14 +237,8 @@ async fn process_topics(
                     continue; // Skip to the next topic
                 }
 
-                if article_is_relevant(
-                    article_text,
-                    topic_prompt,
-                    pub_date,
-                    &mut llm_params,
-                    worker_detail,
-                )
-                .await
+                if article_is_relevant(article_text, topic_prompt, pub_date, params, worker_detail)
+                    .await
                 {
                     // Add to matched topics queue
                     if let Err(e) = params

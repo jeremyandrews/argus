@@ -20,7 +20,8 @@ pub async fn decision_loop(
     temperature: f32,
     slack_token: &str,
     slack_channel: &str,
-    _no_think: bool,
+    no_think: bool,
+    model_config: Option<crate::ModelConfig>,
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut rng = StdRng::seed_from_u64(rand::random());
@@ -116,6 +117,8 @@ pub async fn decision_loop(
                     slack_token,
                     slack_channel,
                     places: places_clone,
+                    model_config: model_config.clone(),
+                    no_think,
                 };
 
                 process_item(item, &mut params, &worker_detail).await;

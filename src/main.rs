@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
 const ANALYSIS_OLLAMA_CONFIGS_ENV: &str = "ANALYSIS_OLLAMA_CONFIGS";
@@ -16,7 +16,9 @@ const ANALYSIS_OPENAI_CONFIGS_ENV: &str = "ANALYSIS_OPENAI_CONFIGS";
 const SLACK_TOKEN_ENV: &str = "SLACK_TOKEN";
 const SLACK_CHANNEL_ENV: &str = "SLACK_CHANNEL";
 const LLM_TEMPERATURE_ENV: &str = "LLM_TEMPERATURE";
-const USE_REASONING_MODELS_ENV: &str = "USE_REASONING_MODELS";
+const LLM_TOP_P_ENV: &str = "LLM_TOP_P";
+const LLM_TOP_K_ENV: &str = "LLM_TOP_K";
+const LLM_MIN_P_ENV: &str = "LLM_MIN_P";
 
 use argus::analysis_worker;
 use argus::app::api;
@@ -25,8 +27,7 @@ use argus::environment;
 use argus::logging;
 use argus::rss;
 use argus::{
-    FallbackConfig, LLMClient, ThinkingModelConfig, START_TIME, TARGET_LLM_REQUEST,
-    TARGET_WEB_REQUEST,
+    FallbackConfig, LLMClient, ModelConfig, START_TIME, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST,
 };
 
 use environment::get_env_var_as_vec;
@@ -47,6 +48,51 @@ pub fn initialize_start_time() {
         .unwrap_or_default()
         .as_secs();
     START_TIME.store(now, Ordering::SeqCst);
+}
+
+/// Create ModelConfig based on thinking vs non-thinking mode with environment overrides
+fn create_model_config(
+    no_think: bool,
+    env_top_p: f32,
+    env_top_k: i32,
+    env_min_p: f32,
+) -> ModelConfig {
+    if no_think {
+        // Non-thinking mode parameters
+        ModelConfig {
+            strip_thinking_tags: true,
+            top_p: if env_top_p > 0.0 { env_top_p } else { 0.8 },
+            top_k: if env_top_k > 0 { env_top_k } else { 20 },
+            min_p: if env_min_p >= 0.0 { env_min_p } else { 0.0 },
+        }
+    } else {
+        // Thinking mode parameters
+        ModelConfig {
+            strip_thinking_tags: true,
+            top_p: if env_top_p > 0.0 { env_top_p } else { 0.95 },
+            top_k: if env_top_k > 0 { env_top_k } else { 20 },
+            min_p: if env_min_p >= 0.0 { env_min_p } else { 0.0 },
+        }
+    }
+}
+
+/// Get temperature based on thinking vs non-thinking mode
+fn get_temperature(no_think: bool, env_temperature: f32) -> f32 {
+    if no_think {
+        // Non-thinking mode: use 0.7 or environment override
+        if env_temperature > 0.0 {
+            env_temperature
+        } else {
+            0.7
+        }
+    } else {
+        // Thinking mode: use 0.6 or environment override
+        if env_temperature > 0.0 {
+            env_temperature
+        } else {
+            0.6
+        }
+    }
 }
 
 #[tokio::main]
@@ -222,8 +268,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Existing process_*_configs functions are unchanged
-
     // Process DECISION configurations
     process_ollama_configs_for_workers(
         &decision_ollama_configs,
@@ -273,13 +317,32 @@ async fn main() -> Result<()> {
     let slack_token = env::var(SLACK_TOKEN_ENV).expect("SLACK_TOKEN environment variable required");
     let slack_channel =
         env::var(SLACK_CHANNEL_ENV).expect("SLACK_CHANNEL environment variable required");
-    let temperature = env::var(LLM_TEMPERATURE_ENV)
-        .unwrap_or_else(|_| "0.0".to_string())
-        .parse()
-        .unwrap_or_else(|_| {
-            warn!("Invalid LLM_TEMPERATURE; defaulting to 0.0");
-            0.0
-        });
+
+    // Read environment parameter overrides (optional)
+    let env_temperature = env::var(LLM_TEMPERATURE_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0); // 0.0 means use automatic values
+
+    let env_top_p = env::var(LLM_TOP_P_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0); // 0.0 means use automatic values
+
+    let env_top_k = env::var(LLM_TOP_K_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0); // 0 means use automatic values
+
+    let env_min_p = env::var(LLM_MIN_P_ENV)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(-1.0); // -1.0 means use automatic values (since 0.0 is a valid value)
+
+    info!(
+        "Environment parameter overrides: temp={} (0.0=auto), top_p={} (0.0=auto), top_k={} (0=auto), min_p={} (-1.0=auto)",
+        env_temperature, env_top_p, env_top_k, env_min_p
+    );
 
     // Define panic notification mechanism
     let panic_notify = Arc::new(Notify::new());
@@ -326,17 +389,37 @@ async fn main() -> Result<()> {
         let decision_worker_slack_channel = slack_channel.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Decision Worker {}", decision_id);
+
         let decision_worker_handle = tokio::spawn(async move {
             info!(target: TARGET_LLM_REQUEST, "{}: Starting Decision Worker with model '{}' (decision_loop)", thread_name, decision_model);
+
+            // Create model config based on thinking vs non-thinking mode with environment overrides
+            let worker_model_config = Some(create_model_config(
+                no_think, env_top_p, env_top_k, env_min_p,
+            ));
+            let worker_temperature = get_temperature(no_think, env_temperature);
+
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "{}: Using {} mode with temp={}, top_p={}, top_k={}, min_p={}",
+                thread_name,
+                if no_think { "non-thinking" } else { "thinking" },
+                worker_temperature,
+                worker_model_config.as_ref().unwrap().top_p,
+                worker_model_config.as_ref().unwrap().top_k,
+                worker_model_config.as_ref().unwrap().min_p
+            );
+
             match decision_worker::decision_loop(
                 decision_id,
                 &decision_worker_topics,
                 &llm_client,
                 &decision_model,
-                temperature,
+                worker_temperature,
                 &decision_worker_slack_token,
                 &decision_worker_slack_channel,
                 no_think,
+                worker_model_config,
             )
             .await
             {
@@ -352,13 +435,6 @@ async fn main() -> Result<()> {
         decision_handles.push(decision_worker_handle);
     }
 
-    // Configure thinking model based on global switch
-    // Read the environment variable
-    let use_reasoning_models = env::var(USE_REASONING_MODELS_ENV)
-        .unwrap_or_else(|_| "false".to_string())
-        .to_lowercase()
-        == "true";
-
     // Launch ANALYSIS workers with optional fallback
     let mut analysis_handles = Vec::new();
     for worker_config in analysis_workers.into_iter() {
@@ -371,35 +447,28 @@ async fn main() -> Result<()> {
         // Use the worker's configured model
         let worker_model = worker_config.model.clone();
 
-        // Set temperature based on whether we're using reasoning models
-        // This ensures we don't use greedy decoding for reasoning models
-        let worker_temperature = if use_reasoning_models {
-            0.6 // Recommended temperature for reasoning models
-        } else {
-            temperature
-        };
-
-        if use_reasoning_models {
-            info!(target: TARGET_LLM_REQUEST, "{}: Using reasoning model '{}' with parameters (temp=0.6, top_p=0.95, top_k=20)", thread_name, worker_model);
-        }
-
-        // Capture reasoning mode status for this worker
-        let worker_use_reasoning = use_reasoning_models;
-
         let analysis_handle = tokio::spawn(async move {
             info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_model);
 
-            // Create thinking config inside the task closure
-            let worker_thinking_config = if worker_use_reasoning {
-                Some(ThinkingModelConfig {
-                    strip_thinking_tags: true,
-                    top_p: 0.95,
-                    top_k: 20,
-                    min_p: 0.0,
-                })
-            } else {
-                None
-            };
+            // Create model config based on thinking vs non-thinking mode with environment overrides
+            let worker_model_config = Some(create_model_config(
+                worker_config.no_think,
+                env_top_p,
+                env_top_k,
+                env_min_p,
+            ));
+            let worker_temperature = get_temperature(worker_config.no_think, env_temperature);
+
+            info!(
+                target: TARGET_LLM_REQUEST,
+                "{}: Using {} mode with temp={}, top_p={}, top_k={}, min_p={}",
+                thread_name,
+                if worker_config.no_think { "non-thinking" } else { "thinking" },
+                worker_temperature,
+                worker_model_config.as_ref().unwrap().top_p,
+                worker_model_config.as_ref().unwrap().top_k,
+                worker_model_config.as_ref().unwrap().min_p
+            );
 
             match analysis_worker::analysis_loop(
                 worker_config.id,
@@ -410,7 +479,7 @@ async fn main() -> Result<()> {
                 &analysis_worker_slack_channel,
                 worker_temperature,
                 worker_config.fallback,
-                worker_thinking_config,
+                worker_model_config,
                 worker_config.no_think,
             )
             .await

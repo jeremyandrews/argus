@@ -34,6 +34,44 @@
 - All code changes should be verified with tests before being committed
 - Test coverage should be maintained or improved with each change
 
+## Safety and Code Quality Rules
+- **NO UNSAFE CODE**: Unsafe code is strictly forbidden in this project except in extremely rare cases
+- The only exceptions are if we fully discuss the need in Plan mode and determine it's truly necessary
+- Use safe Rust alternatives like `Arc<Mutex<>>`, `Arc<RwLock<>>`, or `once_cell::sync::OnceCell` instead of static mut
+- All compilation warnings must be fixed before code is considered complete
+- Prefer safe, explicit patterns over clever but potentially dangerous code
+
+## Worker Health Monitoring & Timeout Patterns
+- **Timeout Protection**: All critical operations that could hang indefinitely now have timeouts:
+  - Database queue operations: 30 seconds
+  - Database hash checks: 10 seconds  
+  - LLM operations: 120 seconds
+  - Entity extraction operations: 30 seconds
+
+- **Standardized Timeout Error Format**: All timeout errors follow the pattern:
+  ```
+  [TIMEOUT] <operation_type> timed out after <duration>s: <specific_function>
+  ```
+  This enables easy searching for `[TIMEOUT]` in logs to identify all timeout occurrences
+
+- **Worker Health Monitoring**:
+  - Heartbeat logging every 30 seconds showing worker ID, model, time since last activity, and current mode
+  - Tracing spans around major operations for better observability
+  - Last activity tracking to detect idle workers
+
+- **Graceful Degradation**: When operations timeout:
+  - The worker logs the timeout with context
+  - Processing continues with the next item rather than hanging
+  - Database state remains consistent
+  - No zombie processes or indefinite waits
+
+- **Timeout Configuration Guidelines**:
+  - Queue fetches: 30s (allow for database contention)
+  - Hash existence checks: 10s (should be fast operations)
+  - Article saves: 30s (complex transaction with multiple tables)
+  - LLM requests: 120s (allow for model loading and generation)
+  - Vector operations: No explicit timeout (local computation)
+
 ## Entity Matching & Alias System
 - The entity matching system uses a multi-factor approach with configurable parameters:
   - Vector similarity has 60% weight in the final score
@@ -82,6 +120,37 @@
   - Size-based eviction policy prevents unbounded memory growth (default: 10,000 entries)
   - Cache key normalization ensures consistent lookups (alphabetical ordering of names)
   - The cache is a global singleton accessed through AliasCache::instance()
+
+## LLM Parameter Type System
+- The system uses a type-driven approach to enforce correct formatting for LLM requests:
+  - `TextLLMParams`: For generating plain text responses (summaries, titles, analysis)
+  - `JsonLLMParams`: For generating structured JSON responses (entities, threat locations)
+  - `LLMParamsBase`: Base parameter type used to construct the specialized types
+
+- Always use the appropriate function for each response type:
+  - `generate_text_response()`: For any response that should be plain text
+  - `generate_json_response()`: For any response that should be JSON formatted
+  - DO NOT use the legacy `generate_llm_response()` function in new code
+
+- When creating parameters, follow these patterns:
+  ```rust
+  // For text responses:
+  let base_params = LLMParamsBase::from(&llm_params);
+  let text_params = TextLLMParams { base: base_params };
+  generate_text_response(&prompt, &text_params, worker_detail);
+  
+  // For JSON responses:
+  let base_params = LLMParamsBase::from(&llm_params);
+  let json_params = JsonLLMParams {
+      base: base_params,
+      schema_type: JsonSchemaType::EntityExtraction,
+  };
+  generate_json_response(&prompt, &json_params, worker_detail);
+  ```
+
+- NEVER reuse a mutable `LLMParams` object for multiple requests with different format requirements
+- ALWAYS create new parameter objects for each request type to avoid format leakage
+- When using the legacy API, explicitly reset JSON mode: `llm_params.json_format = None;`
 
 ## LLM JSON Response Handling
 - The system uses a structured approach to handle different JSON response formats from LLMs
@@ -306,3 +375,68 @@
   - URLs to content are generated and included in notifications
   - Content is stored in both full and summarized formats for different use cases
   - Article IDs must be exposed in R2 JSON to allow for match feedback
+
+## Cluster Summary Architecture & Best Practices
+- **Current Article Integration Pattern**:
+  - ALWAYS pass current article data to `generate_cluster_summary()` via the `CurrentArticleData` struct
+  - Current article should be processed FIRST in cluster summaries for relevance
+  - Use the 5-parameter function signature: `(db, llm_client, cluster_id, model_name, current_article_data)`
+  - For existing cluster summaries (no current article), pass `None` as the 5th parameter
+
+- **Title Formatting for International Sources**:
+  - Use `format_article_title(tiny_title, original_title)` for proper international display
+  - Format pattern: "English Title (Original Title)" for foreign language sources
+  - Handles edge cases: same titles, missing titles, single language sources
+  - NEVER display "Untitled" when proper titles are available
+
+- **Function Signature Updates**:
+  - ALL calls to `generate_cluster_summary()` must use the 5-parameter version
+  - Check these locations when updating: processing.rs, entity_handling.rs, merging/core.rs, test files, management tools
+  - Maintain backward compatibility by allowing `None` for current article parameter
+  - Update all test files and utilities to use new signature
+
+- **Cluster Summary Generation Pipeline**:
+  - Extract current article data from response_json BEFORE cluster summary generation
+  - Include: id, title, tiny_title, url, tiny_summary, quality_score, pub_date
+  - Call cluster summary generation with current article data
+  - Store cluster summary in article JSON for frontend access
+
+- **Quality Assurance Patterns**:
+  - Run `cargo check` after all function signature changes
+  - Verify compilation succeeds before considering changes complete
+  - Test cluster summary generation with both current article and None scenarios
+  - Check that titles appear correctly in References sections
+
+## Production Debugging Patterns
+- **Systematic Code Flow Investigation**:
+  - When a process appears to hang, trace execution by examining logs for the last successful operation
+  - Use log timestamps to identify exactly where execution stops
+  - Add strategic debug logging with distinctive prefixes for easy grep filtering
+  - Focus logging at critical transition points: before database operations, before async calls, after timeouts
+
+- **Database Hang Debugging Pattern**:
+  - Wrap potentially hanging database operations in timeout blocks
+  - Use consistent timeout durations (30s for complex operations, 10s for simple lookups)
+  - Log both success and timeout scenarios with clear context about which operation failed
+  - Add debug logs immediately before and after suspected hang points
+
+- **Debug Logging Strategy**:
+  - Include article ID or other identifiers in all debug messages for correlation
+  - Use descriptive prefixes for easy log filtering in production
+  - Log entry into loops, database calls, and async operations
+  - Always log completion or failure of wrapped operations
+
+- **Production Deployment of Debug Code**:
+  - Debug logging can be safely deployed to production for investigation
+  - Use appropriate log levels (info for flow tracking, error for timeouts)
+  - Keep debug logging focused and temporary - remove after issue resolution
+  - Ensure debug messages include enough context for remote diagnosis
+  - Production logs can be monitored with grep patterns for specific issues
+  - DO NOT create new test utilities or binaries - use production deployment for debugging
+
+- **Function Signature Change Debugging**:
+  - When adding parameters to widely-used functions, use compiler errors as a checklist
+  - Each compilation error points to a call site that needs updating
+  - Fix ALL compilation errors before considering the change complete
+  - Common locations to check: worker processing, test utilities, management tools, merge operations
+  - Maintain a systematic approach: fix one file at a time, recompile, move to next error
