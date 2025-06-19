@@ -407,6 +407,50 @@
   - Test cluster summary generation with both current article and None scenarios
   - Check that titles appear correctly in References sections
 
+## Logging Level Guidelines and Best Practices
+- **Log Level Hierarchy (Strictest to Most Verbose)**:
+  - **ERROR**: System failures, critical errors requiring immediate attention (always in console + files)
+  - **WARN**: Recoverable failures, timeouts, retries, configuration issues (always in console + files)
+  - **INFO**: System startup, significant state changes, completed major operations, summaries (console only)
+  - **DEBUG**: Detailed operation steps, individual record processing, routine status checks (disabled by default)
+
+- **File Logging Rules (logs/app.log)**:
+  - **Only WARN+ messages** should go to log files (configured via `llm_request=warn,warn,sqlx=warn`)
+  - File logs are for **actionable issues only** - warnings and errors that operators need to respond to
+  - Routine operational messages (INFO/DEBUG) should **never** appear in log files
+  - This ensures log files remain focused and don't grow excessively from routine operations
+
+- **Console Logging Rules**:
+  - **INFO+ messages** appear on console (configured via `info,db=warn,sqlx=off,html5ever=error`)
+  - Console logs should show system progress and significant events
+  - Routine operations like individual database queries, vector calculations should use DEBUG level
+  - Worker heartbeats and similar repetitive messages should be INFO but infrequent (every 30s max)
+
+- **Vector/Embedding Operation Logging**:
+  - **Tensor shapes, statistical calculations, detailed processing steps**: DEBUG level only
+  - **Model initialization, embedding completion summaries**: INFO level appropriate
+  - **Critical errors (near-zero vectors, dimension mismatches)**: ERROR level
+  - Vector operations can generate dozens of messages per embedding - keep them at DEBUG
+
+- **Database Operation Logging**:
+  - **Individual SQL queries, record insertions, routine lookups**: DEBUG level only
+  - **Database lock conditions, retry attempts**: INFO level (actionable but not critical)
+  - **Connection failures, schema mismatches**: ERROR level
+  - **Transaction summaries, batch completion**: INFO level appropriate
+
+- **Worker Status Logging**:
+  - **Empty queue notifications, individual URL processing**: DEBUG level only
+  - **Worker startup, model switching, significant state changes**: INFO level
+  - **Worker failures, timeout conditions**: ERROR level
+  - **Heartbeat messages**: INFO level but infrequent (max every 30 seconds)
+
+- **Logging Level Review Process**:
+  - When adding new logging, ask: "Would an operator need to see this in log files?"
+  - If answer is no, use DEBUG level for detailed information
+  - If it's a significant event but not an error, use INFO level
+  - Reserve WARN/ERROR for actionable issues only
+  - Regularly review logging output to ensure appropriate signal-to-noise ratio
+
 ## Production Debugging Patterns
 - **Systematic Code Flow Investigation**:
   - When a process appears to hang, trace execution by examining logs for the last successful operation

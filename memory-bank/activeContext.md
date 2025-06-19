@@ -838,50 +838,101 @@ SELECT e.id, e.name, e.type FROM entities e WHERE e.id = ?
 
 ## Current Work Focus
 
-### ✅ COMPLETED: Log Level Reduction for File Output (June 19, 2025)
-- **Task**: Reduce log verbosity by configuring file logging to only capture WARN level and higher
-- **Status**: COMPLETED - File logging now significantly reduced, console logging unchanged
-- **Location**: `src/logging.rs`
+### ✅ COMPLETED: Comprehensive Logging Level Correction and Noise Reduction (June 19, 2025)
+- **Task**: Comprehensive review and correction of logging levels throughout the codebase to ensure appropriate log levels and reduce noise
+- **Status**: COMPLETED - Major improvements to logging signal-to-noise ratio while preserving debugging capability
+- **Location**: Multiple files across vector, database, and worker modules
 - **Completion Date**: June 19, 2025
 
 **Problem Addressed:**
-- **Excessive Log Volume**: System generating too many logs with DEBUG and INFO level messages
-- **LLM Request Verbosity**: `llm_request=debug` was creating very verbose request logs
-- **General Info Noise**: Default INFO level was capturing routine operational messages
-- **SQLx Database Logs**: Database operation logs at INFO level were cluttering files
+- **Vector Operations Over-logging**: Embedding generation producing dozens of INFO messages per operation with tensor shapes, statistical calculations, and detailed processing steps
+- **Database Routine Operation Noise**: Individual article additions, updates, and queries logging at INFO level
+- **Worker Heartbeat Spam**: Routine queue polling, empty URL handling, and individual article processing creating console noise
+- **Inconsistent Log Levels**: Many operations using INFO level for details that should be DEBUG
+- **File Log Pollution**: Only WARN+ should go to files, but many routine operations were using WARN inappropriately
 
 **Technical Solution Implemented:**
-```rust
-// BEFORE (verbose)
-.with_filter(EnvFilter::new("llm_request=debug,info,sqlx=info"));
 
-// AFTER (reduced)
-.with_filter(EnvFilter::new("llm_request=warn,warn,sqlx=warn"));
-```
+**1. Vector/Embedding Operations (Highest Impact)**
+- **Files Updated**: `src/vector/embedding.rs`, `src/vector/storage.rs`
+- **Changes**: Converted detailed INFO logging to DEBUG level
+  ```rust
+  // BEFORE: Extremely verbose INFO logging
+  info!(target: TARGET_VECTOR, "Shape of hidden_state: {:?}", hidden_state.shape());
+  info!(target: TARGET_VECTOR, "Successfully extracted vector...");
+  
+  // AFTER: Quiet INFO, detailed DEBUG
+  debug!(target: TARGET_VECTOR, "Shape of hidden_state: {:?}", hidden_state.shape());  
+  debug!(target: TARGET_VECTOR, "Successfully extracted vector...");
+  ```
+- **Impact**: Dramatically reduced console noise during routine embedding operations
 
-**Configuration Changes:**
-- **LLM Requests**: DEBUG → WARN (eliminates verbose request/response logging)
-- **Default Level**: INFO → WARN (eliminates routine operational messages)
-- **SQLx Database**: INFO → WARN (reduces database operation logging)
-- **Console Logging**: Unchanged (still INFO level for development)
+**2. Database Operations (Medium Impact)**
+- **Files Updated**: `src/db/article.rs` 
+- **Changes**: Individual record operations moved to DEBUG, kept INFO for significant events
+  ```rust
+  // BEFORE: Noisy individual operations
+  info!("Generated SQL query: {}", query);
+  info!("Executing query to fetch unseen articles...");
+  
+  // AFTER: Quiet routine operations
+  debug!("Generated SQL query: {}", query);
+  debug!("Executing query to fetch unseen articles...");
+  ```
+- **Impact**: Cleaner database operation logging while preserving lock/error visibility
 
-**Self-Documenting Design:**
-- Explicit module configuration enables easy future debugging
-- To debug LLM issues: change `llm_request=warn` to `llm_request=debug`
-- To debug database issues: change `sqlx=warn` to `sqlx=info` or `sqlx=debug`
-- To debug specific modules: add `module_name=debug` to filter string
+**3. Worker Status Messages (Medium Impact)**
+- **Files Updated**: `src/workers/decision/worker_loop.rs`, `src/workers/analysis/worker_loop.rs`
+- **Changes**: Routine queue operations moved to DEBUG level
+  ```rust
+  // BEFORE: Noisy worker operations  
+  info!("skipping empty URL in queue");
+  info!("loaded URL: {} ({:?})", url, title);
+  
+  // AFTER: Quiet routine operations
+  debug!("skipping empty URL in queue");
+  debug!("loaded URL: {} ({:?})", url, title);
+  ```
+- **Impact**: Reduced worker heartbeat noise while maintaining visibility of important state changes
+
+**Logging Level Guidelines Applied:**
+- **ERROR**: System failures, critical errors requiring immediate attention
+- **WARN**: Recoverable failures, timeouts, retries, configuration issues
+- **INFO**: System startup, significant state changes, completed major operations, summaries
+- **DEBUG**: Detailed operation steps, individual record processing, routine status checks
+
+**Current Logging Configuration:**
+- **Console**: INFO+ level with targeted filtering (`info,db=warn,sqlx=off,html5ever=error`)
+- **File logs**: WARN+ only (`llm_request=warn,warn,sqlx=warn`) with daily rotation to logs/app.log
+- **Result**: Only meaningful INFO+ messages appear in console, only warnings and errors persisted to files
 
 **Expected Impact:**
-- **Immediate**: Dramatic reduction in log file size and growth rate
+- **Immediate**: Dramatic reduction in console noise (vector operations alone were generating dozens of messages per embedding)
+- **File Log Quality**: Only actionable warnings and errors in log files
+- **Better Signal-to-Noise**: Important events like worker state changes, model initialization, and errors more visible
+- **Debugging Preserved**: All detailed information still available via DEBUG level when needed
 - **Performance**: Reduced I/O overhead from excessive logging
-- **Maintainability**: Log files focused on warnings and errors only
-- **Future Debugging**: Easy granular control for troubleshooting specific components
 
 **Production Benefits:**
-- **Cleaner Logs**: Only actionable warnings and errors in log files
-- **Better Signal-to-Noise**: Important messages won't be buried in routine logs
+- **Cleaner Console Output**: Vector operations that previously generated excessive INFO messages now log only at DEBUG
+- **Focused File Logs**: File logs contain only actionable warnings and errors (WARN+ only)
+- **Operational Clarity**: Important events no longer buried in routine operational noise
+- **Easy Debugging**: Granular control available by adjusting log levels for specific modules
 - **Storage Efficiency**: Reduced disk usage and log rotation frequency
-- **Operational Focus**: Logs highlight actual issues rather than normal operations
+
+**Files Modified:**
+- `src/vector/embedding.rs` - Converted detailed tensor/statistics logging to DEBUG
+- `src/vector/storage.rs` - Moved routine storage operations to DEBUG  
+- `src/db/article.rs` - Individual database operations to DEBUG
+- `src/workers/decision/worker_loop.rs` - Routine queue polling to DEBUG
+- `src/workers/analysis/worker_loop.rs` - Worker status messages to DEBUG
+
+**Verification:**
+- ✅ Clean compilation across all modified files
+- ✅ Logging configuration properly balances visibility with noise reduction
+- ✅ File logs now contain only WARN+ as intended
+- ✅ Console logs dramatically cleaner while preserving important information
+- ✅ DEBUG level preserves all detailed information for troubleshooting
 
 ### ✅ COMPLETED: PostgreSQL Migration Infrastructure Implementation (June 18, 2025)
 - **Task**: Implement complete PostgreSQL migration infrastructure including binaries, schema, and admin tools

@@ -1,6 +1,81 @@
 # Progress Tracking
 
-## Current Status: ✅ COMPLETED - Cluster Summary Title Formatting and Current Article Integration
+## Current Status: ✅ COMPLETED - Comprehensive Logging Level Correction and Noise Reduction
+
+### ✅ Comprehensive Logging Level Correction and Noise Reduction COMPLETED (June 19, 2025)
+**Status**: FULLY COMPLETED - Major Signal-to-Noise Ratio Improvement
+
+#### Comprehensive Logging Review and Correction Summary
+Successfully completed a comprehensive review and correction of logging levels throughout the Argus codebase to ensure appropriate log levels and reduce noise while preserving debugging capability.
+
+**Problems Addressed:**
+1. **Vector Operations Over-logging**: Embedding generation producing dozens of INFO messages per operation with tensor shapes, statistical calculations, and detailed processing steps
+2. **Database Routine Operation Noise**: Individual article additions, updates, and queries logging at INFO level
+3. **Worker Heartbeat Spam**: Routine queue polling, empty URL handling, and individual article processing creating console noise
+4. **Inconsistent Log Levels**: Many operations using INFO level for details that should be DEBUG
+5. **File Log Pollution**: Only WARN+ should go to files, but many routine operations were using inappropriate levels
+
+**Technical Solutions Implemented:**
+
+**1. Vector/Embedding Operations (Highest Impact)**
+- **Files Updated**: `src/vector/embedding.rs`, `src/vector/storage.rs`
+- **Changes**: Converted detailed INFO logging to DEBUG level
+- **Example**: Tensor shape analysis, vector magnitude calculations, detailed processing steps moved to DEBUG
+- **Impact**: Dramatically reduced console noise during routine embedding operations (from dozens to zero INFO messages per embedding)
+
+**2. Database Operations (Medium Impact)**
+- **Files Updated**: `src/db/article.rs`
+- **Changes**: Individual record operations moved to DEBUG, kept INFO for significant events
+- **Example**: SQL query generation, individual article processing, routine database operations moved to DEBUG
+- **Impact**: Cleaner database operation logging while preserving lock/error visibility
+
+**3. Worker Status Messages (Medium Impact)**
+- **Files Updated**: `src/workers/decision/worker_loop.rs`, `src/workers/analysis/worker_loop.rs`
+- **Changes**: Routine queue operations moved to DEBUG level
+- **Example**: Empty URL handling, individual URL loading messages moved to DEBUG
+- **Impact**: Reduced worker heartbeat noise while maintaining visibility of important state changes
+
+**Logging Level Guidelines Applied:**
+- **ERROR**: System failures, critical errors requiring immediate attention
+- **WARN**: Recoverable failures, timeouts, retries, configuration issues
+- **INFO**: System startup, significant state changes, completed major operations, summaries
+- **DEBUG**: Detailed operation steps, individual record processing, routine status checks
+
+**Current Logging Configuration:**
+- **Console**: INFO+ level with targeted filtering (`info,db=warn,sqlx=off,html5ever=error`)
+- **File logs**: WARN+ only (`llm_request=warn,warn,sqlx=warn`) with daily rotation to logs/app.log
+- **Result**: Only meaningful INFO+ messages appear in console, only warnings and errors persisted to files
+
+**Files Modified:**
+- `src/vector/embedding.rs` - Converted detailed tensor/statistics logging to DEBUG
+- `src/vector/storage.rs` - Moved routine storage operations to DEBUG
+- `src/db/article.rs` - Individual database operations to DEBUG
+- `src/workers/decision/worker_loop.rs` - Routine queue polling to DEBUG
+- `src/workers/analysis/worker_loop.rs` - Worker status messages to DEBUG
+
+**Expected Impact:**
+- **Immediate**: Dramatic reduction in console noise (vector operations alone were generating dozens of messages per embedding)
+- **File Log Quality**: Only actionable warnings and errors in log files
+- **Better Signal-to-Noise**: Important events like worker state changes, model initialization, and errors more visible
+- **Debugging Preserved**: All detailed information still available via DEBUG level when needed
+- **Performance**: Reduced I/O overhead from excessive logging
+
+**Production Benefits:**
+- **Cleaner Console Output**: Vector operations that previously generated excessive INFO messages now log only at DEBUG
+- **Focused File Logs**: File logs contain only actionable warnings and errors (WARN+ only)
+- **Operational Clarity**: Important events no longer buried in routine operational noise
+- **Easy Debugging**: Granular control available by adjusting log levels for specific modules
+- **Storage Efficiency**: Reduced disk usage and log rotation frequency
+
+**Verification:**
+- ✅ Clean compilation across all modified files
+- ✅ Logging configuration properly balances visibility with noise reduction
+- ✅ File logs now contain only WARN+ as intended
+- ✅ Console logs dramatically cleaner while preserving important information
+- ✅ DEBUG level preserves all detailed information for troubleshooting
+
+### ✅ Cluster Summary Title Formatting and Current Article Integration COMPLETED (June 11, 2025)
+**Status**: FULLY COMPLETED - Critical Bugs Resolved
 
 ### ✅ Cluster Summary Title Formatting and Current Article Integration COMPLETED (June 11, 2025)
 **Status**: FULLY COMPLETED - Critical Bugs Resolved
