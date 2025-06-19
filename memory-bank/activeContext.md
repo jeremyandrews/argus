@@ -838,6 +838,78 @@ SELECT e.id, e.name, e.type FROM entities e WHERE e.id = ?
 
 ## Current Work Focus
 
+### ✅ COMPLETED: Log Level Reduction for File Output (June 19, 2025)
+- **Task**: Reduce log verbosity by configuring file logging to only capture WARN level and higher
+- **Status**: COMPLETED - File logging now significantly reduced, console logging unchanged
+- **Location**: `src/logging.rs`
+- **Completion Date**: June 19, 2025
+
+**Problem Addressed:**
+- **Excessive Log Volume**: System generating too many logs with DEBUG and INFO level messages
+- **LLM Request Verbosity**: `llm_request=debug` was creating very verbose request logs
+- **General Info Noise**: Default INFO level was capturing routine operational messages
+- **SQLx Database Logs**: Database operation logs at INFO level were cluttering files
+
+**Technical Solution Implemented:**
+```rust
+// BEFORE (verbose)
+.with_filter(EnvFilter::new("llm_request=debug,info,sqlx=info"));
+
+// AFTER (reduced)
+.with_filter(EnvFilter::new("llm_request=warn,warn,sqlx=warn"));
+```
+
+**Configuration Changes:**
+- **LLM Requests**: DEBUG → WARN (eliminates verbose request/response logging)
+- **Default Level**: INFO → WARN (eliminates routine operational messages)
+- **SQLx Database**: INFO → WARN (reduces database operation logging)
+- **Console Logging**: Unchanged (still INFO level for development)
+
+**Self-Documenting Design:**
+- Explicit module configuration enables easy future debugging
+- To debug LLM issues: change `llm_request=warn` to `llm_request=debug`
+- To debug database issues: change `sqlx=warn` to `sqlx=info` or `sqlx=debug`
+- To debug specific modules: add `module_name=debug` to filter string
+
+**Expected Impact:**
+- **Immediate**: Dramatic reduction in log file size and growth rate
+- **Performance**: Reduced I/O overhead from excessive logging
+- **Maintainability**: Log files focused on warnings and errors only
+- **Future Debugging**: Easy granular control for troubleshooting specific components
+
+**Production Benefits:**
+- **Cleaner Logs**: Only actionable warnings and errors in log files
+- **Better Signal-to-Noise**: Important messages won't be buried in routine logs
+- **Storage Efficiency**: Reduced disk usage and log rotation frequency
+- **Operational Focus**: Logs highlight actual issues rather than normal operations
+
+### ✅ COMPLETED: PostgreSQL Migration Infrastructure Implementation (June 18, 2025)
+- **Task**: Implement complete PostgreSQL migration infrastructure including binaries, schema, and admin tools
+- **Status**: COMPLETED - All migration code ready, binaries compile successfully, waiting for PostgreSQL setup
+- **Location**: `src/bin/migrate_to_postgres.rs`, `src/bin/argus_admin.rs`, `memory-bank/postgresql-migration/`
+- **Completion Date**: June 18, 2025
+
+**Infrastructure Implemented:**
+- ✅ **Dependencies Updated**: Added PostgreSQL support to sqlx in Cargo.toml
+- ✅ **Migration Binary**: Complete one-shot migration tool (`migrate_to_postgres`)
+  - Prerequisites validation (SQLite + PostgreSQL connectivity)
+  - Automatic backup creation (SQLite DB + environment variables)
+  - Schema setup from included schema.sql
+  - Data migration via dump/restore with compatibility transformations
+  - Environment-to-database configuration migration
+  - Comprehensive post-migration validation
+- ✅ **Enhanced Admin Tool**: Production-ready configuration manager (`argus_admin`)
+  - Basic operations: topics, RSS feeds, system configuration management
+  - Bulk operations: import/export JSON for all configuration types
+  - Validation: individual and system-wide validation (`validate-all`)
+  - Dry-run mode: preview changes without applying (`--dry-run`)
+  - Enhanced backup: database + configuration export
+  - Health checks and system status monitoring
+- ✅ **PostgreSQL Schema**: Complete optimized schema with JSONB, indexes, triggers
+- ✅ **Code Verification**: Both binaries compile successfully without PostgreSQL installed
+
+**Next Step**: PostgreSQL installation and database setup, then run `cargo run --bin migrate_to_postgres`
+
 ### ✅ COMPLETED: PostgreSQL Migration Plan Cleanup & Enhancement (June 17, 2025)
 - **Task**: Clean up legacy migration files and enhance admin tool with bulk operations, validation, and dry-run features
 - **Status**: COMPLETED - Plan simplified and enhanced for production-ready soft launch testing

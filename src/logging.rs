@@ -44,7 +44,7 @@ pub fn configure_logging() {
     let file_appender = rolling::daily("logs", "app.log");
     let file_log = fmt::layer()
         .with_writer(file_appender)
-        .with_filter(EnvFilter::new("llm_request=debug,info,sqlx=info"));
+        .with_filter(EnvFilter::new("llm_request=warn,warn,sqlx=warn"));
 
     tracing_subscriber::Registry::default()
         .with(stdout_log)
