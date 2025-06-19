@@ -7,7 +7,7 @@ use qdrant_client::qdrant::{
 use qdrant_client::Qdrant;
 use serde_json::json;
 use std::collections::HashMap;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::vector::{QDRANT_URL_ENV, TARGET_VECTOR};
 
@@ -21,7 +21,7 @@ pub async fn store_embedding(
     entity_ids: Option<Vec<i64>>,
     event_date: Option<&str>,
 ) -> Result<()> {
-    info!(target: TARGET_VECTOR, "store_embedding: embedding length = {}", embedding.len());
+    debug!(target: TARGET_VECTOR, "store_embedding: embedding length = {}", embedding.len());
 
     let client = Qdrant::from_url(
         &std::env::var(QDRANT_URL_ENV).expect("QDRANT_URL environment variable required"),
@@ -59,7 +59,7 @@ pub async fn store_embedding(
         }
     }
 
-    info!(target: TARGET_VECTOR, "store_embedding: payload for article {}: {:?}", sqlite_id, payload);
+    debug!(target: TARGET_VECTOR, "store_embedding: payload for article {}: {:?}", sqlite_id, payload);
 
     let point = PointStruct {
         id: Some(PointId {
@@ -115,7 +115,7 @@ pub async fn get_article_vector_from_qdrant(article_id: i64) -> Result<Vec<f32>>
     .timeout(std::time::Duration::from_secs(60))
     .build()?;
 
-    info!(target: TARGET_VECTOR, "Retrieving vector for article {}", article_id);
+    debug!(target: TARGET_VECTOR, "Retrieving vector for article {}", article_id);
 
     // Get the article's vector from Qdrant
     let response = client
@@ -130,35 +130,35 @@ pub async fn get_article_vector_from_qdrant(article_id: i64) -> Result<Vec<f32>>
         })
         .await?;
 
-    info!(target: TARGET_VECTOR, "Vector retrieval response received for article {}, points: {}", 
+    debug!(target: TARGET_VECTOR, "Vector retrieval response received for article {}, points: {}", 
           article_id, response.result.len());
 
     // Extract the vector from the response
     if let Some(point) = response.result.first() {
-        info!(target: TARGET_VECTOR, "Found point for article {}", article_id);
+        debug!(target: TARGET_VECTOR, "Found point for article {}", article_id);
 
         if let Some(vectors) = &point.vectors {
-            info!(target: TARGET_VECTOR, "Vector data exists for article {}", article_id);
+            debug!(target: TARGET_VECTOR, "Vector data exists for article {}", article_id);
 
             // Get the specific type name of the vectors_options enum
             let type_name = std::any::type_name_of_val(&vectors.vectors_options);
-            info!(target: TARGET_VECTOR, "Vector options type for article {}: {}", article_id, type_name);
+            debug!(target: TARGET_VECTOR, "Vector options type for article {}: {}", article_id, type_name);
 
             if let Some(opts) = &vectors.vectors_options {
                 // Detailed debug info about the enum variant
-                info!(target: TARGET_VECTOR, "Vector options variant for article {}: {:?}", article_id, opts);
+                debug!(target: TARGET_VECTOR, "Vector options variant for article {}: {:?}", article_id, opts);
 
                 // Extract the vector data
                 match opts {
                     &qdrant_client::qdrant::vectors_output::VectorsOptions::Vector(ref v) => {
-                        info!(target: TARGET_VECTOR, 
+                        debug!(target: TARGET_VECTOR, 
                             "Successfully extracted vector for article {}: dimensions={}, first_values=[{:.4}, {:.4}, ...]", 
                             article_id, v.data.len(), 
                             v.data.first().unwrap_or(&0.0), 
                             v.data.get(1).unwrap_or(&0.0));
 
                         let magnitude = v.data.iter().map(|x| x * x).sum::<f32>().sqrt();
-                        info!(target: TARGET_VECTOR, 
+                        debug!(target: TARGET_VECTOR, 
                             "Vector magnitude for article {}: {:.6}", article_id, magnitude);
 
                         // Check for problematic vectors

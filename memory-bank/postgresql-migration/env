@@ -1,0 +1,9 @@
+# Set database URL
+export DATABASE_URL=postgresql://argus_user:argus123@localhost/argus_prod
+
+# Run complete migration (does everything automatically)
+cargo run --bin migrate_to_postgres
+
+# Start using PostgreSQL
+cargo run --release
+

@@ -208,7 +208,7 @@ pub async fn analysis_loop(
                     match db.fetch_and_delete_url_from_rss_queue("random").await {
                         Ok(Some((url, title, pub_date))) => {
                             if url.trim().is_empty() {
-                                error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in RSS queue.", worker_detail.name, worker_detail.id, worker_detail.model);
+                                debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in RSS queue.", worker_detail.name, worker_detail.id, worker_detail.model);
                             } else {
                                 let item = FeedItem {
                                     url,

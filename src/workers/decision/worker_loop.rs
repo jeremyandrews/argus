@@ -59,7 +59,7 @@ pub async fn decision_loop(
         match db.fetch_and_delete_url_from_rss_queue(order).await {
             Ok(Some((url, title, pub_date))) => {
                 if url.trim().is_empty() {
-                    info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in queue.", worker_detail.name, worker_detail.id, worker_detail.model);
+                    debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: skipping empty URL in queue.", worker_detail.name, worker_detail.id, worker_detail.model);
                     continue;
                 }
 
@@ -98,7 +98,7 @@ pub async fn decision_loop(
                     continue;
                 }
 
-                info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: loaded URL: {} ({:?}).", worker_detail.name, worker_detail.id, worker_detail.model, url, title);
+                debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: loaded URL: {} ({:?}).", worker_detail.name, worker_detail.id, worker_detail.model, url, title);
 
                 let item = crate::workers::common::FeedItem {
                     url: url.clone(),

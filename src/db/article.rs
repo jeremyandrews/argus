@@ -316,7 +316,7 @@ impl Database {
             )
         };
 
-        info!("Generated SQL query: {}", query);
+        debug!("Generated SQL query: {}", query);
 
         let mut query_builder = sqlx::query(&query);
 
@@ -330,14 +330,14 @@ impl Database {
             query_builder = query_builder.bind(topic);
         }
 
-        info!(
+        debug!(
             "Executing query to fetch unseen articles for device_id: {}",
             device_id
         );
         let rows = query_builder.fetch_all(self.pool()).await?;
         let unseen_articles: Vec<String> = rows.into_iter().map(|row| row.get("r2_url")).collect();
 
-        info!("Fetched unseen articles: {:?}", unseen_articles);
+        debug!("Fetched unseen articles: {:?}", unseen_articles);
         if unseen_articles.is_empty() {
             info!("No unseen articles found for the given list of seen articles and device_id.");
         }
