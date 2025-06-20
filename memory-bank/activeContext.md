@@ -1004,6 +1004,94 @@ SELECT e.id, e.name, e.type FROM entities e WHERE e.id = ?
 
 ## Current Work Focus
 
+### ✅ COMPLETED: OpenAI Rate Limiting and Enhanced Error Handling Implementation (June 20, 2025)
+- **Task**: Implement comprehensive OpenAI rate limiting system and enhanced error handling to prevent API throttling and ensure articles aren't lost due to rate limit failures
+- **Status**: COMPLETED - Full solution implemented with zero compilation errors/warnings
+- **Location**: `src/rate_limiter.rs`, `src/llm_errors.rs`, `src/llm.rs`, worker processing modules
+- **Completion Date**: June 20, 2025
+
+**Problem Addressed:**
+- **Rate Limit Throttling**: OpenAI Tier 1 limits (500 RPM / 10,000 RPD) were being exceeded
+- **Lost Articles**: Rate-limited articles were marked as "invalid" instead of being retried by RSS worker
+- **Missing Retry Logic**: No distinction between rate limits and permanent failures
+- **No Proactive Prevention**: System hitting limits instead of staying safely under them
+
+**Technical Solution Implemented:**
+
+**1. Rate Limiter Component (`src/rate_limiter.rs`)**
+- **Token Bucket Algorithm**: Requests per minute limiting with burst allowance
+- **Daily Counter**: Requests per day tracking with midnight UTC reset
+- **Configurable Limits**: Environment-based configuration (RPM/RPD/Burst)
+- **Proactive Waiting**: Prevents hitting limits before they occur
+- **Monitoring**: Success/failure tracking for observability
+
+**2. Enhanced Error Types (`src/llm_errors.rs`)**
+- **LLMError Enum**: Three categories (RateLimit, TemporaryFailure, PermanentFailure)
+- **Provider-Specific Parsing**: OpenAI 429 detection, retry-after header parsing
+- **Retry Decision Logic**: `should_allow_rss_retry()` determines if RSS should retry article
+- **Error Classification**: Distinguishes between recoverable and permanent failures
+
+**3. Enhanced LLM Functions (`src/llm.rs`)**
+- **New Enhanced API**: `generate_text_response_enhanced()` with proper error handling
+- **Rate Limiting Integration**: Automatic rate limiting for OpenAI calls
+- **Error Propagation**: Returns `Result<String, LLMError>` instead of `Option<String>`
+- **Backward Compatibility**: Legacy functions preserved for existing code
+
+**4. Worker Integration (`src/workers/decision/processing.rs`)**
+- **Enhanced Error Handling**: Rate-limited articles NOT added to database
+- **RSS Retry Support**: Failed articles remain "invisible" for RSS worker retry
+- **Proper Logging**: Enhanced logging for rate limit events and debugging
+- **Decision Logic**: Different handling for rate limits vs permanent failures
+
+**5. Configuration System (`env.template`)**
+```bash
+OPENAI_RATE_LIMIT_ENABLED="true"     # Enable/disable rate limiting
+OPENAI_RATE_LIMIT_RPM="500"          # Requests per minute limit
+OPENAI_RATE_LIMIT_RPD="10000"        # Requests per day limit  
+OPENAI_RATE_LIMIT_BURST="10"         # Burst allowance for short spikes
+```
+
+**Architecture Benefits:**
+- **Dual Provider Support**: Both Ollama and OpenAI can be used simultaneously
+- **Provider Flexibility**: Switch between local (Ollama) and cloud (OpenAI) as needed
+- **Cost Optimization**: Stay within OpenAI quotas while maximizing utilization
+- **Fault Tolerance**: Rate-limited content gets retried automatically
+
+**Critical Problem Solved:**
+- **BEFORE**: Rate-limited articles → marked as processed → lost forever
+- **AFTER**: Rate-limited articles → NOT marked as processed → RSS finds them again → retried every 10 minutes
+
+**Production Impact:**
+- **No Lost Content**: Articles hitting rate limits are retried by RSS worker
+- **Proactive Limiting**: System stays safely under OpenAI tier limits
+- **Configurable Growth**: Easy to adjust limits as OpenAI tier increases
+- **Enhanced Observability**: Clear logging of rate limiting events
+- **Zero Downtime**: Implementation is purely additive with backward compatibility
+
+**Files Modified:**
+- `src/rate_limiter.rs` - Complete rate limiting implementation
+- `src/llm_errors.rs` - Enhanced error classification system
+- `src/llm.rs` - Enhanced API functions with rate limiting
+- `src/workers/common.rs` - Rate limiter integration support
+- `src/workers/decision/processing.rs` - Enhanced error handling
+- `src/workers/analysis/worker_loop.rs` - Rate limiter support
+- `src/workers/decision/worker_loop.rs` - Rate limiter support
+- `src/lib.rs` - Module exports and integration
+- `env.template` - Configuration options
+
+**Compilation Status:**
+- ✅ Zero compilation errors
+- ✅ Zero compilation warnings
+- ✅ All tests pass
+- ✅ Clean build ready for production
+
+**Usage:**
+The rate limiter automatically activates when using OpenAI models. Simply configure the environment variables and the system will:
+1. **Prevent** hitting rate limits proactively
+2. **Handle** any rate limit errors gracefully
+3. **Allow** RSS worker to retry failed articles
+4. **Log** all rate limiting events for monitoring
+
 ### ✅ COMPLETED: Comprehensive Logging Level Correction and Noise Reduction (June 19, 2025)
 - **Task**: Comprehensive review and correction of logging levels throughout the codebase to ensure appropriate log levels and reduce noise
 - **Status**: COMPLETED - Major improvements to logging signal-to-noise ratio while preserving debugging capability

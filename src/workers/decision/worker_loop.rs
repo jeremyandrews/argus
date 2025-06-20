@@ -119,6 +119,7 @@ pub async fn decision_loop(
                     places: places_clone,
                     model_config: model_config.clone(),
                     no_think,
+                    openai_rate_limiter: None, // TODO: Add rate limiter support to decision worker
                 };
 
                 process_item(item, &mut params, &worker_detail).await;

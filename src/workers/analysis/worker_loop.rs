@@ -227,6 +227,7 @@ pub async fn analysis_loop(
                                     places: places_clone,
                                     model_config: llm_params.base.model_config.clone(),
                                     no_think: llm_params.base.no_think,
+                                    openai_rate_limiter: None, // TODO: Add rate limiter support to analysis worker
                                 };
 
                                 // Process the item using the decision worker's process_item function

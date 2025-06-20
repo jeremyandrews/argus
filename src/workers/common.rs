@@ -1,4 +1,5 @@
 use crate::db::core::Database;
+use crate::rate_limiter::OpenAIRateLimiter;
 use crate::LLMClient;
 use std::collections::BTreeMap;
 
@@ -15,6 +16,7 @@ pub struct ProcessItemParams<'a> {
         BTreeMap<std::string::String, BTreeMap<std::string::String, Vec<std::string::String>>>,
     pub model_config: Option<crate::ModelConfig>,
     pub no_think: bool,
+    pub openai_rate_limiter: Option<&'a OpenAIRateLimiter>,
 }
 
 /// Extracts LLM parameters base from ProcessItemParams

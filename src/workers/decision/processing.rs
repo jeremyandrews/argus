@@ -4,7 +4,7 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 // No need to import Database, we use it through params
-use crate::llm::generate_text_response;
+use crate::llm::generate_text_response_enhanced;
 use crate::prompt;
 use crate::util::weighted_sleep;
 use crate::workers::common::{FeedItem, ProcessItemParams};
@@ -169,35 +169,74 @@ async fn process_topics(
     params: &mut ProcessItemParams<'_>,
     worker_detail: &WorkerDetail,
 ) {
-    // Early check to filter promotional content
+    // Early check to filter promotional content using enhanced error handling
     let promo_check_prompt = prompt::filter_promotional_content(article_text);
     let llm_params = extract_text_llm_params(params);
-    if let Some(promo_response) =
-        generate_text_response(&promo_check_prompt, &llm_params, worker_detail).await
+
+    match generate_text_response_enhanced(
+        &promo_check_prompt,
+        &llm_params,
+        worker_detail,
+        params.openai_rate_limiter,
+    )
+    .await
     {
-        if promo_response.trim().to_lowercase().starts_with("yes") {
-            // This is a promotional article, skip further processing
-            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: article is primarily promotional (sales/discounts), skipping.", 
-                   worker_detail.name, worker_detail.id, worker_detail.model);
+        Ok(promo_response) => {
+            if promo_response.trim().to_lowercase().starts_with("yes") {
+                // This is a promotional article, skip further processing
+                debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: article is primarily promotional (sales/discounts), skipping.", 
+                       worker_detail.name, worker_detail.id, worker_detail.model);
 
-            // Add to database as non-relevant
-            let _ = params
-                .db
-                .add_article(
-                    article_url,
-                    false,
-                    None,
-                    None,
-                    None,
-                    Some(article_hash),
-                    Some(title_domain_hash),
-                    None,
-                    pub_date,
-                    None, // event_date
-                )
-                .await;
+                // Add to database as non-relevant
+                let _ = params
+                    .db
+                    .add_article(
+                        article_url,
+                        false,
+                        None,
+                        None,
+                        None,
+                        Some(article_hash),
+                        Some(title_domain_hash),
+                        None,
+                        pub_date,
+                        None, // event_date
+                    )
+                    .await;
 
-            return;
+                return;
+            }
+        }
+        Err(llm_error) => {
+            if llm_error.should_allow_rss_retry() {
+                // Rate limited or temporary failure - do NOT add to database, let RSS retry
+                warn!(target: TARGET_LLM_REQUEST, 
+                      "[{} {} {}]: LLM error during promotional check for article '{}': {}. Article will be retried by RSS worker.",
+                      worker_detail.name, worker_detail.id, worker_detail.model, article_url, llm_error);
+                return;
+            } else {
+                // Permanent failure - add as non-relevant to prevent infinite retries
+                error!(target: TARGET_LLM_REQUEST, 
+                       "[{} {} {}]: Permanent LLM failure during promotional check for article '{}': {}. Marking as non-relevant.",
+                       worker_detail.name, worker_detail.id, worker_detail.model, article_url, llm_error);
+
+                let _ = params
+                    .db
+                    .add_article(
+                        article_url,
+                        false,
+                        None,
+                        None,
+                        None,
+                        Some(article_hash),
+                        Some(title_domain_hash),
+                        None,
+                        pub_date,
+                        None, // event_date
+                    )
+                    .await;
+                return;
+            }
         }
     }
 
@@ -219,55 +258,84 @@ async fn process_topics(
 
         let yes_no_prompt = prompt::is_this_about(article_text, topic_prompt);
         let llm_params = extract_text_llm_params(params);
-        if let Some(yes_no_response) =
-            generate_text_response(&yes_no_prompt, &llm_params, worker_detail).await
+
+        match generate_text_response_enhanced(
+            &yes_no_prompt,
+            &llm_params,
+            worker_detail,
+            params.openai_rate_limiter,
+        )
+        .await
         {
-            if yes_no_response.trim().to_lowercase().starts_with("yes") {
-                // Article is relevant to the topic
-                article_relevant = true;
+            Ok(yes_no_response) => {
+                if yes_no_response.trim().to_lowercase().starts_with("yes") {
+                    // Article is relevant to the topic
+                    article_relevant = true;
 
-                // Perform a secondary check before posting to Slack
-                if params.db.has_hash(article_hash).await.unwrap_or(false) {
-                    info!(
-                        target: TARGET_LLM_REQUEST,
-                        "Article with hash {} was already processed (second check), skipping topic '{}'.",
-                        article_hash,
-                        topic_name
-                    );
-                    continue; // Skip to the next topic
-                }
-
-                if article_is_relevant(article_text, topic_prompt, pub_date, params, worker_detail)
-                    .await
-                {
-                    // Add to matched topics queue
-                    if let Err(e) = params
-                        .db
-                        .add_to_matched_topics_queue(
-                            article_text,
-                            article_html,
-                            article_url,
-                            article_title,
+                    // Perform a secondary check before posting to Slack
+                    if params.db.has_hash(article_hash).await.unwrap_or(false) {
+                        info!(
+                            target: TARGET_LLM_REQUEST,
+                            "Article with hash {} was already processed (second check), skipping topic '{}'.",
                             article_hash,
-                            title_domain_hash,
-                            topic_name,
-                            pub_date,
-                        )
-                        .await
-                    {
-                        error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: failed to add to Matched Topics queue: {}: [{:?}].", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, e);
-                    } else {
-                        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: added to Matched Topics queue: {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name);
+                            topic_name
+                        );
+                        continue; // Skip to the next topic
                     }
 
-                    return; // No need to continue checking other topics
+                    if article_is_relevant(
+                        article_text,
+                        topic_prompt,
+                        pub_date,
+                        params,
+                        worker_detail,
+                    )
+                    .await
+                    {
+                        // Add to matched topics queue
+                        if let Err(e) = params
+                            .db
+                            .add_to_matched_topics_queue(
+                                article_text,
+                                article_html,
+                                article_url,
+                                article_title,
+                                article_hash,
+                                title_domain_hash,
+                                topic_name,
+                                pub_date,
+                            )
+                            .await
+                        {
+                            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: failed to add to Matched Topics queue: {}: [{:?}].", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, e);
+                        } else {
+                            debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: added to Matched Topics queue: {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name);
+                        }
+
+                        return; // No need to continue checking other topics
+                    } else {
+                        debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: not about '{}' or is promotional.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name);
+                        weighted_sleep().await;
+                    }
                 } else {
-                    debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: not about '{}' or is promotional.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name);
+                    debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: not about '{}': {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, yes_no_response.trim());
                     weighted_sleep().await;
                 }
-            } else {
-                debug!(target: TARGET_LLM_REQUEST, "[{} {} {}]: not about '{}': {}.", worker_detail.name, worker_detail.id, worker_detail.model, topic_name, yes_no_response.trim());
-                weighted_sleep().await;
+            }
+            Err(llm_error) => {
+                if llm_error.should_allow_rss_retry() {
+                    // Rate limited or temporary failure - do NOT add to database, let RSS retry
+                    warn!(target: TARGET_LLM_REQUEST, 
+                          "[{} {} {}]: LLM error during topic check '{}' for article '{}': {}. Article will be retried by RSS worker.",
+                          worker_detail.name, worker_detail.id, worker_detail.model, topic_name, article_url, llm_error);
+                    return; // Exit entire function to avoid DB write
+                } else {
+                    // Permanent failure - log error but continue with other topics
+                    error!(target: TARGET_LLM_REQUEST, 
+                           "[{} {} {}]: Permanent LLM failure during topic check '{}' for article '{}': {}. Continuing with other topics.",
+                           worker_detail.name, worker_detail.id, worker_detail.model, topic_name, article_url, llm_error);
+                    continue; // Try next topic
+                }
             }
         }
     }

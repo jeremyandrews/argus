@@ -14,10 +14,12 @@ pub mod db; // Now uses the directory module structure
 pub mod entity;
 pub mod environment;
 pub mod llm;
+pub mod llm_errors;
 pub mod logging;
 pub mod metrics;
-pub mod prompt; // Now uses the directory module structure (replacing prompts.rs)
-                // Import the modular RSS structure
+pub mod prompt;
+pub mod rate_limiter; // Now uses the directory module structure (replacing prompts.rs)
+                      // Import the modular RSS structure
 pub mod rss;
 
 // Re-export RSS module functionality for backward compatibility
