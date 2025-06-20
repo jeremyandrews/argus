@@ -1,4 +1,7 @@
-use async_openai::types::CreateCompletionRequestArgs;
+use async_openai::types::{
+    ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
+    CreateChatCompletionRequestArgs,
+};
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::parameters::{FormatType, JsonStructure};
 use ollama_rs::models::ModelOptions;
@@ -365,79 +368,117 @@ async fn generate_llm_response_internal(
                 }
             }
             LLMClient::OpenAI(ref openai_client) => {
-                let request = CreateCompletionRequestArgs::default()
+                // Prepare the prompt - add JSON instruction if JSON mode is requested
+                let actual_prompt = if let Some(json_type) = json_format {
+                    match json_type {
+                        JsonSchemaType::EntityExtraction => {
+                            format!("{}\n\nPlease return your response as valid JSON with the structure: {{\"event_date\": \"YYYY-MM-DD or null\", \"entities\": [{{\"name\": \"entity name\", \"normalized_name\": \"normalized name\", \"type\": \"PERSON|ORGANIZATION|LOCATION|EVENT\", \"importance\": \"HIGH|MEDIUM|LOW\"}}]}}", prompt)
+                        }
+                        JsonSchemaType::ThreatLocation => {
+                            format!("{}\n\nPlease return your response as valid JSON with the structure: {{\"impacted_regions\": [{{\"continent\": \"continent name or null\", \"country\": \"country name or null\", \"region\": \"region name or null\"}}]}}", prompt)
+                        }
+                        JsonSchemaType::Generic => {
+                            format!("{}\n\nPlease return your response as valid JSON.", prompt)
+                        }
+                    }
+                } else {
+                    prompt.to_string()
+                };
+
+                // Build Chat Completion request
+                let mut request_builder = CreateChatCompletionRequestArgs::default();
+                request_builder
                     .model(params.model.clone())
-                    .prompt(prompt)
-                    .temperature(params.temperature)
+                    .messages(vec![ChatCompletionRequestMessage::User(
+                        ChatCompletionRequestUserMessageArgs::default()
+                            .content(actual_prompt)
+                            .build()
+                            .expect("Failed to build user message"),
+                    )])
+                    .temperature(params.temperature);
+
+                // Apply context window if available
+                if let Some(context_window) = params.context_window {
+                    request_builder.max_tokens(context_window);
+                }
+
+                let request = request_builder
                     .build()
-                    .expect("Failed to build OpenAI request");
+                    .expect("Failed to build OpenAI chat request");
 
                 debug!(
                     target: TARGET_LLM_REQUEST,
-                    "[{} {} {} {}]: OpenAI processing LLM prompt: {}.",
-                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, prompt
+                    "[{} {} {} {}]: OpenAI Chat processing LLM prompt with JSON mode: {}.",
+                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, json_format.is_some()
                 );
 
                 match timeout(
                     Duration::from_secs(120),
-                    openai_client.completions().create(request),
+                    openai_client.chat().create(request),
                 )
                 .await
                 {
                     Ok(Ok(response)) => {
                         if let Some(choice) = response.choices.first() {
-                            response_text = choice.text.clone();
+                            if let Some(content) = &choice.message.content {
+                                response_text = content.clone();
 
-                            // Process thinking tags if needed
-                            if let Some(model_config) = &params.model_config {
-                                if model_config.strip_thinking_tags {
-                                    debug!(
-                                        target: TARGET_LLM_REQUEST,
-                                        "[{} {} {} {}]: Checking OpenAI response for thinking tags: {}",
-                                        worker_detail.name, worker_detail.id, worker_detail.model,
-                                        worker_detail.connection_info,
-                                        response_text.contains("<think>")
-                                    );
-
-                                    let original_text = response_text.clone();
-                                    response_text = strip_thinking_tags(&response_text);
-
-                                    if response_text != original_text {
+                                // Process thinking tags if needed (though OpenAI models typically don't use them)
+                                if let Some(model_config) = &params.model_config {
+                                    if model_config.strip_thinking_tags {
                                         debug!(
                                             target: TARGET_LLM_REQUEST,
-                                            "[{} {} {} {}]: Stripped thinking tags from OpenAI response.",
+                                            "[{} {} {} {}]: Checking OpenAI response for thinking tags: {}",
                                             worker_detail.name, worker_detail.id, worker_detail.model,
-                                            worker_detail.connection_info
+                                            worker_detail.connection_info,
+                                            response_text.contains("<think>")
                                         );
-                                    } else {
-                                        debug!(
-                                            target: TARGET_LLM_REQUEST,
-                                            "[{} {} {} {}]: Expected thinking tags but none found in OpenAI response.",
-                                            worker_detail.name, worker_detail.id, worker_detail.model,
-                                            worker_detail.connection_info
-                                        );
-                                    }
 
-                                    if response_text.trim().is_empty() {
-                                        error!(
-                                            target: TARGET_LLM_REQUEST,
-                                            "[{} {} {} {}]: Empty OpenAI response after stripping thinking tags.",
-                                            worker_detail.name, worker_detail.id, worker_detail.model,
-                                            worker_detail.connection_info
-                                        );
-                                        response_text =
-                                            "Error: Empty response after stripping thinking tags."
-                                                .to_string();
+                                        let original_text = response_text.clone();
+                                        response_text = strip_thinking_tags(&response_text);
+
+                                        if response_text != original_text {
+                                            debug!(
+                                                target: TARGET_LLM_REQUEST,
+                                                "[{} {} {} {}]: Stripped thinking tags from OpenAI response.",
+                                                worker_detail.name, worker_detail.id, worker_detail.model,
+                                                worker_detail.connection_info
+                                            );
+                                        }
+
+                                        if response_text.trim().is_empty() {
+                                            error!(
+                                                target: TARGET_LLM_REQUEST,
+                                                "[{} {} {} {}]: Empty OpenAI response after stripping thinking tags.",
+                                                worker_detail.name, worker_detail.id, worker_detail.model,
+                                                worker_detail.connection_info
+                                            );
+                                            response_text =
+                                                "Error: Empty response after stripping thinking tags."
+                                                    .to_string();
+                                        }
                                     }
                                 }
-                            }
 
-                            debug!(
+                                debug!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "[{} {} {} {}]: OpenAI Chat response: {}.",
+                                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, response_text
+                                );
+                                break;
+                            } else {
+                                warn!(
+                                    target: TARGET_LLM_REQUEST,
+                                    "[{} {} {} {}]: OpenAI response choice has no content.",
+                                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
+                                );
+                            }
+                        } else {
+                            warn!(
                                 target: TARGET_LLM_REQUEST,
-                                "[{} {} {} {}]: OpenAI response: {}.",
-                                worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info, response_text
+                                "[{} {} {} {}]: OpenAI response has no choices.",
+                                worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                             );
-                            break;
                         }
                     }
                     Ok(Err(e)) => {
@@ -450,7 +491,7 @@ async fn generate_llm_response_internal(
                     Err(_) => {
                         warn!(
                             target: TARGET_LLM_REQUEST,
-                            "[{} {} {} {}]: [TIMEOUT] LLM request timed out after 120s: openai.completions.create",
+                            "[{} {} {} {}]: [TIMEOUT] LLM request timed out after 120s: openai.chat.completions.create",
                             worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
                         );
                     }

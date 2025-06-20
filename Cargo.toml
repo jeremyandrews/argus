@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.14.1"
+version = "0.14.2"
 edition = "2021"
 
 [dependencies]
@@ -92,3 +92,7 @@ path = "src/bin/migrate_to_postgres.rs"
 [[bin]]
 name = "argus_admin"
 path = "src/bin/argus_admin.rs"
+
+[[bin]]
+name = "test_openai_json"
+path = "src/bin/test_openai_json.rs"
