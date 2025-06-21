@@ -377,20 +377,31 @@ async fn migrate_data_via_dump(pool: &Pool<Postgres>) -> Result<()> {
         .arg(&env::var("DATABASE_URL")?)
         .arg("-f")
         .arg(temp_file)
+        .arg("-v")
+        .arg("ON_ERROR_STOP=1")
         .output()?;
 
-    if !import_output.status.success() {
-        let error = String::from_utf8_lossy(&import_output.stderr);
-        // Only warn on non-critical errors, but continue
-        if error.contains("already exists") || error.contains("duplicate key") {
-            println!(
-                "  ⚠️  Import completed with warnings (duplicate data): {}",
-                error
-            );
-        } else {
-            println!("  ⚠️  Import completed with warnings: {}", error);
-        }
+    // Always show PostgreSQL output for debugging
+    let stdout = String::from_utf8_lossy(&import_output.stdout);
+    let stderr = String::from_utf8_lossy(&import_output.stderr);
+
+    if !stdout.is_empty() {
+        println!("  📋 PostgreSQL stdout: {}", stdout);
     }
+
+    if !stderr.is_empty() {
+        println!("  ⚠️  PostgreSQL stderr: {}", stderr);
+    }
+
+    if !import_output.status.success() {
+        return Err(anyhow::anyhow!(
+            "PostgreSQL import failed with exit code: {}\nStderr: {}",
+            import_output.status.code().unwrap_or(-1),
+            stderr
+        ));
+    }
+
+    println!("  ✅ PostgreSQL import completed successfully");
 
     // Step 4: Reset sequences
     reset_postgres_sequences(pool).await?;
