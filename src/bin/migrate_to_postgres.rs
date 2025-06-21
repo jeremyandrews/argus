@@ -254,42 +254,78 @@ fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<S
     let mut index_statements = Vec::new();
     let mut other_statements = Vec::new();
 
-    // Split by semicolon and clean up statements
-    let raw_statements: Vec<&str> = schema_sql
-        .split(';')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty() && !s.starts_with("--"))
-        .collect();
-
+    // More sophisticated parsing to handle complex SQL
     let mut current_statement = String::new();
+    let mut in_function = false;
+    let mut dollar_quote_count = 0;
+    let mut paren_depth = 0;
 
-    for raw_stmt in raw_statements {
-        // Handle multi-line statements (like functions)
-        if current_statement.is_empty() {
-            current_statement = raw_stmt.to_string();
-        } else {
-            current_statement.push_str(";\n");
-            current_statement.push_str(raw_stmt);
+    // Process character by character to handle complex statements
+    let lines: Vec<&str> = schema_sql.lines().collect();
+
+    for line in lines {
+        let trimmed_line = line.trim();
+
+        // Skip comments and empty lines
+        if trimmed_line.is_empty() || trimmed_line.starts_with("--") {
+            continue;
         }
 
-        // Check if this completes a statement
-        let trimmed = current_statement.trim();
-        if should_complete_statement(trimmed) {
-            categorize_statement(
-                trimmed,
-                &mut table_statements,
-                &mut index_statements,
-                &mut other_statements,
-            );
+        // Add line to current statement
+        if !current_statement.is_empty() {
+            current_statement.push('\n');
+        }
+        current_statement.push_str(line);
+
+        // Track function boundaries
+        if trimmed_line
+            .to_uppercase()
+            .contains("CREATE OR REPLACE FUNCTION")
+            || trimmed_line.to_uppercase().contains("CREATE TRIGGER")
+        {
+            in_function = true;
+        }
+
+        // Count dollar quotes for function boundaries
+        dollar_quote_count += trimmed_line.matches("$$").count();
+
+        // Track parentheses depth for CREATE TABLE statements
+        paren_depth += trimmed_line.matches('(').count();
+        paren_depth -= trimmed_line.matches(')').count();
+
+        // Check if statement is complete
+        let should_complete = if in_function {
+            // Function is complete when we have even number of $$ (pairs)
+            dollar_quote_count >= 2 && dollar_quote_count % 2 == 0 && trimmed_line.ends_with(';')
+        } else {
+            // Regular statement is complete when it ends with semicolon and parentheses are balanced
+            trimmed_line.ends_with(';') && paren_depth == 0
+        };
+
+        if should_complete {
+            let statement = current_statement.trim();
+            if !statement.is_empty() {
+                categorize_statement(
+                    statement,
+                    &mut table_statements,
+                    &mut index_statements,
+                    &mut other_statements,
+                );
+            }
+
+            // Reset for next statement
             current_statement.clear();
+            in_function = false;
+            dollar_quote_count = 0;
+            paren_depth = 0;
         }
     }
 
     // Handle any remaining statement
     if !current_statement.trim().is_empty() {
-        let trimmed = current_statement.trim();
+        let statement = current_statement.trim();
         categorize_statement(
-            trimmed,
+            statement,
             &mut table_statements,
             &mut index_statements,
             &mut other_statements,
@@ -299,42 +335,18 @@ fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<S
     (table_statements, index_statements, other_statements)
 }
 
-fn should_complete_statement(statement: &str) -> bool {
-    let statement_upper = statement.to_uppercase();
-
-    // Complete if it's a simple statement
-    if statement_upper.starts_with("CREATE TABLE")
-        || statement_upper.starts_with("CREATE INDEX")
-        || statement_upper.starts_with("CREATE UNIQUE INDEX")
-        || statement_upper.starts_with("INSERT INTO")
-        || statement_upper.starts_with("GRANT")
-        || statement_upper.starts_with("COMMENT ON")
-    {
-        return true;
-    }
-
-    // For functions and triggers, check for the END keyword
-    if statement_upper.contains("CREATE OR REPLACE FUNCTION")
-        || statement_upper.contains("CREATE TRIGGER")
-    {
-        return statement_upper.contains("$$") && statement_upper.matches("$$").count() >= 2;
-    }
-
-    true
-}
-
 fn categorize_statement(
     statement: &str,
     table_statements: &mut Vec<String>,
     index_statements: &mut Vec<String>,
     other_statements: &mut Vec<String>,
 ) {
-    let statement_upper = statement.to_uppercase();
+    let first_line = statement.lines().next().unwrap_or("").to_uppercase();
 
-    if statement_upper.starts_with("CREATE TABLE") {
+    if first_line.starts_with("CREATE TABLE") {
         table_statements.push(statement.to_string());
-    } else if statement_upper.starts_with("CREATE INDEX")
-        || statement_upper.starts_with("CREATE UNIQUE INDEX")
+    } else if first_line.starts_with("CREATE INDEX")
+        || first_line.starts_with("CREATE UNIQUE INDEX")
     {
         index_statements.push(statement.to_string());
     } else if !statement.trim().is_empty() {
