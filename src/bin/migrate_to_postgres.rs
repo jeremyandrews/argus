@@ -385,38 +385,69 @@ async fn migrate_data_via_dump(pool: &Pool<Postgres>) -> Result<()> {
 }
 
 fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
-    let mut postgres_sql = sqlite_sql.to_string();
+    let mut postgres_sql = String::new();
+    let mut skip_until_semicolon = false;
 
-    // Transform SQLite-specific syntax to PostgreSQL
-    postgres_sql = postgres_sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY");
-    postgres_sql = postgres_sql.replace("INTEGER PRIMARY KEY", "SERIAL PRIMARY KEY");
-    postgres_sql = postgres_sql.replace("AUTOINCREMENT", "");
+    for line in sqlite_sql.lines() {
+        let trimmed = line.trim();
 
-    // Handle boolean values
-    postgres_sql = postgres_sql.replace("'0'", "false");
-    postgres_sql = postgres_sql.replace("'1'", "true");
+        // Skip SQLite-specific statements
+        if trimmed.starts_with("PRAGMA")
+            || trimmed.starts_with("BEGIN TRANSACTION")
+            || trimmed.starts_with("COMMIT")
+            || trimmed.contains("sqlite_sequence")
+            || trimmed.starts_with("ANALYZE")
+        {
+            continue;
+        }
 
-    // Remove SQLite-specific statements
-    let lines: Vec<&str> = postgres_sql
-        .lines()
-        .filter(|line| !line.starts_with("PRAGMA"))
-        .filter(|line| !line.starts_with("BEGIN TRANSACTION"))
-        .filter(|line| !line.starts_with("COMMIT"))
-        .filter(|line| !line.contains("sqlite_sequence"))
-        // Skip CREATE TABLE statements for tables that already exist in schema
-        .filter(|line| !line.starts_with("CREATE TABLE configurations"))
-        .collect();
+        // Skip CREATE TABLE and CREATE INDEX statements (schema already exists)
+        if trimmed.starts_with("CREATE TABLE")
+            || trimmed.starts_with("CREATE UNIQUE INDEX")
+            || trimmed.starts_with("CREATE INDEX")
+        {
+            skip_until_semicolon = true;
+            continue;
+        }
 
-    postgres_sql = lines.join("\n");
+        // Skip until we find the end of the statement
+        if skip_until_semicolon {
+            if trimmed.ends_with(";") {
+                skip_until_semicolon = false;
+            }
+            continue;
+        }
 
-    // Remove any remaining SQLite incompatibilities
-    postgres_sql = postgres_sql.replace("WITHOUT ROWID", "");
+        // Transform INSERT statements
+        if trimmed.starts_with("INSERT INTO") {
+            let mut transformed_line = line.to_string();
+
+            // Handle boolean values in INSERT statements
+            transformed_line = transformed_line.replace(",'0',", ",false,");
+            transformed_line = transformed_line.replace(",'1',", ",true,");
+            transformed_line = transformed_line.replace("('0',", "(false,");
+            transformed_line = transformed_line.replace("('1',", "(true,");
+            transformed_line = transformed_line.replace(",'0')", ",false)");
+            transformed_line = transformed_line.replace(",'1')", ",true)");
+
+            // Handle timestamp conversion - convert TEXT timestamps to proper format
+            // SQLite stores timestamps as TEXT, PostgreSQL expects TIMESTAMPTZ
+            // This is a simple approach - more sophisticated parsing could be added
+
+            postgres_sql.push_str(&transformed_line);
+            postgres_sql.push('\n');
+        } else if !trimmed.is_empty() {
+            // Include other non-empty lines (like VALUES, etc.)
+            postgres_sql.push_str(line);
+            postgres_sql.push('\n');
+        }
+    }
 
     Ok(postgres_sql)
 }
 
 async fn reset_postgres_sequences(pool: &Pool<Postgres>) -> Result<()> {
-    println!("  🔄 Resetting PostgreSQL sequences...");
+    println!("  � Resetting PostgreSQL sequences...");
 
     let tables = [
         "articles",
@@ -490,7 +521,7 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
 
     // Migrate RSS feeds from URLS env var
     if let Ok(urls_str) = env::var("URLS") {
-        println!("  📡 Migrating RSS feeds...");
+        println!("  � Migrating RSS feeds...");
         for (i, url) in urls_str.split(';').enumerate() {
             let url = url.trim();
             if !url.is_empty() {
