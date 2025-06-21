@@ -1,5 +1,73 @@
 # Active Context
 
+## ✅ COMPLETED: PostgreSQL Migration Boolean Transformation Fix (June 21, 2025)
+
+### Issue Resolution Summary
+**Successfully fixed critical PostgreSQL migration failure caused by boolean data type mismatch. The migration now properly transforms SQLite boolean values (0/1) to PostgreSQL boolean literals (false/true), resolving the "column is_relevant is of type boolean but expression is of type integer" error.**
+
+### Root Cause Analysis
+The migration was failing because SQLite stores boolean values as integers (0/1), but PostgreSQL expects actual boolean literals (false/true). The original transformation logic had incomplete pattern matching that failed to handle all boolean value formats.
+
+**The Failing Case:**
+```sql
+-- SQLite dump output (failing):
+INSERT INTO articles (...) VALUES(1,'url','2024-06-11 09:36:57.000+0000',0,NULL,...)
+
+-- PostgreSQL expectation (working):
+INSERT INTO articles (...) VALUES(1,'url','2024-06-11 09:36:57.000+0000',false,NULL,...)
+```
+
+### Technical Solution Implemented
+
+**1. Enhanced Boolean Transformation System**
+- **Comprehensive Column Mapping**: Added precise mapping of boolean columns for each table
+- **Robust CSV Parsing**: Implemented proper parsing for VALUES clauses
+- **Multiple Format Support**: Handles both quoted ('0'/'1') and unquoted (0/1) boolean values
+- **Position-Aware Transformation**: Only transforms values in columns identified as boolean
+
+**2. Key Functions Added**
+```rust
+fn get_boolean_columns(table_name: &str) -> Vec<usize>
+fn transform_boolean_values(sql: &str, table_name: &str) -> Result<String>
+fn transform_values_data(values_data: &str, boolean_positions: &[usize]) -> Result<String>
+fn transform_field_if_boolean(field: &str, field_index: usize, boolean_positions: &[usize]) -> String
+```
+
+**3. Boolean Column Mappings**
+- **articles**: `is_relevant` (position 3)
+- **configurations**: `enabled` (position 4)
+- **endpoint_alerts**: `is_resolved` (position 9)
+- **alias_pattern_stats**: `enabled` (position 6)
+
+**4. Comprehensive Testing**
+Created test suite that verifies:
+- Unquoted boolean values (0 → false, 1 → true)
+- Quoted boolean values ('0' → false, '1' → true)
+- Position-specific transformation
+- Non-boolean tables unchanged
+
+### Files Modified
+1. `src/bin/migrate_to_postgres.rs` - Enhanced boolean transformation logic
+2. `src/bin/test_boolean_migration.rs` - Comprehensive test suite
+3. `Cargo.toml` - Added test binary
+
+### Migration Status
+🚀 **Ready for Production**: The migration should now complete successfully without boolean data type errors.
+
+### Testing Results
+✅ All test cases pass:
+```
+🧪 Testing boolean transformation logic...
+✅ Test 1 - Original failing case: Boolean transformation successful!
+✅ Test 2 - Configuration table: Boolean transformation successful!
+✅ Test 3 - Quoted boolean values: Boolean transformation successful!
+✅ Test 4 - No boolean columns: No transformation applied (correct)!
+🎉 All tests passed! Boolean transformation logic is working correctly.
+```
+
+---
+
+## ✅ COMPLETED: PostgreSQL Migration Data Transformation Fix (June 21, 2025)
 ## ✅ COMPLETED: PostgreSQL Migration Data Transformation Fix (June 21, 2025)
 
 ### Issue Resolution Summary

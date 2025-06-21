@@ -498,13 +498,8 @@ fn transform_insert_statement(line: &str) -> Result<String> {
                 let mut result = format!("INSERT INTO {} ({}) VALUES(", table_name, column_list);
                 result.push_str(values_part);
 
-                // Handle boolean values
-                result = result.replace(",'0',", ",false,");
-                result = result.replace(",'1',", ",true,");
-                result = result.replace("('0',", "(false,");
-                result = result.replace("('1',", "(true,");
-                result = result.replace(",'0')", ",false)");
-                result = result.replace(",'1')", ",true)");
+                // Transform boolean values using robust parsing
+                result = transform_boolean_values(&result, &table_name)?;
 
                 // Convert Unix timestamps to PostgreSQL format for tables with timestamp fields
                 result = convert_unix_timestamps(&result, &table_name);
@@ -516,12 +511,12 @@ fn transform_insert_statement(line: &str) -> Result<String> {
 
     // Fallback: return original line with boolean transformations
     let mut result = line.to_string();
-    result = result.replace(",'0',", ",false,");
-    result = result.replace(",'1',", ",true,");
-    result = result.replace("('0',", "(false,");
-    result = result.replace("('1',", "(true,");
-    result = result.replace(",'0')", ",false)");
-    result = result.replace(",'1')", ",true)");
+
+    // Extract table name for fallback transformation
+    if let Some(table_name) = extract_table_name(&result) {
+        result = transform_boolean_values(&result, &table_name)?;
+    }
+
     Ok(result)
 }
 
@@ -577,7 +572,184 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
             "importance".to_string(),
             "context".to_string(),
         ],
+        "configurations" => vec![
+            "id".to_string(),
+            "category".to_string(),
+            "name".to_string(),
+            "value".to_string(),
+            "enabled".to_string(),
+            "created_at".to_string(),
+            "updated_at".to_string(),
+        ],
+        "endpoint_alerts" => vec![
+            "id".to_string(),
+            "endpoint_url".to_string(),
+            "model_name".to_string(),
+            "alert_type".to_string(),
+            "first_occurrence".to_string(),
+            "last_occurrence".to_string(),
+            "last_alert_sent".to_string(),
+            "occurrence_count".to_string(),
+            "consecutive_failures".to_string(),
+            "is_resolved".to_string(),
+            "resolved_at".to_string(),
+        ],
+        "alias_pattern_stats" => vec![
+            "pattern_id".to_string(),
+            "pattern_type".to_string(),
+            "total_suggestions".to_string(),
+            "approved_count".to_string(),
+            "rejected_count".to_string(),
+            "last_used_at".to_string(),
+            "enabled".to_string(),
+        ],
         _ => vec![], // For other tables, let them use default behavior
+    }
+}
+
+fn get_boolean_columns(table_name: &str) -> Vec<usize> {
+    // Return 0-based column indices for boolean columns in each table
+    match table_name {
+        "articles" => vec![3],            // is_relevant is 4th column (0-indexed: 3)
+        "configurations" => vec![4],      // enabled is 5th column (0-indexed: 4)
+        "endpoint_alerts" => vec![9],     // is_resolved is 10th column (0-indexed: 9)
+        "alias_pattern_stats" => vec![6], // enabled is 7th column (0-indexed: 6)
+        "entity_aliases" => vec![],       // status is TEXT, not boolean
+        "alias_review_batches" => vec![], // status is TEXT, not boolean
+        "device_subscriptions" => vec![], // No boolean columns
+        "ip_logs" => vec![],              // No boolean columns
+        _ => vec![],
+    }
+}
+
+fn transform_boolean_values(sql: &str, table_name: &str) -> Result<String> {
+    let boolean_positions = get_boolean_columns(table_name);
+    if boolean_positions.is_empty() {
+        return Ok(sql.to_string());
+    }
+
+    // Find the VALUES clause
+    if let Some(values_start) = sql.find(" VALUES(") {
+        let before_values = &sql[..values_start + 8]; // Include " VALUES("
+        let values_content = &sql[values_start + 8..];
+
+        // Find the closing parenthesis for the VALUES clause
+        if let Some(values_end) = values_content.rfind(')') {
+            let values_data = &values_content[..values_end];
+            let after_values = &values_content[values_end..]; // Include closing paren and semicolon
+
+            // Parse and transform the values
+            let transformed_values = transform_values_data(values_data, &boolean_positions)?;
+
+            return Ok(format!(
+                "{}{}{}",
+                before_values, transformed_values, after_values
+            ));
+        }
+    }
+
+    // Fallback: use simple string replacement for basic cases
+    let mut result = sql.to_string();
+
+    // Handle common boolean patterns
+    result = result.replace(",0,", ",false,");
+    result = result.replace(",1,", ",true,");
+    result = result.replace("(0,", "(false,");
+    result = result.replace("(1,", "(true,");
+    result = result.replace(",0)", ",false)");
+    result = result.replace(",1)", ",true)");
+
+    // Handle quoted boolean values
+    result = result.replace(",'0',", ",false,");
+    result = result.replace(",'1',", ",true,");
+    result = result.replace("('0',", "(false,");
+    result = result.replace("('1',", "(true,");
+    result = result.replace(",'0')", ",false)");
+    result = result.replace(",'1')", ",true)");
+
+    Ok(result)
+}
+
+fn transform_values_data(values_data: &str, boolean_positions: &[usize]) -> Result<String> {
+    // Simple CSV parsing for VALUES data
+    let mut result = String::new();
+    let mut current_field = String::new();
+    let mut field_index = 0;
+    let mut in_quotes = false;
+    let mut escape_next = false;
+
+    for ch in values_data.chars() {
+        if escape_next {
+            current_field.push(ch);
+            escape_next = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if in_quotes => {
+                escape_next = true;
+                current_field.push(ch);
+            }
+            '\'' => {
+                in_quotes = !in_quotes;
+                current_field.push(ch);
+            }
+            ',' if !in_quotes => {
+                // End of field
+                let transformed_field =
+                    transform_field_if_boolean(&current_field, field_index, boolean_positions);
+                result.push_str(&transformed_field);
+                result.push(',');
+
+                current_field.clear();
+                field_index += 1;
+            }
+            _ => {
+                current_field.push(ch);
+            }
+        }
+    }
+
+    // Handle the last field
+    if !current_field.is_empty() {
+        let transformed_field =
+            transform_field_if_boolean(&current_field, field_index, boolean_positions);
+        result.push_str(&transformed_field);
+    }
+
+    Ok(result)
+}
+
+fn transform_field_if_boolean(
+    field: &str,
+    field_index: usize,
+    boolean_positions: &[usize],
+) -> String {
+    if !boolean_positions.contains(&field_index) {
+        return field.to_string();
+    }
+
+    let trimmed = field.trim();
+
+    // Handle various boolean representations
+    match trimmed {
+        "0" | "'0'" => "false".to_string(),
+        "1" | "'1'" => "true".to_string(),
+        "NULL" | "null" => "NULL".to_string(),
+        _ => {
+            // If it's not a clear boolean value, keep it as-is
+            // This handles cases where the field might already be transformed
+            if trimmed == "true" || trimmed == "false" {
+                trimmed.to_string()
+            } else {
+                // Log unexpected boolean value for debugging
+                eprintln!(
+                    "Warning: Unexpected boolean value '{}' at position {}",
+                    trimmed, field_index
+                );
+                field.to_string()
+            }
+        }
     }
 }
 
