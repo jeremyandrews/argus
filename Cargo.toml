@@ -104,3 +104,7 @@ path = "src/bin/test_postgres_migration.rs"
 [[bin]]
 name = "test_boolean_migration"
 path = "src/bin/test_boolean_migration.rs"
+
+[[bin]]
+name = "test_postgres_compatibility"
+path = "src/bin/test_postgres_compatibility.rs"

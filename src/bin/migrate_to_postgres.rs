@@ -470,7 +470,9 @@ fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
         // Transform INSERT statements to use explicit column names
         if trimmed.starts_with("INSERT INTO") {
             let transformed_line = transform_insert_statement(line)?;
-            postgres_sql.push_str(&transformed_line);
+            // Apply additional PostgreSQL compatibility fixes
+            let postgres_compatible = fix_postgres_compatibility(&transformed_line)?;
+            postgres_sql.push_str(&postgres_compatible);
             postgres_sql.push('\n');
         } else if !trimmed.is_empty() {
             // Include other non-empty lines (like VALUES, etc.)
@@ -751,6 +753,45 @@ fn transform_field_if_boolean(
             }
         }
     }
+}
+
+fn fix_postgres_compatibility(sql: &str) -> Result<String> {
+    let mut result = sql.to_string();
+
+    // Fix common PostgreSQL compatibility issues
+
+    // 1. Handle char() function calls - PostgreSQL uses chr() instead of char()
+    result = result.replace("char(10)", "chr(10)");
+    result = result.replace("char(13)", "chr(13)");
+
+    // 2. Handle problematic escape sequences in string literals
+    // Look for patterns like ','\n',char(10)),' and fix them
+    use regex::Regex;
+
+    // Fix newline escape sequences that might be causing issues
+    let newline_regex = Regex::new(r"'\\n'").unwrap();
+    result = newline_regex.replace_all(&result, "E'\\n'").to_string();
+
+    // Fix carriage return escape sequences
+    let cr_regex = Regex::new(r"'\\r'").unwrap();
+    result = cr_regex.replace_all(&result, "E'\\r'").to_string();
+
+    // Fix tab escape sequences
+    let tab_regex = Regex::new(r"'\\t'").unwrap();
+    result = tab_regex.replace_all(&result, "E'\\t'").to_string();
+
+    // 3. Handle problematic quote escaping
+    // Replace sequences like '\'' with proper PostgreSQL escaping
+    result = result.replace("\\'", "''");
+
+    // 4. Handle NULL byte characters that might cause issues
+    result = result.replace("\\0", "");
+
+    // 5. Fix any remaining char() calls to chr()
+    let char_regex = Regex::new(r"\bchar\((\d+)\)").unwrap();
+    result = char_regex.replace_all(&result, "chr($1)").to_string();
+
+    Ok(result)
 }
 
 fn convert_unix_timestamps(sql: &str, table_name: &str) -> String {

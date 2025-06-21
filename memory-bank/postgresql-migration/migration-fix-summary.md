@@ -14,12 +14,20 @@ SQLite stores boolean values as integers (0/1), but PostgreSQL expects actual bo
 - **Multiple Format Support**: Handles both quoted ('0'/'1') and unquoted (0/1) boolean values
 - **Position-Aware Transformation**: Only transforms values in columns identified as boolean
 
-### 2. Key Functions Added
+### 2. PostgreSQL Compatibility Fixes
+- **char() Function Conversion**: Converts SQLite char() calls to PostgreSQL chr() functions
+- **Escape Sequence Handling**: Properly handles escape sequences with PostgreSQL E'' syntax
+- **Quote Escaping**: Fixes quote escaping for PostgreSQL compatibility
+- **NULL Byte Removal**: Removes problematic NULL byte characters
+- **Special Character Support**: Comprehensive handling of special characters in data
+
+### 3. Key Functions Added
 ```rust
 fn get_boolean_columns(table_name: &str) -> Vec<usize>
 fn transform_boolean_values(sql: &str, table_name: &str) -> Result<String>
 fn transform_values_data(values_data: &str, boolean_positions: &[usize]) -> Result<String>
 fn transform_field_if_boolean(field: &str, field_index: usize, boolean_positions: &[usize]) -> String
+fn fix_postgres_compatibility(sql: &str) -> Result<String>
 ```
 
 ### 3. Boolean Column Mappings
