@@ -102,6 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         &text_params,
         &worker_detail,
+        None, // No rate limiter for test
     )
     .await;
 

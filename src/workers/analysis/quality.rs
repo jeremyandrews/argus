@@ -1,7 +1,8 @@
-use crate::llm::generate_text_response;
+use crate::llm::{generate_text_response, generate_text_response_enhanced};
 use crate::prompt;
+use crate::rate_limiter::OpenAIRateLimiter;
 use crate::{TextLLMParams, WorkerDetail};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 /// Function to perform the analysis on an article.
 /// Returns a tuple containing various analysis results.
@@ -13,6 +14,7 @@ pub async fn process_analysis(
     pub_date: Option<&str>,
     text_params: &TextLLMParams,
     worker_detail: &WorkerDetail,
+    rate_limiter: Option<&OpenAIRateLimiter>,
 ) -> (
     String,         // summary
     String,         // tiny_summary
@@ -54,10 +56,17 @@ pub async fn process_analysis(
 
     // Start with summary to establish base understanding
     let summary_prompt = prompt::summary_prompt(article_text, pub_date);
-    let summary = match generate_text_response(&summary_prompt, &text_params, worker_detail).await {
-        Some(s) if !s.trim().is_empty() => s,
-        _ => {
-            warn!("Failed to generate valid summary");
+    let summary = match generate_text_response_enhanced(
+        &summary_prompt,
+        &text_params,
+        worker_detail,
+        rate_limiter,
+    )
+    .await
+    {
+        Ok(s) if !s.trim().is_empty() => s,
+        Ok(_) => {
+            warn!("Generated empty summary");
             return (
                 String::new(),
                 String::new(),
@@ -74,6 +83,49 @@ pub async fn process_analysis(
                 String::new(),
                 String::new(), // eli5
             );
+        }
+        Err(e) => {
+            if e.should_allow_rss_retry() {
+                error!(
+                    "Rate limited or temporary failure generating summary: {}",
+                    e
+                );
+                // Return early without processing - this will allow RSS worker to retry
+                return (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    2,
+                    2,
+                    String::from("none"),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(), // eli5
+                );
+            } else {
+                error!("Permanent failure generating summary: {}", e);
+                return (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    None,
+                    2,
+                    2,
+                    String::from("none"),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(), // eli5
+                );
+            }
         }
     };
 

@@ -26,7 +26,7 @@ pub async fn process_analysis_item(
         String,
         BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<String>>>>,
     >,
-    _rate_limiter: Option<&OpenAIRateLimiter>,
+    rate_limiter: Option<&OpenAIRateLimiter>,
 ) -> bool {
     // First, try to process an item from the life safety queue
     match timeout(
@@ -60,6 +60,7 @@ pub async fn process_analysis_item(
                 title_domain_hash,
                 threat_regions,
                 pub_date,
+                rate_limiter,
             )
             .await;
 
@@ -107,6 +108,7 @@ pub async fn process_analysis_item(
                 title_domain_hash,
                 topic,
                 pub_date,
+                rate_limiter,
             )
             .await;
 
@@ -149,6 +151,7 @@ async fn process_life_safety_item(
     title_domain_hash: String,
     threat_regions: String,
     pub_date: Option<String>,
+    rate_limiter: Option<&OpenAIRateLimiter>,
 ) -> bool {
     let start_time = Instant::now();
     info!(target: TARGET_LLM_REQUEST, "[{} {} {}]: pulled from life safety queue {}.", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
@@ -345,6 +348,19 @@ async fn process_life_safety_item(
             String::new()
         };
 
+        let analysis_result = process_analysis(
+            &article_text,
+            &article_html,
+            &article_url,
+            None, // No specific topic for life safety items
+            pub_date.as_deref(),
+            llm_params,
+            worker_detail,
+            rate_limiter,
+        )
+        .await;
+
+        // Check if analysis failed due to empty results (likely rate limiting or other errors)
         let (
             summary,
             tiny_summary,
@@ -360,16 +376,35 @@ async fn process_life_safety_item(
             action_recommendations,
             talking_points,
             eli5,
-        ) = process_analysis(
-            &article_text,
-            &article_html,
-            &article_url,
-            None, // No specific topic for life safety items
-            pub_date.as_deref(),
-            llm_params,
-            worker_detail,
-        )
-        .await;
+        ) = analysis_result;
+
+        if summary.is_empty()
+            || tiny_summary.is_empty()
+            || critical_analysis.is_empty()
+            || logical_fallacies.is_empty()
+        {
+            // Analysis failed - put the item back into the life safety queue for retry
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Analysis failed for {}, returning to life safety queue for retry", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
+
+            // Convert threat_regions back to string for database storage
+            let threat_regions_str = threat_regions.to_string();
+            if let Err(e) = db
+                .add_to_life_safety_queue(
+                    &threat_regions_str,
+                    &article_url,
+                    &article_title,
+                    &article_text,
+                    &article_html,
+                    &article_hash,
+                    &title_domain_hash,
+                    pub_date.as_deref(),
+                )
+                .await
+            {
+                error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Failed to return item to life safety queue: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+            }
+            return false;
+        }
 
         // Collect database statistics
         let stats = match db.collect_stats().await {
@@ -523,6 +558,7 @@ async fn process_matched_topic_item(
     title_domain_hash: String,
     topic: String,
     pub_date: Option<String>,
+    rate_limiter: Option<&OpenAIRateLimiter>,
 ) -> bool {
     let mut llm_params_clone = llm_params.clone();
 
@@ -565,6 +601,19 @@ async fn process_matched_topic_item(
         return false;
     }
 
+    let analysis_result = process_analysis(
+        &article_text,
+        &article_html,
+        &article_url,
+        Some(&topic),
+        pub_date.as_deref(),
+        &mut llm_params_clone,
+        worker_detail,
+        rate_limiter,
+    )
+    .await;
+
+    // Check if analysis failed due to empty results (likely rate limiting or other errors)
     let (
         summary,
         tiny_summary,
@@ -580,17 +629,35 @@ async fn process_matched_topic_item(
         action_recommendations,
         talking_points,
         eli5,
-    ) = process_analysis(
-        &article_text,
-        &article_html,
-        &article_url,
-        Some(&topic),
-        pub_date.as_deref(),
-        &mut llm_params_clone,
-        worker_detail,
-    )
-    .await;
+    ) = analysis_result;
 
+    if summary.is_empty()
+        || tiny_summary.is_empty()
+        || critical_analysis.is_empty()
+        || logical_fallacies.is_empty()
+    {
+        // Analysis failed - put the item back into the matched topics queue for retry
+        error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Analysis failed for {}, returning to matched topics queue for retry", worker_detail.name, worker_detail.id, worker_detail.model, article_url);
+
+        if let Err(e) = db
+            .add_to_matched_topics_queue(
+                &article_text,
+                &article_html,
+                &article_url,
+                &article_title,
+                &article_hash,
+                &title_domain_hash,
+                &topic,
+                pub_date.as_deref(),
+            )
+            .await
+        {
+            error!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Failed to return item to matched topics queue: {:?}", worker_detail.name, worker_detail.id, worker_detail.model, e);
+        }
+        return false;
+    }
+
+    // Analysis succeeded, continue with processing
     if !summary.is_empty()
         && !tiny_summary.is_empty()
         && !critical_analysis.is_empty()
