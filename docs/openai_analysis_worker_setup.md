@@ -37,9 +37,6 @@ This guide explains how to enable OpenAI models for analysis workers while avoid
 Add these to your environment configuration:
 
 ```bash
-# OpenAI API Configuration
-OPENAI_API_KEY="your-openai-api-key-here"
-
 # Rate Limiting Configuration
 OPENAI_RATE_LIMIT_ENABLED="true"     # Enable/disable rate limiting
 OPENAI_RATE_LIMIT_RPM="500"          # Requests per minute limit (Tier 1)
@@ -47,22 +44,28 @@ OPENAI_RATE_LIMIT_RPD="10000"        # Requests per day limit (Tier 1)
 OPENAI_RATE_LIMIT_BURST="10"         # Burst allowance for short spikes
 
 # Analysis Worker Configuration (example)
-ANALYSIS_OPENAI_CONFIGS="api.openai.com|gpt-4o-mini|0.3|true|true"
+ANALYSIS_OPENAI_CONFIGS="sk-proj-your-api-key-here|gpt-4o-mini"
 
 # Decision Worker Configuration (example) 
-DECISION_OPENAI_CONFIGS="api.openai.com|gpt-4o-mini|0.3|true|true"
+DECISION_OPENAI_CONFIGS="sk-proj-your-api-key-here|gpt-4o-mini"
 ```
 
 ### Worker Configuration Format
 
 For OpenAI workers, use this format:
 ```
-host|model|temperature|no_think|strip_thinking_tags
+api_key|model
 ```
 
 Example configurations:
-- `api.openai.com|gpt-4o-mini|0.3|true|true` - GPT-4o Mini with no-think mode
-- `api.openai.com|gpt-3.5-turbo|0.2|false|false` - GPT-3.5 Turbo with thinking mode
+- `sk-proj-abc123...|gpt-4o-mini` - GPT-4o Mini (recommended for cost)
+- `sk-proj-abc123...|gpt-3.5-turbo` - GPT-3.5 Turbo
+- `sk-proj-abc123...|gpt-4` - GPT-4 (expensive but highest quality)
+
+For multiple workers, separate with semicolons:
+```bash
+DECISION_OPENAI_CONFIGS="sk-proj-key1|gpt-4o-mini;sk-proj-key2|gpt-3.5-turbo"
+```
 
 ## Rate Limiting Strategies
 
@@ -149,10 +152,10 @@ export OPENAI_RATE_LIMIT_RPD="10000"  # Adjust for your tier
 ### Step 2: Update Worker Configurations
 ```bash
 # Enable OpenAI for analysis workers
-export ANALYSIS_OPENAI_CONFIGS="api.openai.com|gpt-4o-mini|0.3|true|true"
+export ANALYSIS_OPENAI_CONFIGS="sk-proj-your-api-key-here|gpt-4o-mini"
 
 # Keep decision workers on OpenAI or switch to Ollama
-export DECISION_OLLAMA_CONFIGS="localhost:11434|qwen2.5:32b|0.3|true|true"
+export DECISION_OLLAMA_CONFIGS="localhost|11434|qwen2.5:32b"
 ```
 
 ### Step 3: Start Workers
@@ -203,10 +206,10 @@ Article will be retried by RSS worker
 ### Hybrid Strategy
 ```bash
 # Analysis workers: Local models for bulk processing
-ANALYSIS_OLLAMA_CONFIGS="localhost:11434|qwen2.5:32b|0.3|true|true"
+ANALYSIS_OLLAMA_CONFIGS="localhost|11434|qwen2.5:32b"
 
 # Decision workers: OpenAI for accuracy
-DECISION_OPENAI_CONFIGS="api.openai.com|gpt-4o-mini|0.3|true|true"
+DECISION_OPENAI_CONFIGS="sk-proj-your-api-key-here|gpt-4o-mini"
 ```
 
 ### Rate Limit Tuning
