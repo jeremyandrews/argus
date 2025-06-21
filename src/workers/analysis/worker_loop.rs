@@ -1,9 +1,10 @@
 use anyhow::Result;
 use tokio::time::{sleep, Duration, Instant};
-use tracing::{debug, error, info, info_span, Instrument};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 
 use crate::db::core::Database;
 use crate::llm::generate_text_response;
+use crate::rate_limiter::OpenAIRateLimiter;
 use crate::util::{parse_places_data_detailed, parse_places_data_hierarchical};
 use crate::workers::common::{build_connection_info, FeedItem, ProcessItemParams};
 use crate::{
@@ -31,6 +32,16 @@ pub async fn analysis_loop(
     no_think: bool,
 ) -> Result<()> {
     let db = Database::instance().await;
+
+    // Create rate limiter for OpenAI requests
+    let rate_limiter = match OpenAIRateLimiter::from_env() {
+        Ok(limiter) => Some(limiter),
+        Err(e) => {
+            warn!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Failed to create rate limiter: {}. OpenAI requests will not be rate limited.", "analysis worker", worker_id, model, e);
+            None
+        }
+    };
+
     let mut llm_params = TextLLMParams {
         base: LLMParamsBase {
             llm_client: llm_client.clone(),
@@ -109,6 +120,7 @@ pub async fn analysis_loop(
                     slack_token,
                     default_slack_channel,
                     &places_detailed,
+                    rate_limiter.as_ref(),
                 )
                 .instrument(span)
                 .await;
@@ -227,7 +239,7 @@ pub async fn analysis_loop(
                                     places: places_clone,
                                     model_config: llm_params.base.model_config.clone(),
                                     no_think: llm_params.base.no_think,
-                                    openai_rate_limiter: None, // TODO: Add rate limiter support to analysis worker
+                                    openai_rate_limiter: rate_limiter.as_ref(),
                                 };
 
                                 // Process the item using the decision worker's process_item function

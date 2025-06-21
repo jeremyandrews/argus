@@ -2,9 +2,10 @@ use anyhow::Result;
 use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::db::core::Database;
+use crate::rate_limiter::OpenAIRateLimiter;
 use crate::util::parse_places_data_hierarchical;
 use crate::workers::common::{build_connection_info, ProcessItemParams};
 use crate::{LLMClient, WorkerDetail, TARGET_LLM_REQUEST};
@@ -25,6 +26,15 @@ pub async fn decision_loop(
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut rng = StdRng::seed_from_u64(rand::random());
+
+    // Create rate limiter for OpenAI requests
+    let rate_limiter = match OpenAIRateLimiter::from_env() {
+        Ok(limiter) => Some(limiter),
+        Err(e) => {
+            warn!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Failed to create rate limiter: {}. OpenAI requests will not be rate limited.", "decision worker", worker_id, model, e);
+            None
+        }
+    };
 
     // Extract connection info from the LLM client
     let connection_info = build_connection_info(llm_client, worker_id, "DECISION_OLLAMA_CONFIGS");
@@ -119,7 +129,7 @@ pub async fn decision_loop(
                     places: places_clone,
                     model_config: model_config.clone(),
                     no_think,
-                    openai_rate_limiter: None, // TODO: Add rate limiter support to decision worker
+                    openai_rate_limiter: rate_limiter.as_ref(),
                 };
 
                 process_item(item, &mut params, &worker_detail).await;

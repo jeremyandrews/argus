@@ -7,6 +7,7 @@ use crate::app::util::send_to_app;
 use crate::db::core::Database;
 use crate::llm::generate_text_response;
 use crate::prompt;
+use crate::rate_limiter::OpenAIRateLimiter;
 use crate::slack::send_to_slack;
 use crate::workers::common::calculate_quality_score;
 use crate::{TextLLMParams, WorkerDetail, TARGET_LLM_REQUEST};
@@ -25,6 +26,7 @@ pub async fn process_analysis_item(
         String,
         BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<String>>>>,
     >,
+    _rate_limiter: Option<&OpenAIRateLimiter>,
 ) -> bool {
     // First, try to process an item from the life safety queue
     match timeout(
