@@ -346,6 +346,88 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
         }
     }
 
+    // Migrate worker configurations
+    println!("  🔧 Migrating worker configurations...");
+    let worker_configs = [
+        ("decision", "DECISION_OLLAMA_CONFIGS"),
+        ("decision", "DECISION_OPENAI_CONFIGS"),
+        ("analysis", "ANALYSIS_OLLAMA_CONFIGS"),
+        ("analysis", "ANALYSIS_OPENAI_CONFIGS"),
+    ];
+
+    for (category, env_var) in worker_configs {
+        if let Ok(value) = env::var(env_var) {
+            if !value.is_empty() {
+                // Parse and migrate individual worker configurations
+                let configs: Vec<&str> =
+                    value.split(';').filter(|c| !c.trim().is_empty()).collect();
+                for (index, config) in configs.iter().enumerate() {
+                    let config_name = format!("worker_{}", index);
+                    set_config(pool, category, &config_name, config.trim()).await?;
+
+                    // Log with appropriate detail level
+                    let display_config = if env_var.contains("OPENAI") {
+                        // Hide API keys in OpenAI configs
+                        let parts: Vec<&str> = config.split('|').collect();
+                        if parts.len() >= 2 {
+                            format!("[API_KEY_REDACTED]|{}", parts[1])
+                        } else {
+                            "[REDACTED]".to_string()
+                        }
+                    } else {
+                        config.to_string()
+                    };
+
+                    println!(
+                        "    ✅ Migrated {} worker {}: {}",
+                        category, index, display_config
+                    );
+                }
+                println!(
+                    "    📊 Total {} workers migrated: {}",
+                    category,
+                    configs.len()
+                );
+            }
+        }
+    }
+
+    // Migrate LLM parameters
+    println!("  🎛️  Migrating LLM parameters...");
+    let llm_params = [
+        ("llm_temperature", "LLM_TEMPERATURE"),
+        ("llm_top_p", "LLM_TOP_P"),
+        ("llm_top_k", "LLM_TOP_K"),
+        ("llm_min_p", "LLM_MIN_P"),
+    ];
+
+    for (key, env_var) in llm_params {
+        if let Ok(value) = env::var(env_var) {
+            if !value.is_empty() {
+                set_config(pool, "llm_params", key, &value).await?;
+                println!("    ✅ Migrated LLM parameter: {} = {}", key, value);
+            }
+        }
+    }
+
+    // Migrate OpenAI rate limiting configuration
+    println!("  🚦 Migrating rate limiting configuration...");
+    let rate_limit_configs = [
+        ("enabled", "OPENAI_RATE_LIMIT_ENABLED"),
+        ("rpm", "OPENAI_RATE_LIMIT_RPM"),
+        ("rpd", "OPENAI_RATE_LIMIT_RPD"),
+        ("burst", "OPENAI_RATE_LIMIT_BURST"),
+    ];
+
+    for (key, env_var) in rate_limit_configs {
+        if let Ok(value) = env::var(env_var) {
+            if !value.is_empty() {
+                set_config(pool, "rate_limit", key, &value).await?;
+                println!("    ✅ Migrated rate limit setting: {} = {}", key, value);
+            }
+        }
+    }
+
     // Migrate system settings
     println!("  ⚙️  Migrating system settings...");
     let system_vars = [
