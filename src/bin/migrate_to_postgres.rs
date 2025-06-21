@@ -349,9 +349,27 @@ async fn migrate_data_via_dump(pool: &Pool<Postgres>) -> Result<()> {
     println!("  🔄 Transforming SQL for PostgreSQL...");
     let postgres_sql = transform_sqlite_to_postgres(&sqlite_dump)?;
 
+    // Debug: Check what we're actually importing
+    let line_count = postgres_sql.lines().count();
+    let insert_count = postgres_sql
+        .lines()
+        .filter(|line| line.trim().starts_with("INSERT INTO"))
+        .count();
+    println!(
+        "  📊 Transformed SQL: {} lines, {} INSERT statements",
+        line_count, insert_count
+    );
+
     // Write transformed SQL to temp file
     let temp_file = "/tmp/postgres_import.sql";
-    fs::write(temp_file, postgres_sql)?;
+    fs::write(temp_file, &postgres_sql)?;
+
+    // Debug: Show first few lines of transformed SQL
+    let preview_lines: Vec<&str> = postgres_sql.lines().take(10).collect();
+    println!("  🔍 First 10 lines of transformed SQL:");
+    for (i, line) in preview_lines.iter().enumerate() {
+        println!("    {}: {}", i + 1, line);
+    }
 
     // Step 3: Import to PostgreSQL
     println!("  📥 Importing to PostgreSQL...");
