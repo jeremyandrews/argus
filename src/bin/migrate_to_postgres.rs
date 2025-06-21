@@ -22,10 +22,13 @@ async fn main() -> Result<()> {
     // Phase 3: Migrate data
     migrate_data_via_dump(&pool).await?;
 
-    // Phase 4: Migrate configuration
+    // Phase 4: Create indexes after data import (for optimal performance)
+    create_indexes_after_import(&pool).await?;
+
+    // Phase 5: Migrate configuration
     migrate_env_to_database(&pool).await?;
 
-    // Phase 5: Validation
+    // Phase 6: Validation
     validate_migration(&pool).await?;
 
     println!("✅ Migration completed successfully!");
@@ -143,28 +146,16 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
 
     let schema_sql = include_str!("../../memory-bank/postgresql-migration/schema.sql");
 
-    // Execute schema without transaction to avoid prepared statement issues
     // Parse and categorize SQL statements
     let (table_statements, index_statements, other_statements) =
         parse_schema_statements(schema_sql);
 
-    // Execute in correct order: tables first, then indexes, then other statements
-    println!("  📋 Creating tables...");
+    // OPTIMIZED ORDER: Create tables first, data will be imported next, then indexes
+    println!("  📋 Creating tables (without indexes for faster import)...");
     for statement in table_statements {
         sqlx::query(&statement).execute(pool).await.map_err(|e| {
             anyhow::anyhow!(
                 "Failed to execute table statement: {}\nError: {}",
-                statement,
-                e
-            )
-        })?;
-    }
-
-    println!("  🔗 Creating indexes...");
-    for statement in index_statements {
-        sqlx::query(&statement).execute(pool).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to execute index statement: {}\nError: {}",
                 statement,
                 e
             )
@@ -178,7 +169,36 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
         })?;
     }
 
-    println!("✅ PostgreSQL schema created");
+    // Store index statements for later execution (after data import)
+    *INDEX_STATEMENTS.lock().unwrap() = index_statements;
+
+    println!("✅ PostgreSQL schema created (indexes will be created after data import)");
+    Ok(())
+}
+
+// Global storage for index statements to execute after data import
+use std::sync::Mutex;
+lazy_static::lazy_static! {
+    static ref INDEX_STATEMENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+}
+
+async fn create_indexes_after_import(pool: &Pool<Postgres>) -> Result<()> {
+    println!("🔗 Creating indexes after data import for optimal performance...");
+
+    let index_statements = INDEX_STATEMENTS.lock().unwrap().clone();
+
+    for (i, statement) in index_statements.iter().enumerate() {
+        println!("  📊 Creating index {}/{}", i + 1, index_statements.len());
+        sqlx::query(statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to execute index statement: {}\nError: {}",
+                statement,
+                e
+            )
+        })?;
+    }
+
+    println!("✅ All indexes created successfully");
     Ok(())
 }
 
