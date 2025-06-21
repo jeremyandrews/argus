@@ -436,22 +436,9 @@ fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
             continue;
         }
 
-        // Transform INSERT statements
+        // Transform INSERT statements to use explicit column names
         if trimmed.starts_with("INSERT INTO") {
-            let mut transformed_line = line.to_string();
-
-            // Handle boolean values in INSERT statements
-            transformed_line = transformed_line.replace(",'0',", ",false,");
-            transformed_line = transformed_line.replace(",'1',", ",true,");
-            transformed_line = transformed_line.replace("('0',", "(false,");
-            transformed_line = transformed_line.replace("('1',", "(true,");
-            transformed_line = transformed_line.replace(",'0')", ",false)");
-            transformed_line = transformed_line.replace(",'1')", ",true)");
-
-            // Handle timestamp conversion - convert TEXT timestamps to proper format
-            // SQLite stores timestamps as TEXT, PostgreSQL expects TIMESTAMPTZ
-            // This is a simple approach - more sophisticated parsing could be added
-
+            let transformed_line = transform_insert_statement(line)?;
             postgres_sql.push_str(&transformed_line);
             postgres_sql.push('\n');
         } else if !trimmed.is_empty() {
@@ -462,6 +449,102 @@ fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
     }
 
     Ok(postgres_sql)
+}
+
+fn transform_insert_statement(line: &str) -> Result<String> {
+    // Parse INSERT INTO table VALUES(...) and convert to explicit column names
+    if let Some(values_start) = line.find(" VALUES(") {
+        let table_part = &line[..values_start];
+        let values_part = &line[values_start + 8..]; // Skip " VALUES("
+
+        // Extract table name
+        if let Some(table_name) = extract_table_name(table_part) {
+            // Get the column specification for this table
+            let columns = get_table_columns(&table_name);
+            if !columns.is_empty() {
+                // Reconstruct with explicit column names
+                let column_list = columns.join(", ");
+                let mut result = format!("INSERT INTO {} ({}) VALUES(", table_name, column_list);
+                result.push_str(values_part);
+
+                // Handle boolean values
+                result = result.replace(",'0',", ",false,");
+                result = result.replace(",'1',", ",true,");
+                result = result.replace("('0',", "(false,");
+                result = result.replace("('1',", "(true,");
+                result = result.replace(",'0')", ",false)");
+                result = result.replace(",'1')", ",true)");
+
+                return Ok(result);
+            }
+        }
+    }
+
+    // Fallback: return original line with boolean transformations
+    let mut result = line.to_string();
+    result = result.replace(",'0',", ",false,");
+    result = result.replace(",'1',", ",true,");
+    result = result.replace("('0',", "(false,");
+    result = result.replace("('1',", "(true,");
+    result = result.replace(",'0')", ",false)");
+    result = result.replace(",'1')", ",true)");
+    Ok(result)
+}
+
+fn extract_table_name(table_part: &str) -> Option<String> {
+    // Extract table name from "INSERT INTO table_name"
+    if let Some(into_pos) = table_part.find("INSERT INTO ") {
+        let after_into = &table_part[into_pos + 12..].trim();
+        // Take first word as table name
+        if let Some(space_pos) = after_into.find(' ') {
+            Some(after_into[..space_pos].to_string())
+        } else {
+            Some(after_into.to_string())
+        }
+    } else {
+        None
+    }
+}
+
+fn get_table_columns(table_name: &str) -> Vec<String> {
+    // Return the correct column order for each table based on our PostgreSQL schema
+    match table_name {
+        "articles" => vec![
+            "id".to_string(),
+            "url".to_string(),
+            "normalized_url".to_string(),
+            "seen_at".to_string(),
+            "pub_date".to_string(),
+            "event_date".to_string(),
+            "title".to_string(),
+            "source".to_string(),
+            "is_relevant".to_string(),
+            "category".to_string(),
+            "tiny_summary".to_string(),
+            "analysis".to_string(),
+            "json_data".to_string(),
+            "quality".to_string(),
+            "hash".to_string(),
+            "title_domain_hash".to_string(),
+            "r2_url".to_string(),
+            "cluster_id".to_string(),
+        ],
+        "entities" => vec![
+            "id".to_string(),
+            "name".to_string(),
+            "type".to_string(),
+            "normalized_name".to_string(),
+            "parent_id".to_string(),
+        ],
+        "article_entities" => vec![
+            "id".to_string(),
+            "article_id".to_string(),
+            "entity_id".to_string(),
+            "importance".to_string(),
+            "context".to_string(),
+        ],
+        _ => vec![], // For other tables, let them use default behavior
+    }
 }
 
 async fn reset_postgres_sequences(pool: &Pool<Postgres>) -> Result<()> {
