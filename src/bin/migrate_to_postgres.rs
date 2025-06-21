@@ -138,37 +138,208 @@ async fn setup_postgres_connection() -> Result<Pool<Postgres>> {
 async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     println!("🏗️  Creating PostgreSQL schema...");
 
+    // First, clean up any existing schema
+    clean_existing_schema(pool).await?;
+
     let schema_sql = include_str!("../../memory-bank/postgresql-migration/schema.sql");
 
     // Execute schema in transaction
     let mut tx = pool.begin().await?;
 
-    // Split the schema into individual statements to handle them properly
-    let statements: Vec<&str> = schema_sql
-        .split(';')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty() && !s.starts_with("--"))
-        .collect();
+    // Parse and categorize SQL statements
+    let (table_statements, index_statements, other_statements) =
+        parse_schema_statements(schema_sql);
 
-    for statement in statements {
-        if !statement.trim().is_empty() {
-            sqlx::query(statement)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to execute schema statement: {}\nError: {}",
-                        statement,
-                        e
-                    )
-                })?;
-        }
+    // Execute in correct order: tables first, then indexes, then other statements
+    println!("  📋 Creating tables...");
+    for statement in table_statements {
+        sqlx::query(&statement)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to execute table statement: {}\nError: {}",
+                    statement,
+                    e
+                )
+            })?;
+    }
+
+    println!("  🔗 Creating indexes...");
+    for statement in index_statements {
+        sqlx::query(&statement)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to execute index statement: {}\nError: {}",
+                    statement,
+                    e
+                )
+            })?;
+    }
+
+    println!("  ⚙️  Creating functions and triggers...");
+    for statement in other_statements {
+        sqlx::query(&statement)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to execute statement: {}\nError: {}", statement, e)
+            })?;
     }
 
     tx.commit().await?;
 
     println!("✅ PostgreSQL schema created");
     Ok(())
+}
+
+async fn clean_existing_schema(pool: &Pool<Postgres>) -> Result<()> {
+    println!("  🧹 Cleaning existing schema...");
+
+    // Get list of all tables in the public schema
+    let tables: Vec<String> =
+        sqlx::query_scalar("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            .fetch_all(pool)
+            .await?;
+
+    if !tables.is_empty() {
+        println!("    🗑️  Dropping {} existing tables...", tables.len());
+
+        // Drop all tables with CASCADE to handle foreign key dependencies
+        for table in tables {
+            let drop_sql = format!("DROP TABLE IF EXISTS {} CASCADE", table);
+            sqlx::query(&drop_sql)
+                .execute(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to drop table {}: {}", table, e))?;
+        }
+    }
+
+    // Drop any remaining sequences, functions, and types
+    println!("    🔧 Cleaning sequences, functions, and types...");
+
+    // Drop sequences
+    let sequences: Vec<String> =
+        sqlx::query_scalar("SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'")
+            .fetch_all(pool)
+            .await?;
+
+    for sequence in sequences {
+        let drop_sql = format!("DROP SEQUENCE IF EXISTS {} CASCADE", sequence);
+        sqlx::query(&drop_sql).execute(pool).await?;
+    }
+
+    // Drop custom functions (but keep system functions)
+    let functions: Vec<String> = sqlx::query_scalar(
+        "SELECT proname FROM pg_proc p 
+         JOIN pg_namespace n ON p.pronamespace = n.oid 
+         WHERE n.nspname = 'public' AND p.prokind = 'f'",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for function in functions {
+        let drop_sql = format!("DROP FUNCTION IF EXISTS {} CASCADE", function);
+        sqlx::query(&drop_sql).execute(pool).await?;
+    }
+
+    println!("    ✅ Schema cleanup completed");
+    Ok(())
+}
+
+fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut table_statements = Vec::new();
+    let mut index_statements = Vec::new();
+    let mut other_statements = Vec::new();
+
+    // Split by semicolon and clean up statements
+    let raw_statements: Vec<&str> = schema_sql
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && !s.starts_with("--"))
+        .collect();
+
+    let mut current_statement = String::new();
+
+    for raw_stmt in raw_statements {
+        // Handle multi-line statements (like functions)
+        if current_statement.is_empty() {
+            current_statement = raw_stmt.to_string();
+        } else {
+            current_statement.push_str(";\n");
+            current_statement.push_str(raw_stmt);
+        }
+
+        // Check if this completes a statement
+        let trimmed = current_statement.trim();
+        if should_complete_statement(trimmed) {
+            categorize_statement(
+                trimmed,
+                &mut table_statements,
+                &mut index_statements,
+                &mut other_statements,
+            );
+            current_statement.clear();
+        }
+    }
+
+    // Handle any remaining statement
+    if !current_statement.trim().is_empty() {
+        let trimmed = current_statement.trim();
+        categorize_statement(
+            trimmed,
+            &mut table_statements,
+            &mut index_statements,
+            &mut other_statements,
+        );
+    }
+
+    (table_statements, index_statements, other_statements)
+}
+
+fn should_complete_statement(statement: &str) -> bool {
+    let statement_upper = statement.to_uppercase();
+
+    // Complete if it's a simple statement
+    if statement_upper.starts_with("CREATE TABLE")
+        || statement_upper.starts_with("CREATE INDEX")
+        || statement_upper.starts_with("CREATE UNIQUE INDEX")
+        || statement_upper.starts_with("INSERT INTO")
+        || statement_upper.starts_with("GRANT")
+        || statement_upper.starts_with("COMMENT ON")
+    {
+        return true;
+    }
+
+    // For functions and triggers, check for the END keyword
+    if statement_upper.contains("CREATE OR REPLACE FUNCTION")
+        || statement_upper.contains("CREATE TRIGGER")
+    {
+        return statement_upper.contains("$$") && statement_upper.matches("$$").count() >= 2;
+    }
+
+    true
+}
+
+fn categorize_statement(
+    statement: &str,
+    table_statements: &mut Vec<String>,
+    index_statements: &mut Vec<String>,
+    other_statements: &mut Vec<String>,
+) {
+    let statement_upper = statement.to_uppercase();
+
+    if statement_upper.starts_with("CREATE TABLE") {
+        table_statements.push(statement.to_string());
+    } else if statement_upper.starts_with("CREATE INDEX")
+        || statement_upper.starts_with("CREATE UNIQUE INDEX")
+    {
+        index_statements.push(statement.to_string());
+    } else if !statement.trim().is_empty() {
+        other_statements.push(statement.to_string());
+    }
 }
 
 async fn migrate_data_via_dump(pool: &Pool<Postgres>) -> Result<()> {
