@@ -143,9 +143,7 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
 
     let schema_sql = include_str!("../../memory-bank/postgresql-migration/schema.sql");
 
-    // Execute schema in transaction
-    let mut tx = pool.begin().await?;
-
+    // Execute schema without transaction to avoid prepared statement issues
     // Parse and categorize SQL statements
     let (table_statements, index_statements, other_statements) =
         parse_schema_statements(schema_sql);
@@ -153,43 +151,32 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     // Execute in correct order: tables first, then indexes, then other statements
     println!("  📋 Creating tables...");
     for statement in table_statements {
-        sqlx::query(&statement)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to execute table statement: {}\nError: {}",
-                    statement,
-                    e
-                )
-            })?;
+        sqlx::query(&statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to execute table statement: {}\nError: {}",
+                statement,
+                e
+            )
+        })?;
     }
 
     println!("  🔗 Creating indexes...");
     for statement in index_statements {
-        sqlx::query(&statement)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to execute index statement: {}\nError: {}",
-                    statement,
-                    e
-                )
-            })?;
+        sqlx::query(&statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to execute index statement: {}\nError: {}",
+                statement,
+                e
+            )
+        })?;
     }
 
     println!("  ⚙️  Creating functions and triggers...");
     for statement in other_statements {
-        sqlx::query(&statement)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to execute statement: {}\nError: {}", statement, e)
-            })?;
+        sqlx::query(&statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!("Failed to execute statement: {}\nError: {}", statement, e)
+        })?;
     }
-
-    tx.commit().await?;
 
     println!("✅ PostgreSQL schema created");
     Ok(())
@@ -254,16 +241,12 @@ fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<S
     let mut index_statements = Vec::new();
     let mut other_statements = Vec::new();
 
-    // More sophisticated parsing to handle complex SQL
+    // Simple but robust parsing - split by semicolon and handle each statement
     let mut current_statement = String::new();
-    let mut in_function = false;
-    let mut dollar_quote_count = 0;
-    let mut paren_depth = 0;
+    let mut in_dollar_quote = false;
+    let mut dollar_tag = String::new();
 
-    // Process character by character to handle complex statements
-    let lines: Vec<&str> = schema_sql.lines().collect();
-
-    for line in lines {
+    for line in schema_sql.lines() {
         let trimmed_line = line.trim();
 
         // Skip comments and empty lines
@@ -277,32 +260,26 @@ fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<S
         }
         current_statement.push_str(line);
 
-        // Track function boundaries
-        if trimmed_line
-            .to_uppercase()
-            .contains("CREATE OR REPLACE FUNCTION")
-            || trimmed_line.to_uppercase().contains("CREATE TRIGGER")
-        {
-            in_function = true;
+        // Handle dollar quoting for functions
+        if let Some(dollar_pos) = trimmed_line.find("$$") {
+            if !in_dollar_quote {
+                // Starting dollar quote
+                in_dollar_quote = true;
+                // Extract tag if any (e.g., $tag$)
+                if let Some(end_pos) = trimmed_line[dollar_pos + 2..].find("$$") {
+                    dollar_tag = trimmed_line[dollar_pos..dollar_pos + 2 + end_pos + 2].to_string();
+                } else {
+                    dollar_tag = "$$".to_string();
+                }
+            } else if trimmed_line.contains(&dollar_tag) {
+                // Ending dollar quote
+                in_dollar_quote = false;
+                dollar_tag.clear();
+            }
         }
 
-        // Count dollar quotes for function boundaries
-        dollar_quote_count += trimmed_line.matches("$$").count();
-
-        // Track parentheses depth for CREATE TABLE statements
-        paren_depth += trimmed_line.matches('(').count();
-        paren_depth -= trimmed_line.matches(')').count();
-
         // Check if statement is complete
-        let should_complete = if in_function {
-            // Function is complete when we have even number of $$ (pairs)
-            dollar_quote_count >= 2 && dollar_quote_count % 2 == 0 && trimmed_line.ends_with(';')
-        } else {
-            // Regular statement is complete when it ends with semicolon and parentheses are balanced
-            trimmed_line.ends_with(';') && paren_depth == 0
-        };
-
-        if should_complete {
+        if !in_dollar_quote && trimmed_line.ends_with(';') {
             let statement = current_statement.trim();
             if !statement.is_empty() {
                 categorize_statement(
@@ -312,12 +289,7 @@ fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<S
                     &mut other_statements,
                 );
             }
-
-            // Reset for next statement
             current_statement.clear();
-            in_function = false;
-            dollar_quote_count = 0;
-            paren_depth = 0;
         }
     }
 
