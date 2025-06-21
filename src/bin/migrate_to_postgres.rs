@@ -486,6 +486,9 @@ fn transform_insert_statement(line: &str) -> Result<String> {
                 result = result.replace(",'0')", ",false)");
                 result = result.replace(",'1')", ",true)");
 
+                // Convert Unix timestamps to PostgreSQL format for tables with timestamp fields
+                result = convert_unix_timestamps(&result, &table_name);
+
                 return Ok(result);
             }
         }
@@ -556,6 +559,57 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
         ],
         _ => vec![], // For other tables, let them use default behavior
     }
+}
+
+fn convert_unix_timestamps(sql: &str, table_name: &str) -> String {
+    use regex::Regex;
+
+    // Only convert timestamps for tables that have timestamp fields
+    let has_timestamps = match table_name {
+        "articles" => true,                 // seen_at, pub_date, event_date
+        "rss_queue" => true,                // seen_at, pub_date
+        "matched_topics_queue" => true,     // timestamp, pub_date
+        "life_safety_queue" => true,        // timestamp, pub_date
+        "article_clusters" => true,         // creation_date, last_updated
+        "article_cluster_mappings" => true, // added_date
+        "cluster_merge_history" => true,    // merge_date
+        "entity_aliases" => true,           // created_at, approved_at
+        "entity_negative_matches" => true,  // rejected_at
+        "alias_pattern_stats" => true,      // last_used_at
+        "alias_review_batches" => true,     // created_at
+        "alias_review_items" => true,       // decided_at
+        "alias_cache_stats" => true,        // last_accessed
+        "endpoint_timeout_events" => true,  // occurred_at
+        "endpoint_alerts" => true, // first_occurrence, last_occurrence, last_alert_sent, resolved_at
+        "configurations" => true,  // updated_at
+        _ => false,
+    };
+
+    if !has_timestamps {
+        return sql.to_string();
+    }
+
+    // Convert Unix timestamps to PostgreSQL TIMESTAMPTZ format
+    // Pattern: 'NNNNNNNNNN' where N is a digit (Unix timestamp)
+    let timestamp_regex = Regex::new(r"'(\d{10})'").unwrap();
+
+    timestamp_regex
+        .replace_all(sql, |caps: &regex::Captures| {
+            let unix_timestamp = &caps[1];
+            if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
+                // Convert Unix timestamp to PostgreSQL format
+                if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
+                    format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%.3f%z"))
+                } else {
+                    // If conversion fails, use NULL
+                    "NULL".to_string()
+                }
+            } else {
+                // If parsing fails, keep original
+                format!("'{}'", unix_timestamp)
+            }
+        })
+        .to_string()
 }
 
 async fn reset_postgres_sequences(pool: &Pool<Postgres>) -> Result<()> {
