@@ -401,13 +401,8 @@ async fn migrate_data_via_dump(pool: &Pool<Postgres>) -> Result<()> {
         .arg("ON_ERROR_STOP=1")
         .output()?;
 
-    // Always show PostgreSQL output for debugging
-    let stdout = String::from_utf8_lossy(&import_output.stdout);
+    // Show only stderr for debugging (stdout is too verbose with INSERT 0 1 messages)
     let stderr = String::from_utf8_lossy(&import_output.stderr);
-
-    if !stdout.is_empty() {
-        println!("  📋 PostgreSQL stdout: {}", stdout);
-    }
 
     if !stderr.is_empty() {
         println!("  ⚠️  PostgreSQL stderr: {}", stderr);
@@ -759,15 +754,14 @@ fn fix_postgres_compatibility(sql: &str) -> Result<String> {
     let mut result = sql.to_string();
 
     // Fix common PostgreSQL compatibility issues
-
-    // 1. Handle char() function calls - PostgreSQL uses chr() instead of char()
-    result = result.replace("char(10)", "chr(10)");
-    result = result.replace("char(13)", "chr(13)");
-
-    // 2. Handle problematic escape sequences in string literals
-    // Look for patterns like ','\n',char(10)),' and fix them
     use regex::Regex;
 
+    // 1. Handle char() function calls - PostgreSQL uses chr() instead of char()
+    // Use regex to catch all char() patterns, including those in complex expressions
+    let char_regex = Regex::new(r"\bchar\((\d+)\)").unwrap();
+    result = char_regex.replace_all(&result, "chr($1)").to_string();
+
+    // 2. Handle problematic escape sequences in string literals
     // Fix newline escape sequences that might be causing issues
     let newline_regex = Regex::new(r"'\\n'").unwrap();
     result = newline_regex.replace_all(&result, "E'\\n'").to_string();
@@ -787,9 +781,14 @@ fn fix_postgres_compatibility(sql: &str) -> Result<String> {
     // 4. Handle NULL byte characters that might cause issues
     result = result.replace("\\0", "");
 
-    // 5. Fix any remaining char() calls to chr()
-    let char_regex = Regex::new(r"\bchar\((\d+)\)").unwrap();
-    result = char_regex.replace_all(&result, "chr($1)").to_string();
+    // 5. Handle problematic concatenation patterns that might cause syntax errors
+    // Look for patterns like '),(' which might be causing issues
+    // This is a more aggressive fix for complex data patterns
+    let concat_regex = Regex::new(r"'\s*,\s*'").unwrap();
+    result = concat_regex.replace_all(&result, "' || '").to_string();
+
+    // 6. Handle backticks (MySQL-style) that might appear in data
+    result = result.replace("`", "\"");
 
     Ok(result)
 }
