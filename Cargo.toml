@@ -108,3 +108,7 @@ path = "src/bin/test_boolean_migration.rs"
 [[bin]]
 name = "test_postgres_compatibility"
 path = "src/bin/test_postgres_compatibility.rs"
+
+[[bin]]
+name = "test_string_concatenation_fix"
+path = "src/bin/test_string_concatenation_fix.rs"

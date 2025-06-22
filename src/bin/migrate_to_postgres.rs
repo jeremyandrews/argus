@@ -490,10 +490,13 @@ fn transform_insert_statement(line: &str) -> Result<String> {
             // Get the column specification for this table
             let columns = get_table_columns(&table_name);
             if !columns.is_empty() {
+                // First, fix any string concatenation issues in the values part
+                let fixed_values = fix_string_concatenation(values_part)?;
+
                 // Reconstruct with explicit column names
                 let column_list = columns.join(", ");
                 let mut result = format!("INSERT INTO {} ({}) VALUES(", table_name, column_list);
-                result.push_str(values_part);
+                result.push_str(&fixed_values);
 
                 // Transform boolean values using robust parsing
                 result = transform_boolean_values(&result, &table_name)?;
@@ -513,6 +516,35 @@ fn transform_insert_statement(line: &str) -> Result<String> {
     if let Some(table_name) = extract_table_name(&result) {
         result = transform_boolean_values(&result, &table_name)?;
     }
+
+    Ok(result)
+}
+
+fn fix_string_concatenation(values_part: &str) -> Result<String> {
+    // Fix string concatenation issues in VALUES clause
+    let mut result = values_part.to_string();
+
+    // Handle the specific pattern from the error: URL || timestamp
+    // Look for patterns like 'url' || 'timestamp' and merge them properly
+    use regex::Regex;
+
+    // Pattern: 'string1' || 'string2' -> 'string1string2'
+    let concat_regex = Regex::new(r"'([^']*?)'\s*\|\|\s*'([^']*?)'").unwrap();
+
+    // Keep applying the regex until no more matches (handles multiple concatenations)
+    loop {
+        let new_result = concat_regex.replace_all(&result, "'$1$2'").to_string();
+        if new_result == result {
+            break; // No more changes
+        }
+        result = new_result;
+    }
+
+    // Also handle unquoted concatenation patterns
+    let unquoted_concat_regex = Regex::new(r"([^,\s]+)\s*\|\|\s*'([^']*?)'").unwrap();
+    result = unquoted_concat_regex
+        .replace_all(&result, "$1$2")
+        .to_string();
 
     Ok(result)
 }
