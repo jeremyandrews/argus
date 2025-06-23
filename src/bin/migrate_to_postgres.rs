@@ -528,22 +528,37 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
     // Look for patterns like 'url' || 'timestamp' and merge them properly
     use regex::Regex;
 
-    // Pattern: 'string1' || 'string2' -> 'string1string2'
-    let concat_regex = Regex::new(r"'([^']*?)'\s*\|\|\s*'([^']*?)'").unwrap();
+    // More aggressive pattern matching to handle all concatenation cases
+    // Pattern 1: 'string1' || 'string2' -> 'string1string2'
+    let quoted_concat_regex = Regex::new(r"'([^']*)'\s*\|\|\s*'([^']*)'").unwrap();
 
     // Keep applying the regex until no more matches (handles multiple concatenations)
     loop {
-        let new_result = concat_regex.replace_all(&result, "'$1$2'").to_string();
+        let new_result = quoted_concat_regex
+            .replace_all(&result, "'$1$2'")
+            .to_string();
         if new_result == result {
             break; // No more changes
         }
         result = new_result;
     }
 
-    // Also handle unquoted concatenation patterns
-    let unquoted_concat_regex = Regex::new(r"([^,\s]+)\s*\|\|\s*'([^']*?)'").unwrap();
+    // Pattern 2: Handle mixed patterns like value || 'string'
+    let mixed_concat_regex = Regex::new(r"([^,\s']+)\s*\|\|\s*'([^']*)'").unwrap();
+    result = mixed_concat_regex
+        .replace_all(&result, "'$1$2'")
+        .to_string();
+
+    // Pattern 3: Handle 'string' || value patterns
+    let reverse_mixed_regex = Regex::new(r"'([^']*)'\s*\|\|\s*([^,\s']+)").unwrap();
+    result = reverse_mixed_regex
+        .replace_all(&result, "'$1$2'")
+        .to_string();
+
+    // Pattern 4: Handle unquoted || unquoted patterns
+    let unquoted_concat_regex = Regex::new(r"([^,\s']+)\s*\|\|\s*([^,\s']+)").unwrap();
     result = unquoted_concat_regex
-        .replace_all(&result, "$1$2")
+        .replace_all(&result, "'$1$2'")
         .to_string();
 
     Ok(result)
