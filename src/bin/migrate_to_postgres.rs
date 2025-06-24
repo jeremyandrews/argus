@@ -522,7 +522,16 @@ fn transform_insert_statement(line: &str) -> Result<String> {
 
 fn fix_string_concatenation(values_part: &str) -> Result<String> {
     // Fix string concatenation issues in VALUES clause
-    let mut result = values_part.to_string();
+    let original = values_part.to_string();
+    let mut result = original.clone();
+
+    // Debug: Check if we have concatenation to fix
+    if result.contains(" || ") {
+        println!(
+            "  🔧 Fixing string concatenation in: {}",
+            &result[..100.min(result.len())]
+        );
+    }
 
     // Handle the specific pattern from the error: URL || timestamp
     // Look for patterns like 'url' || 'timestamp' and merge them properly
@@ -560,6 +569,16 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
     result = unquoted_concat_regex
         .replace_all(&result, "'$1$2'")
         .to_string();
+
+    // Debug: Show result if we made changes
+    if result != original {
+        println!("  ✅ Fixed to: {}", &result[..100.min(result.len())]);
+    } else if original.contains(" || ") {
+        println!(
+            "  ❌ No changes made to: {}",
+            &original[..100.min(original.len())]
+        );
+    }
 
     Ok(result)
 }
