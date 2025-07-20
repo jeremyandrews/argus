@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.14.4"
+version = "0.14.5"
 edition = "2021"
 
 [dependencies]
@@ -26,6 +26,7 @@ brotli = "8.0"
 fst = "0.4.7"
 futures = "0.3"
 futures-util = "0.3"
+indicatif = "0.17"
 jsonwebtoken = "9.0"
 lazy_static = "1.5"
 ollama-rs = "0.3"

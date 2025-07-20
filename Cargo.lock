@@ -165,6 +165,7 @@ dependencies = [
  "fst",
  "futures 0.3.31",
  "futures-util",
+ "indicatif",
  "jsonwebtoken",
  "lazy_static",
  "ollama-rs",

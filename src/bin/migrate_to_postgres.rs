@@ -1,37 +1,262 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, SecondsFormat, Utc};
+use clap::{Arg, Command as ClapCommand};
+use indicatif::{ProgressBar, ProgressStyle};
+use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 use std::env;
 use std::fs;
 use std::process::Command;
+use std::time::{Duration as StdDuration, Instant};
+use sysinfo::System;
 use tokio::time::Duration;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MigrationCheckpoint {
+    migration_id: String,
+    mode: String,
+    start_time: DateTime<Utc>,
+    completed_phases: Vec<String>,
+    current_phase: String,
+    completed_tables: Vec<String>,
+    current_table: Option<String>,
+    total_tables: usize,
+    last_checkpoint: DateTime<Utc>,
+    cutoff_timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug)]
+enum MigrationMode {
+    Full,
+    Incremental(DateTime<Utc>),
+}
+
+#[derive(Debug)]
+struct MigrationStats {
+    start_time: Instant,
+    phase_times: std::collections::HashMap<String, StdDuration>,
+    memory_usage: Vec<(String, u64)>,
+}
+
+impl MigrationStats {
+    fn new() -> Self {
+        Self {
+            start_time: Instant::now(),
+            phase_times: std::collections::HashMap::new(),
+            memory_usage: Vec::new(),
+        }
+    }
+
+    fn record_phase(&mut self, phase: &str, duration: StdDuration) {
+        self.phase_times.insert(phase.to_string(), duration);
+    }
+
+    fn record_memory(&mut self, phase: &str) {
+        let mut system = System::new_all();
+        system.refresh_all();
+        let process_name = std::ffi::OsStr::new("migrate_to_postgres");
+
+        // Collect memory info immediately to avoid lifetime issues
+        let memory_mb = system
+            .processes_by_exact_name(process_name)
+            .next()
+            .map(|process| process.memory())
+            .unwrap_or(0);
+
+        if memory_mb > 0 {
+            self.memory_usage.push((phase.to_string(), memory_mb));
+        }
+    }
+
+    fn print_summary(&self) {
+        let total_time = self.start_time.elapsed();
+        println!("\n📊 Migration Performance Summary:");
+        println!(
+            "  🕐 Total time: {:.1} minutes",
+            total_time.as_secs_f64() / 60.0
+        );
+
+        for (phase, duration) in &self.phase_times {
+            println!("  ⏱️  {}: {:.1}s", phase, duration.as_secs_f64());
+        }
+
+        if !self.memory_usage.is_empty() {
+            println!("\n💾 Memory Usage:");
+            for (phase, memory) in &self.memory_usage {
+                println!("  📈 {}: {:.1} MB", phase, memory / 1024 / 1024);
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("🚀 Starting PostgreSQL migration...");
+    let matches = ClapCommand::new("migrate_to_postgres")
+        .about("Enhanced PostgreSQL migration with debugging and incremental support")
+        .arg(
+            Arg::new("auto")
+                .long("auto")
+                .help("Automatically detect migration mode (full or incremental)")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("debug")
+                .long("debug")
+                .help("Enable detailed debugging and performance tracking")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("resume")
+                .long("resume")
+                .help("Resume from last checkpoint")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("force-full")
+                .long("force-full")
+                .help("Force full migration even if data exists")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("since")
+                .long("since")
+                .value_name("TIMESTAMP")
+                .help("Incremental migration since specific timestamp (YYYY-MM-DD HH:MM:SS)")
+                .action(clap::ArgAction::Set),
+        )
+        .get_matches();
+
+    let debug_mode = matches.get_flag("debug");
+    let auto_mode = matches.get_flag("auto");
+    let resume_mode = matches.get_flag("resume");
+    let force_full = matches.get_flag("force-full");
+    let since_timestamp = matches.get_one::<String>("since");
+
+    let mut stats = MigrationStats::new();
+
+    println!("🚀 Starting Enhanced PostgreSQL Migration...");
+    if debug_mode {
+        println!("🔍 Debug mode enabled - detailed performance tracking active");
+    }
+
+    // Handle resume mode
+    if resume_mode {
+        return resume_migration(debug_mode, &mut stats).await;
+    }
 
     // Phase 1: Pre-migration checks and backup
+    let phase_start = Instant::now();
     check_prerequisites().await?;
     create_backup().await?;
+    stats.record_phase("Prerequisites & Backup", phase_start.elapsed());
+    stats.record_memory("Prerequisites");
 
-    // Phase 2: Setup PostgreSQL
+    // Phase 2: Setup PostgreSQL and determine migration mode
+    let phase_start = Instant::now();
     let pool = setup_postgres_connection().await?;
-    create_postgres_schema(&pool).await?;
 
-    // Phase 3: Migrate data
-    migrate_data_via_dump(&pool).await?;
+    let migration_mode = if force_full {
+        MigrationMode::Full
+    } else if let Some(since_str) = since_timestamp {
+        let since_dt =
+            chrono::NaiveDateTime::parse_from_str(since_str, "%Y-%m-%d %H:%M:%S")?.and_utc();
+        MigrationMode::Incremental(since_dt)
+    } else if auto_mode {
+        determine_migration_mode(&pool).await?
+    } else {
+        MigrationMode::Full
+    };
 
-    // Phase 4: Create indexes after data import (for optimal performance)
-    create_indexes_after_import(&pool).await?;
+    match &migration_mode {
+        MigrationMode::Full => {
+            println!("🔍 Detected: Empty PostgreSQL database → Full migration");
+        }
+        MigrationMode::Incremental(cutoff) => {
+            println!(
+                "🔍 Detected: Existing data, last cutoff: {} → Incremental migration",
+                cutoff.format("%Y-%m-%d %H:%M:%S%.6f%z")
+            );
+        }
+    }
 
-    // Phase 5: Migrate configuration
-    migrate_env_to_database(&pool).await?;
+    stats.record_phase("PostgreSQL Setup & Mode Detection", phase_start.elapsed());
 
-    // Phase 6: Validation
+    // Create checkpoint for crash recovery
+    let checkpoint = create_initial_checkpoint(&migration_mode)?;
+    save_checkpoint(&checkpoint)?;
+
+    // Phase 3: Schema setup (only for full migration)
+    if matches!(migration_mode, MigrationMode::Full) {
+        let phase_start = Instant::now();
+        create_postgres_schema_enhanced(&pool, debug_mode).await?;
+        stats.record_phase("Schema Creation", phase_start.elapsed());
+        stats.record_memory("Schema");
+
+        update_checkpoint_phase(&checkpoint.migration_id, "schema_complete").await?;
+    }
+
+    // Phase 4: Data migration
+    let phase_start = Instant::now();
+    match migration_mode {
+        MigrationMode::Full => {
+            migrate_data_via_dump_enhanced(&pool, debug_mode, &mut stats).await?;
+        }
+        MigrationMode::Incremental(cutoff) => {
+            migrate_incremental_data(cutoff, debug_mode, &mut stats).await?;
+        }
+    }
+    stats.record_phase("Data Migration", phase_start.elapsed());
+    stats.record_memory("Data Migration");
+
+    update_checkpoint_phase(&checkpoint.migration_id, "data_complete").await?;
+
+    // Phase 5: Index creation (only for full migration)
+    if matches!(migration_mode, MigrationMode::Full) {
+        let phase_start = Instant::now();
+        create_indexes_after_import_enhanced(&pool, debug_mode).await?;
+        stats.record_phase("Index Creation", phase_start.elapsed());
+        stats.record_memory("Indexes");
+
+        update_checkpoint_phase(&checkpoint.migration_id, "indexes_complete").await?;
+    }
+
+    // Phase 6: Configuration migration (only for full migration)
+    if matches!(migration_mode, MigrationMode::Full) {
+        let phase_start = Instant::now();
+        migrate_env_to_database(&pool).await?;
+        stats.record_phase("Configuration Migration", phase_start.elapsed());
+
+        update_checkpoint_phase(&checkpoint.migration_id, "config_complete").await?;
+    }
+
+    // Phase 7: Update migration metadata
+    let phase_start = Instant::now();
+    record_migration_completion(&pool).await?;
+    stats.record_phase("Metadata Update", phase_start.elapsed());
+
+    // Phase 8: Validation
+    let phase_start = Instant::now();
     validate_migration(&pool).await?;
+    stats.record_phase("Validation", phase_start.elapsed());
+
+    // Cleanup checkpoint file
+    let _ = fs::remove_file("migration_checkpoint.json");
+
+    if debug_mode {
+        stats.print_summary();
+    }
 
     println!("✅ Migration completed successfully!");
+    match migration_mode {
+        MigrationMode::Full => {
+            println!("📝 Cutoff timestamp stored for future incremental migrations");
+        }
+        MigrationMode::Incremental(_) => {
+            println!("📝 Cutoff timestamp updated for next incremental migration");
+        }
+    }
+
     println!("Next steps:");
     println!("  1. Test the application: cargo run --release");
     println!("  2. Use admin tool: cargo run --bin argus_admin");
@@ -138,122 +363,10 @@ async fn setup_postgres_connection() -> Result<Pool<Postgres>> {
     Ok(pool)
 }
 
-async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
-    println!("🏗️  Creating PostgreSQL schema...");
-
-    // First, clean up any existing schema
-    clean_existing_schema(pool).await?;
-
-    let schema_sql = include_str!("../../memory-bank/postgresql-migration/schema.sql");
-
-    // Parse and categorize SQL statements
-    let (table_statements, index_statements, other_statements) =
-        parse_schema_statements(schema_sql);
-
-    // OPTIMIZED ORDER: Create tables first, data will be imported next, then indexes
-    println!("  📋 Creating tables (without indexes for faster import)...");
-    for statement in table_statements {
-        sqlx::query(&statement).execute(pool).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to execute table statement: {}\nError: {}",
-                statement,
-                e
-            )
-        })?;
-    }
-
-    println!("  ⚙️  Creating functions and triggers...");
-    for statement in other_statements {
-        sqlx::query(&statement).execute(pool).await.map_err(|e| {
-            anyhow::anyhow!("Failed to execute statement: {}\nError: {}", statement, e)
-        })?;
-    }
-
-    // Store index statements for later execution (after data import)
-    *INDEX_STATEMENTS.lock().unwrap() = index_statements;
-
-    println!("✅ PostgreSQL schema created (indexes will be created after data import)");
-    Ok(())
-}
-
 // Global storage for index statements to execute after data import
 use std::sync::Mutex;
 lazy_static::lazy_static! {
     static ref INDEX_STATEMENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-}
-
-async fn create_indexes_after_import(pool: &Pool<Postgres>) -> Result<()> {
-    println!("🔗 Creating indexes after data import for optimal performance...");
-
-    let index_statements = INDEX_STATEMENTS.lock().unwrap().clone();
-
-    for (i, statement) in index_statements.iter().enumerate() {
-        println!("  📊 Creating index {}/{}", i + 1, index_statements.len());
-        sqlx::query(statement).execute(pool).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to execute index statement: {}\nError: {}",
-                statement,
-                e
-            )
-        })?;
-    }
-
-    println!("✅ All indexes created successfully");
-    Ok(())
-}
-
-async fn clean_existing_schema(pool: &Pool<Postgres>) -> Result<()> {
-    println!("  🧹 Cleaning existing schema...");
-
-    // Get list of all tables in the public schema
-    let tables: Vec<String> =
-        sqlx::query_scalar("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
-            .fetch_all(pool)
-            .await?;
-
-    if !tables.is_empty() {
-        println!("    🗑️  Dropping {} existing tables...", tables.len());
-
-        // Drop all tables with CASCADE to handle foreign key dependencies
-        for table in tables {
-            let drop_sql = format!("DROP TABLE IF EXISTS {} CASCADE", table);
-            sqlx::query(&drop_sql)
-                .execute(pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to drop table {}: {}", table, e))?;
-        }
-    }
-
-    // Drop any remaining sequences, functions, and types
-    println!("    🔧 Cleaning sequences, functions, and types...");
-
-    // Drop sequences
-    let sequences: Vec<String> =
-        sqlx::query_scalar("SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'")
-            .fetch_all(pool)
-            .await?;
-
-    for sequence in sequences {
-        let drop_sql = format!("DROP SEQUENCE IF EXISTS {} CASCADE", sequence);
-        sqlx::query(&drop_sql).execute(pool).await?;
-    }
-
-    // Drop custom functions (but keep system functions)
-    let functions: Vec<String> = sqlx::query_scalar(
-        "SELECT proname FROM pg_proc p 
-         JOIN pg_namespace n ON p.pronamespace = n.oid 
-         WHERE n.nspname = 'public' AND p.prokind = 'f'",
-    )
-    .fetch_all(pool)
-    .await?;
-
-    for function in functions {
-        let drop_sql = format!("DROP FUNCTION IF EXISTS {} CASCADE", function);
-        sqlx::query(&drop_sql).execute(pool).await?;
-    }
-
-    println!("    ✅ Schema cleanup completed");
-    Ok(())
 }
 
 fn parse_schema_statements(schema_sql: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
@@ -344,88 +457,6 @@ fn categorize_statement(
     } else if !statement.trim().is_empty() {
         other_statements.push(statement.to_string());
     }
-}
-
-async fn migrate_data_via_dump(pool: &Pool<Postgres>) -> Result<()> {
-    println!("📥 Migrating data via dump/restore...");
-
-    // Step 1: Export SQLite data
-    println!("  📤 Exporting SQLite data...");
-    let dump_output = Command::new("sqlite3")
-        .arg("argus.db")
-        .arg(".dump")
-        .output()?;
-
-    if !dump_output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Failed to dump SQLite data: {}",
-            String::from_utf8_lossy(&dump_output.stderr)
-        ));
-    }
-
-    let sqlite_dump = String::from_utf8(dump_output.stdout)?;
-
-    // Step 2: Transform SQL for PostgreSQL compatibility
-    println!("  🔄 Transforming SQL for PostgreSQL...");
-    let postgres_sql = transform_sqlite_to_postgres(&sqlite_dump)?;
-
-    // Debug: Check what we're actually importing
-    let line_count = postgres_sql.lines().count();
-    let insert_count = postgres_sql
-        .lines()
-        .filter(|line| line.trim().starts_with("INSERT INTO"))
-        .count();
-    println!(
-        "  📊 Transformed SQL: {} lines, {} INSERT statements",
-        line_count, insert_count
-    );
-
-    // Write transformed SQL to temp file
-    let temp_file = "/tmp/postgres_import.sql";
-    fs::write(temp_file, &postgres_sql)?;
-
-    // Debug: Show first few lines of transformed SQL
-    let preview_lines: Vec<&str> = postgres_sql.lines().take(10).collect();
-    println!("  🔍 First 10 lines of transformed SQL:");
-    for (i, line) in preview_lines.iter().enumerate() {
-        println!("    {}: {}", i + 1, line);
-    }
-
-    // Step 3: Import to PostgreSQL
-    println!("  📥 Importing to PostgreSQL...");
-    let import_output = Command::new("psql")
-        .arg(&env::var("DATABASE_URL")?)
-        .arg("-f")
-        .arg(temp_file)
-        .arg("-v")
-        .arg("ON_ERROR_STOP=1")
-        .output()?;
-
-    // Show only stderr for debugging (stdout is too verbose with INSERT 0 1 messages)
-    let stderr = String::from_utf8_lossy(&import_output.stderr);
-
-    if !stderr.is_empty() {
-        println!("  ⚠️  PostgreSQL stderr: {}", stderr);
-    }
-
-    if !import_output.status.success() {
-        return Err(anyhow::anyhow!(
-            "PostgreSQL import failed with exit code: {}\nStderr: {}",
-            import_output.status.code().unwrap_or(-1),
-            stderr
-        ));
-    }
-
-    println!("  ✅ PostgreSQL import completed successfully");
-
-    // Step 4: Reset sequences
-    reset_postgres_sequences(pool).await?;
-
-    // Cleanup
-    let _ = fs::remove_file(temp_file);
-
-    println!("✅ Data migration completed");
-    Ok(())
 }
 
 fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
@@ -1163,5 +1194,586 @@ async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
     println!("  ✅ Configuration categories: {:?}", config_categories);
 
     println!("✅ Migration validation completed");
+    Ok(())
+}
+
+async fn determine_migration_mode(pool: &Pool<Postgres>) -> Result<MigrationMode> {
+    // Check if PostgreSQL has any data
+    let article_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM articles")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    if article_count == 0 {
+        // Fresh migration
+        Ok(MigrationMode::Full)
+    } else {
+        // Get last migration cutoff timestamp
+        let cutoff: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM migration_metadata WHERE key = 'last_migration_cutoff'",
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(cutoff_str) = cutoff {
+            let cutoff_time = DateTime::parse_from_rfc3339(&cutoff_str)?.with_timezone(&Utc);
+            Ok(MigrationMode::Incremental(cutoff_time))
+        } else {
+            // Has data but no cutoff - assume full migration needed
+            Ok(MigrationMode::Full)
+        }
+    }
+}
+
+fn create_initial_checkpoint(mode: &MigrationMode) -> Result<MigrationCheckpoint> {
+    let migration_id = uuid::Uuid::new_v4().to_string();
+    let now = Utc::now();
+
+    let (mode_str, cutoff) = match mode {
+        MigrationMode::Full => ("full".to_string(), None),
+        MigrationMode::Incremental(cutoff) => ("incremental".to_string(), Some(*cutoff)),
+    };
+
+    Ok(MigrationCheckpoint {
+        migration_id,
+        mode: mode_str,
+        start_time: now,
+        completed_phases: vec!["prerequisites".to_string()],
+        current_phase: "schema".to_string(),
+        completed_tables: Vec::new(),
+        current_table: None,
+        total_tables: 20, // Approximate number of tables
+        last_checkpoint: now,
+        cutoff_timestamp: cutoff,
+    })
+}
+
+fn save_checkpoint(checkpoint: &MigrationCheckpoint) -> Result<()> {
+    let json = serde_json::to_string_pretty(checkpoint)?;
+    fs::write("migration_checkpoint.json", json)?;
+    Ok(())
+}
+
+async fn update_checkpoint_phase(migration_id: &str, phase: &str) -> Result<()> {
+    if let Ok(content) = fs::read_to_string("migration_checkpoint.json") {
+        if let Ok(mut checkpoint) = serde_json::from_str::<MigrationCheckpoint>(&content) {
+            if checkpoint.migration_id == migration_id {
+                checkpoint
+                    .completed_phases
+                    .push(checkpoint.current_phase.clone());
+                checkpoint.current_phase = phase.to_string();
+                checkpoint.last_checkpoint = Utc::now();
+                save_checkpoint(&checkpoint)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn resume_migration(debug_mode: bool, stats: &mut MigrationStats) -> Result<()> {
+    println!("🔄 Resuming migration from checkpoint...");
+
+    let checkpoint_content = fs::read_to_string("migration_checkpoint.json")
+        .map_err(|_| anyhow::anyhow!("No checkpoint file found. Use --auto for new migration."))?;
+
+    let checkpoint: MigrationCheckpoint = serde_json::from_str(&checkpoint_content)?;
+
+    println!(
+        "📋 Found checkpoint: {} ({})",
+        checkpoint.migration_id, checkpoint.mode
+    );
+    println!(
+        "📅 Started: {}",
+        checkpoint.start_time.format("%Y-%m-%d %H:%M:%S")
+    );
+    println!("✅ Completed phases: {:?}", checkpoint.completed_phases);
+    println!("🔄 Current phase: {}", checkpoint.current_phase);
+
+    // Continue from where we left off
+    let pool = setup_postgres_connection().await?;
+
+    match checkpoint.current_phase.as_str() {
+        "schema" => {
+            println!("🏗️  Resuming schema creation...");
+            let phase_start = Instant::now();
+            create_postgres_schema_enhanced(&pool, debug_mode).await?;
+            stats.record_phase("Schema Creation (Resumed)", phase_start.elapsed());
+        }
+        "data_migration" => {
+            println!("📥 Resuming data migration...");
+            let phase_start = Instant::now();
+            // Resume data migration based on completed tables...
+            stats.record_phase("Data Migration (Resumed)", phase_start.elapsed());
+        }
+        "indexes" => {
+            println!("🔗 Resuming index creation...");
+            let phase_start = Instant::now();
+            create_indexes_after_import_enhanced(&pool, debug_mode).await?;
+            stats.record_phase("Index Creation (Resumed)", phase_start.elapsed());
+        }
+        _ => {
+            println!("⚠️  Unknown phase: {}", checkpoint.current_phase);
+        }
+    }
+
+    if debug_mode {
+        stats.print_summary();
+    }
+
+    println!("✅ Migration resumed and completed!");
+    Ok(())
+}
+
+async fn record_migration_completion(pool: &Pool<Postgres>) -> Result<()> {
+    let cutoff_timestamp = Utc::now();
+    let cutoff_str = cutoff_timestamp.to_rfc3339_opts(SecondsFormat::Micros, true);
+
+    // Store the precise cutoff timestamp for future incremental migrations
+    sqlx::query(
+        "INSERT INTO migration_metadata (key, value) 
+         VALUES ('last_migration_cutoff', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1, created_at = NOW()",
+    )
+    .bind(&cutoff_str)
+    .execute(pool)
+    .await?;
+
+    // Store migration completion info
+    sqlx::query(
+        "INSERT INTO migration_metadata (key, value) 
+         VALUES ('last_migration_completed', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1, created_at = NOW()",
+    )
+    .bind(&cutoff_str)
+    .execute(pool)
+    .await?;
+
+    println!("📝 Migration cutoff timestamp stored: {}", cutoff_str);
+    Ok(())
+}
+
+async fn migrate_incremental_data(
+    cutoff: DateTime<Utc>,
+    debug_mode: bool,
+    stats: &mut MigrationStats,
+) -> Result<()> {
+    println!("📥 Starting incremental data migration...");
+    println!(
+        "🕐 Migrating data newer than: {}",
+        cutoff.format("%Y-%m-%d %H:%M:%S%.6f%z")
+    );
+
+    let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+
+    // Step 1: Extract incremental data from SQLite
+    println!("  📤 Extracting incremental data from SQLite...");
+    let extract_start = Instant::now();
+
+    // Build incremental SQLite query
+    let incremental_query = format!(
+        r#"
+        SELECT 'INSERT INTO articles (id, url, seen_at, is_relevant, category, analysis, normalized_url, hash, tiny_summary, title_domain_hash, r2_url, pub_date, event_date, cluster_id, title, json_data, quality, source) VALUES(' || 
+               id || ',''' || url || ''',''' || seen_at || ''',' || is_relevant || ',''' || 
+               COALESCE(category, '') || ''',''' || COALESCE(analysis, '') || ''',''' || 
+               normalized_url || ''',''' || COALESCE(hash, '') || ''',''' || 
+               COALESCE(tiny_summary, '') || ''',''' || COALESCE(title_domain_hash, '') || ''',''' || 
+               COALESCE(r2_url, '') || ''',''' || COALESCE(pub_date, '') || ''',''' || 
+               COALESCE(event_date, '') || ''',' || COALESCE(cluster_id, 'NULL') || ',''' || 
+               COALESCE(title, '') || ''',''' || COALESCE(json_data, '') || ''',' || 
+               COALESCE(quality, 'NULL') || ',''' || COALESCE(source, '') || ''');' as sql_statement
+        FROM articles 
+        WHERE seen_at > '{}'
+        UNION ALL
+        SELECT 'INSERT INTO entities (id, name, type, normalized_name, parent_id) VALUES(' || 
+               id || ',''' || name || ''',''' || type || ''',''' || normalized_name || ''',' || 
+               COALESCE(parent_id, 'NULL') || ');' as sql_statement
+        FROM entities 
+        WHERE id IN (
+            SELECT DISTINCT entity_id FROM article_entities 
+            WHERE article_id IN (
+                SELECT id FROM articles WHERE seen_at > '{}'
+            )
+        )
+        "#,
+        cutoff_str, cutoff_str
+    );
+
+    // Execute incremental query
+    let dump_output = Command::new("sqlite3")
+        .arg("argus.db")
+        .arg(&incremental_query)
+        .output()?;
+
+    if !dump_output.status.success() {
+        return Err(anyhow::anyhow!(
+            "Failed to extract incremental data: {}",
+            String::from_utf8_lossy(&dump_output.stderr)
+        ));
+    }
+
+    let incremental_sql = String::from_utf8(dump_output.stdout)?;
+    let line_count = incremental_sql.lines().count();
+
+    if debug_mode {
+        println!(
+            "  ⏱️  SQLite extraction: {:.1}s",
+            extract_start.elapsed().as_secs_f64()
+        );
+    }
+    stats.record_phase("Incremental SQLite Extraction", extract_start.elapsed());
+
+    if line_count == 0 {
+        println!("📊 No new data found since cutoff timestamp");
+        return Ok(());
+    }
+
+    println!("📊 Found {} new records to migrate", line_count);
+
+    if debug_mode {
+        println!("🔍 First 5 lines of incremental SQL:");
+        for (i, line) in incremental_sql.lines().take(5).enumerate() {
+            println!("  {}: {}", i + 1, &line[..100.min(line.len())]);
+        }
+    }
+
+    // Step 2: Transform and import incremental data
+    println!("  🔄 Transforming and importing incremental data...");
+    let transform_start = Instant::now();
+
+    let postgres_sql = transform_sqlite_to_postgres(&incremental_sql)?;
+
+    if debug_mode {
+        println!(
+            "  ⏱️  SQL transformation: {:.1}s",
+            transform_start.elapsed().as_secs_f64()
+        );
+    }
+
+    // Write to temp file and import
+    let temp_file = "/tmp/postgres_incremental.sql";
+    fs::write(temp_file, &postgres_sql)?;
+
+    let import_start = Instant::now();
+    let import_output = Command::new("psql")
+        .arg(&env::var("DATABASE_URL")?)
+        .arg("-f")
+        .arg(temp_file)
+        .arg("-v")
+        .arg("ON_ERROR_STOP=1")
+        .output()?;
+
+    if !import_output.status.success() {
+        let stderr = String::from_utf8_lossy(&import_output.stderr);
+        return Err(anyhow::anyhow!("Incremental import failed: {}", stderr));
+    }
+
+    if debug_mode {
+        println!(
+            "  ⏱️  PostgreSQL import: {:.1}s",
+            import_start.elapsed().as_secs_f64()
+        );
+    }
+
+    stats.record_phase(
+        "Incremental Data Transform & Import",
+        transform_start.elapsed(),
+    );
+    stats.record_memory("Incremental Import");
+
+    // Cleanup
+    let _ = fs::remove_file(temp_file);
+
+    println!("✅ Incremental migration completed: {} records", line_count);
+    Ok(())
+}
+
+async fn create_postgres_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
+    println!("🏗️  Creating PostgreSQL schema...");
+
+    // First, clean up any existing schema
+    clean_existing_schema_enhanced(pool, debug_mode).await?;
+
+    let schema_sql = include_str!("../../memory-bank/postgresql-migration/schema.sql");
+
+    // Parse and categorize SQL statements
+    let (table_statements, index_statements, other_statements) =
+        parse_schema_statements(schema_sql);
+
+    // OPTIMIZED ORDER: Create tables first, data will be imported next, then indexes
+    println!("  📋 Creating tables (without indexes for faster import)...");
+
+    if debug_mode {
+        println!("  🔍 Creating {} tables...", table_statements.len());
+    }
+
+    for (i, statement) in table_statements.iter().enumerate() {
+        if debug_mode {
+            println!("    📋 Creating table {}/{}", i + 1, table_statements.len());
+        }
+
+        sqlx::query(statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to execute table statement: {}\nError: {}",
+                statement,
+                e
+            )
+        })?;
+    }
+
+    println!("  ⚙️  Creating functions and triggers...");
+    for statement in other_statements {
+        sqlx::query(&statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!("Failed to execute statement: {}\nError: {}", statement, e)
+        })?;
+    }
+
+    // Store index statements for later execution (after data import)
+    *INDEX_STATEMENTS.lock().unwrap() = index_statements;
+
+    println!("✅ PostgreSQL schema created (indexes will be created after data import)");
+    Ok(())
+}
+
+async fn clean_existing_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
+    println!("  🧹 Cleaning existing schema...");
+
+    // Get list of all tables in the public schema
+    let tables: Vec<String> =
+        sqlx::query_scalar("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            .fetch_all(pool)
+            .await?;
+
+    if !tables.is_empty() {
+        println!("    🗑️  Dropping {} existing tables...", tables.len());
+
+        if debug_mode {
+            println!("    🔍 Tables to drop: {:?}", tables);
+        }
+
+        // Drop all tables with CASCADE to handle foreign key dependencies
+        for table in tables {
+            let drop_sql = format!("DROP TABLE IF EXISTS {} CASCADE", table);
+            sqlx::query(&drop_sql)
+                .execute(pool)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to drop table {}: {}", table, e))?;
+        }
+    }
+
+    // Drop any remaining sequences, functions, and types
+    println!("    🔧 Cleaning sequences, functions, and types...");
+
+    // Drop sequences
+    let sequences: Vec<String> =
+        sqlx::query_scalar("SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'")
+            .fetch_all(pool)
+            .await?;
+
+    for sequence in sequences {
+        let drop_sql = format!("DROP SEQUENCE IF EXISTS {} CASCADE", sequence);
+        sqlx::query(&drop_sql).execute(pool).await?;
+    }
+
+    // Drop custom functions (but keep system functions)
+    let functions: Vec<String> = sqlx::query_scalar(
+        "SELECT proname FROM pg_proc p 
+         JOIN pg_namespace n ON p.pronamespace = n.oid 
+         WHERE n.nspname = 'public' AND p.prokind = 'f'",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for function in functions {
+        let drop_sql = format!("DROP FUNCTION IF EXISTS {} CASCADE", function);
+        sqlx::query(&drop_sql).execute(pool).await?;
+    }
+
+    println!("    ✅ Schema cleanup completed");
+    Ok(())
+}
+
+async fn migrate_data_via_dump_enhanced(
+    pool: &Pool<Postgres>,
+    debug_mode: bool,
+    stats: &mut MigrationStats,
+) -> Result<()> {
+    println!("📥 Migrating data via dump/restore...");
+
+    // Step 1: Export SQLite data
+    println!("  📤 Exporting SQLite data...");
+    let export_start = Instant::now();
+
+    let dump_output = Command::new("sqlite3")
+        .arg("argus.db")
+        .arg(".dump")
+        .output()?;
+
+    if !dump_output.status.success() {
+        return Err(anyhow::anyhow!(
+            "Failed to dump SQLite data: {}",
+            String::from_utf8_lossy(&dump_output.stderr)
+        ));
+    }
+
+    let sqlite_dump = String::from_utf8(dump_output.stdout)?;
+
+    if debug_mode {
+        println!(
+            "  ⏱️  SQLite export: {:.1}s",
+            export_start.elapsed().as_secs_f64()
+        );
+    }
+
+    // Step 2: Transform SQL for PostgreSQL compatibility
+    println!("  🔄 Transforming SQL for PostgreSQL...");
+    let transform_start = Instant::now();
+
+    let postgres_sql = transform_sqlite_to_postgres(&sqlite_dump)?;
+
+    // Debug: Check what we're actually importing
+    let line_count = postgres_sql.lines().count();
+    let insert_count = postgres_sql
+        .lines()
+        .filter(|line| line.trim().starts_with("INSERT INTO"))
+        .count();
+
+    if debug_mode {
+        println!(
+            "  ⏱️  SQL transformation: {:.1}s",
+            transform_start.elapsed().as_secs_f64()
+        );
+    }
+
+    println!(
+        "  📊 Transformed SQL: {} lines, {} INSERT statements",
+        line_count, insert_count
+    );
+
+    // Write transformed SQL to temp file
+    let temp_file = "/tmp/postgres_import.sql";
+    fs::write(temp_file, &postgres_sql)?;
+
+    if debug_mode {
+        // Debug: Show first few lines of transformed SQL
+        let preview_lines: Vec<&str> = postgres_sql.lines().take(10).collect();
+        println!("  🔍 First 10 lines of transformed SQL:");
+        for (i, line) in preview_lines.iter().enumerate() {
+            println!("    {}: {}", i + 1, line);
+        }
+    }
+
+    // Step 3: Import to PostgreSQL with progress tracking
+    println!("  📥 Importing to PostgreSQL...");
+    let import_start = Instant::now();
+
+    // Create progress bar for import
+    let pb = ProgressBar::new(insert_count as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("  📊 Importing data [{bar:40.cyan/blue}] {pos}/{len} ({eta})")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
+    let import_output = Command::new("psql")
+        .arg(&env::var("DATABASE_URL")?)
+        .arg("-f")
+        .arg(temp_file)
+        .arg("-v")
+        .arg("ON_ERROR_STOP=1")
+        .output()?;
+
+    pb.finish_with_message("✅ Data import completed");
+
+    // Show only stderr for debugging (stdout is too verbose with INSERT 0 1 messages)
+    let stderr = String::from_utf8_lossy(&import_output.stderr);
+
+    if !stderr.is_empty() && debug_mode {
+        println!("  ⚠️  PostgreSQL stderr: {}", stderr);
+    }
+
+    if !import_output.status.success() {
+        return Err(anyhow::anyhow!(
+            "PostgreSQL import failed with exit code: {}\nStderr: {}",
+            import_output.status.code().unwrap_or(-1),
+            stderr
+        ));
+    }
+
+    if debug_mode {
+        println!(
+            "  ⏱️  PostgreSQL import: {:.1}s",
+            import_start.elapsed().as_secs_f64()
+        );
+    }
+
+    println!("  ✅ PostgreSQL import completed successfully");
+
+    // Step 4: Reset sequences
+    let sequence_start = Instant::now();
+    reset_postgres_sequences(pool).await?;
+
+    if debug_mode {
+        println!(
+            "  ⏱️  Sequence reset: {:.1}s",
+            sequence_start.elapsed().as_secs_f64()
+        );
+    }
+    stats.record_phase("Full Migration Sequence Reset", sequence_start.elapsed());
+
+    // Cleanup
+    let _ = fs::remove_file(temp_file);
+
+    println!("✅ Data migration completed");
+    Ok(())
+}
+
+async fn create_indexes_after_import_enhanced(
+    pool: &Pool<Postgres>,
+    debug_mode: bool,
+) -> Result<()> {
+    println!("🔗 Creating indexes after data import for optimal performance...");
+
+    let index_statements = INDEX_STATEMENTS.lock().unwrap().clone();
+
+    if debug_mode {
+        println!("  🔍 Creating {} indexes...", index_statements.len());
+    }
+
+    // Create progress bar for index creation
+    let pb = ProgressBar::new(index_statements.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("  📊 Creating indexes [{bar:40.cyan/blue}] {pos}/{len} ({eta})")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
+    for (i, statement) in index_statements.iter().enumerate() {
+        pb.set_position(i as u64);
+
+        if debug_mode {
+            println!("    🔗 Creating index {}/{}", i + 1, index_statements.len());
+        }
+
+        let start_time = Instant::now();
+        sqlx::query(statement).execute(pool).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to execute index statement: {}\nError: {}",
+                statement,
+                e
+            )
+        })?;
+
+        if debug_mode {
+            println!(
+                "      ⏱️  Index created in {:.1}s",
+                start_time.elapsed().as_secs_f64()
+            );
+        }
+    }
+
+    pb.finish_with_message("✅ All indexes created");
+    println!("✅ All indexes created successfully");
     Ok(())
 }

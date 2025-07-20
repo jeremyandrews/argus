@@ -324,6 +324,13 @@ CREATE TABLE configurations (
     UNIQUE(category, name)
 );
 
+-- Migration Metadata Table (for tracking migration state and incremental migrations)
+CREATE TABLE migration_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX idx_configurations_category ON configurations(category);
 CREATE INDEX idx_configurations_enabled ON configurations(category, enabled);
 CREATE INDEX idx_configurations_updated ON configurations(updated_at);
