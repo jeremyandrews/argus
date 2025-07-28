@@ -1527,7 +1527,7 @@ async fn migrate_incremental_data(
 }
 
 async fn create_postgres_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
-    println!("🏗️  Creating PostgreSQL schema...");
+    timed_println("🏗️  Creating PostgreSQL schema...");
 
     // First, clean up any existing schema
     clean_existing_schema_enhanced(pool, debug_mode).await?;
@@ -1539,15 +1539,22 @@ async fn create_postgres_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool
         parse_schema_statements(schema_sql);
 
     // OPTIMIZED ORDER: Create tables first, data will be imported next, then indexes
-    println!("  📋 Creating tables (without indexes for faster import)...");
+    timed_println("  📋 Creating tables (without indexes for faster import)...");
 
     if debug_mode {
-        println!("  🔍 Creating {} tables...", table_statements.len());
+        timed_println(&format!(
+            "  🔍 Creating {} tables...",
+            table_statements.len()
+        ));
     }
 
     for (i, statement) in table_statements.iter().enumerate() {
         if debug_mode {
-            println!("    📋 Creating table {}/{}", i + 1, table_statements.len());
+            timed_println(&format!(
+                "    📋 Creating table {}/{}",
+                i + 1,
+                table_statements.len()
+            ));
         }
 
         sqlx::query(statement).execute(pool).await.map_err(|e| {
@@ -1559,7 +1566,7 @@ async fn create_postgres_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool
         })?;
     }
 
-    println!("  ⚙️  Creating functions and triggers...");
+    timed_println("  ⚙️  Creating functions and triggers...");
     for statement in other_statements {
         sqlx::query(&statement).execute(pool).await.map_err(|e| {
             anyhow::anyhow!("Failed to execute statement: {}\nError: {}", statement, e)
@@ -1569,12 +1576,12 @@ async fn create_postgres_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool
     // Store index statements for later execution (after data import)
     *INDEX_STATEMENTS.lock().unwrap() = index_statements;
 
-    println!("✅ PostgreSQL schema created (indexes will be created after data import)");
+    timed_println("✅ PostgreSQL schema created (indexes will be created after data import)");
     Ok(())
 }
 
 async fn clean_existing_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
-    println!("  🧹 Cleaning existing schema...");
+    timed_println("  🧹 Cleaning existing schema...");
 
     // Get list of all tables in the public schema
     let tables: Vec<String> =
@@ -1583,10 +1590,13 @@ async fn clean_existing_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool)
             .await?;
 
     if !tables.is_empty() {
-        println!("    🗑️  Dropping {} existing tables...", tables.len());
+        timed_println(&format!(
+            "    🗑️  Dropping {} existing tables...",
+            tables.len()
+        ));
 
         if debug_mode {
-            println!("    🔍 Tables to drop: {:?}", tables);
+            timed_println(&format!("    🔍 Tables to drop: {:?}", tables));
         }
 
         // Drop all tables with CASCADE to handle foreign key dependencies
@@ -1600,7 +1610,7 @@ async fn clean_existing_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool)
     }
 
     // Drop any remaining sequences, functions, and types
-    println!("    🔧 Cleaning sequences, functions, and types...");
+    timed_println("    🔧 Cleaning sequences, functions, and types...");
 
     // Drop sequences
     let sequences: Vec<String> =
@@ -1627,7 +1637,7 @@ async fn clean_existing_schema_enhanced(pool: &Pool<Postgres>, debug_mode: bool)
         sqlx::query(&drop_sql).execute(pool).await?;
     }
 
-    println!("    ✅ Schema cleanup completed");
+    timed_println("    ✅ Schema cleanup completed");
     Ok(())
 }
 
