@@ -1488,8 +1488,10 @@ async fn migrate_incremental_data(
         );
     }
 
-    // Write to temp file and import
-    let temp_file = "/tmp/postgres_incremental.sql";
+    // Write to temp file and import (using home directory due to /tmp space constraints)
+    let temp_dir = "/home/jandrews/argus_migration_temp";
+    fs::create_dir_all(temp_dir)?;
+    let temp_file = "/home/jandrews/argus_migration_temp/postgres_incremental.sql";
     fs::write(temp_file, &postgres_sql)?;
 
     let import_start = Instant::now();
@@ -1698,8 +1700,10 @@ async fn migrate_data_via_dump_enhanced(
         line_count, insert_count
     );
 
-    // Write transformed SQL to temp file
-    let temp_file = "/tmp/postgres_import.sql";
+    // Write transformed SQL to temp file (using home directory due to /tmp space constraints)
+    let temp_dir = "/home/jandrews/argus_migration_temp";
+    fs::create_dir_all(temp_dir)?;
+    let temp_file = "/home/jandrews/argus_migration_temp/postgres_import.sql";
     fs::write(temp_file, &postgres_sql)?;
 
     if debug_mode {

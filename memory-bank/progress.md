@@ -1,5 +1,19 @@
 # Progress Tracking
 
+## Recent Fixes
+
+### ✅ PostgreSQL Migration /tmp Space Issue Fixed (July 28, 2025)
+**Problem**: Migration failing with "No space left on device" error because `/tmp` directory was at 100% capacity (1.8G used out of 1.8G total).
+
+**Solution**: Modified `src/bin/migrate_to_postgres.rs` to use `/home/jandrews/argus_migration_temp/` instead of `/tmp` for temporary files:
+- Fixed both full migration (`migrate_data_via_dump_enhanced`) and incremental migration (`migrate_incremental_data`) paths
+- Added directory creation with `fs::create_dir_all()` to ensure temp directory exists
+- Maintains same cleanup behavior (temporary files removed after use)
+- Uses `/home` directory with 71G of available space
+
+**Files Modified**: `src/bin/migrate_to_postgres.rs`
+**Status**: ✅ Code compiles successfully, ready for migration retry
+
 ## Current Status: ✅ COMPLETED - PostgreSQL Migration Infrastructure with Enhanced SQL Parser
 
 ### ✅ PostgreSQL Migration Infrastructure with Enhanced SQL Parser COMPLETED (June 21, 2025)

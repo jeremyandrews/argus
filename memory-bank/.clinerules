@@ -484,3 +484,13 @@
   - Fix ALL compilation errors before considering the change complete
   - Common locations to check: worker processing, test utilities, management tools, merge operations
   - Maintain a systematic approach: fix one file at a time, recompile, move to next error
+
+## Memory Bank Update Best Practices
+- **Always update memory bank after making significant changes** to maintain continuity across sessions
+- Memory bank updates should be done immediately after completing work, not as an afterthought
+- Document fixes, workarounds, and solutions in appropriate memory bank files
+- Update progress.md with completed tasks and any issues resolved
+- Update activeContext.md with current state after making changes
+- For PostgreSQL migration work, document fixes in postgresql-migration/ subdirectory
+- Include specific file changes, error patterns resolved, and solution approaches
+- Memory bank serves as the primary documentation for session continuity
