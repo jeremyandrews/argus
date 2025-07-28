@@ -8,9 +8,26 @@ use sqlx::{Pool, Postgres};
 use std::env;
 use std::fs;
 use std::process::Command;
+use std::sync::OnceLock;
 use std::time::{Duration as StdDuration, Instant};
 use sysinfo::System;
 use tokio::time::Duration;
+
+// Global migration start time for consistent timing across all output
+static MIGRATION_START_TIME: OnceLock<Instant> = OnceLock::new();
+
+// Helper function to print with timing information
+fn timed_println(message: &str) {
+    if let Some(start_time) = MIGRATION_START_TIME.get() {
+        let elapsed = start_time.elapsed();
+        let minutes = elapsed.as_secs() / 60;
+        let seconds = elapsed.as_secs() % 60;
+        println!("{:02}:{:02} {}", minutes, seconds, message);
+    } else {
+        // Fallback if timing not initialized
+        println!("{}", message);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MigrationCheckpoint {
@@ -135,9 +152,14 @@ async fn main() -> Result<()> {
 
     let mut stats = MigrationStats::new();
 
-    println!("🚀 Starting Enhanced PostgreSQL Migration...");
+    // Initialize global timing system
+    MIGRATION_START_TIME
+        .set(Instant::now())
+        .expect("Failed to initialize migration timing");
+
+    timed_println("🚀 Starting Enhanced PostgreSQL Migration...");
     if debug_mode {
-        println!("🔍 Debug mode enabled - detailed performance tracking active");
+        timed_println("🔍 Debug mode enabled - detailed performance tracking active");
     }
 
     // Handle resume mode
@@ -170,13 +192,13 @@ async fn main() -> Result<()> {
 
     match &migration_mode {
         MigrationMode::Full => {
-            println!("🔍 Detected: Empty PostgreSQL database → Full migration");
+            timed_println("🔍 Detected: Empty PostgreSQL database → Full migration");
         }
         MigrationMode::Incremental(cutoff) => {
-            println!(
+            timed_println(&format!(
                 "🔍 Detected: Existing data, last cutoff: {} → Incremental migration",
                 cutoff.format("%Y-%m-%d %H:%M:%S%.6f%z")
-            );
+            ));
         }
     }
 
@@ -247,26 +269,26 @@ async fn main() -> Result<()> {
         stats.print_summary();
     }
 
-    println!("✅ Migration completed successfully!");
+    timed_println("✅ Migration completed successfully!");
     match migration_mode {
         MigrationMode::Full => {
-            println!("📝 Cutoff timestamp stored for future incremental migrations");
+            timed_println("📝 Cutoff timestamp stored for future incremental migrations");
         }
         MigrationMode::Incremental(_) => {
-            println!("📝 Cutoff timestamp updated for next incremental migration");
+            timed_println("📝 Cutoff timestamp updated for next incremental migration");
         }
     }
 
-    println!("Next steps:");
-    println!("  1. Test the application: cargo run --release");
-    println!("  2. Use admin tool: cargo run --bin argus_admin");
-    println!("  3. Create alias: alias aa='cargo run --bin argus_admin'");
+    timed_println("Next steps:");
+    timed_println("  1. Test the application: cargo run --release");
+    timed_println("  2. Use admin tool: cargo run --bin argus_admin");
+    timed_println("  3. Create alias: alias aa='cargo run --bin argus_admin'");
 
     Ok(())
 }
 
 async fn check_prerequisites() -> Result<()> {
-    println!("🔍 Checking prerequisites...");
+    timed_println("🔍 Checking prerequisites...");
 
     // Check SQLite database exists
     if !std::path::Path::new("argus.db").exists() {
@@ -298,19 +320,19 @@ async fn check_prerequisites() -> Result<()> {
         ));
     }
 
-    println!("✅ Prerequisites check passed");
+    timed_println("✅ Prerequisites check passed");
     Ok(())
 }
 
 async fn create_backup() -> Result<()> {
-    println!("💾 Creating backup...");
+    timed_println("💾 Creating backup...");
 
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
 
     // Backup SQLite database
     let backup_path = format!("argus.db.backup.{}", timestamp);
     fs::copy("argus.db", &backup_path)?;
-    println!("  ✅ SQLite backup: {}", backup_path);
+    timed_println(&format!("  ✅ SQLite backup: {}", backup_path));
 
     // Backup environment variables
     let env_backup = format!("env.backup.{}", timestamp);
@@ -341,13 +363,13 @@ async fn create_backup() -> Result<()> {
         .join("\n");
 
     fs::write(&env_backup, env_content)?;
-    println!("  ✅ Environment backup: {}", env_backup);
+    timed_println(&format!("  ✅ Environment backup: {}", env_backup));
 
     Ok(())
 }
 
 async fn setup_postgres_connection() -> Result<Pool<Postgres>> {
-    println!("🔌 Setting up PostgreSQL connection...");
+    timed_println("🔌 Setting up PostgreSQL connection...");
 
     let database_url = env::var("DATABASE_URL")?;
     let pool = PgPoolOptions::new()
@@ -358,7 +380,7 @@ async fn setup_postgres_connection() -> Result<Pool<Postgres>> {
 
     // Test connection
     sqlx::query("SELECT 1").execute(&pool).await?;
-    println!("✅ PostgreSQL connection established");
+    timed_println("✅ PostgreSQL connection established");
 
     Ok(pool)
 }
@@ -964,7 +986,7 @@ fn convert_unix_timestamps(sql: &str, table_name: &str) -> String {
 }
 
 async fn reset_postgres_sequences(pool: &Pool<Postgres>) -> Result<()> {
-    println!("  � Resetting PostgreSQL sequences...");
+    timed_println("  🔧 Resetting PostgreSQL sequences...");
 
     let tables = [
         "articles",
@@ -1000,16 +1022,16 @@ async fn reset_postgres_sequences(pool: &Pool<Postgres>) -> Result<()> {
         }
     }
 
-    println!("  ✅ Sequences reset");
+    timed_println("  ✅ Sequences reset");
     Ok(())
 }
 
 async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
-    println!("⚙️  Migrating environment configuration to database...");
+    timed_println("⚙️  Migrating environment configuration to database...");
 
     // Migrate topics from TOPICS env var
     if let Ok(topics_str) = env::var("TOPICS") {
-        println!("  📝 Migrating topics...");
+        timed_println("  📝 Migrating topics...");
         for line in topics_str.lines() {
             let line = line.trim();
             if line.is_empty() {
@@ -1029,7 +1051,7 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
 
                     if !name.is_empty() && !prompt.is_empty() {
                         set_config(pool, "topics", name, &prompt).await?;
-                        println!("    ✅ Migrated topic: {}", name);
+                        timed_println(&format!("    ✅ Migrated topic: {}", name));
                     }
                 }
             }
@@ -1038,19 +1060,19 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
 
     // Migrate RSS feeds from URLS env var
     if let Ok(urls_str) = env::var("URLS") {
-        println!("  � Migrating RSS feeds...");
+        timed_println("  📡 Migrating RSS feeds...");
         for (i, url) in urls_str.split(';').enumerate() {
             let url = url.trim();
             if !url.is_empty() {
                 let name = format!("feed_{}", i + 1);
                 set_config(pool, "rss", &name, url).await?;
-                println!("    ✅ Migrated RSS feed: {}", name);
+                timed_println(&format!("    ✅ Migrated RSS feed: {}", name));
             }
         }
     }
 
     // Migrate worker configurations
-    println!("  🔧 Migrating worker configurations...");
+    timed_println("  🔧 Migrating worker configurations...");
     let worker_configs = [
         ("decision", "DECISION_OLLAMA_CONFIGS"),
         ("decision", "DECISION_OPENAI_CONFIGS"),
@@ -1081,22 +1103,22 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
                         config.to_string()
                     };
 
-                    println!(
+                    timed_println(&format!(
                         "    ✅ Migrated {} worker {}: {}",
                         category, index, display_config
-                    );
+                    ));
                 }
-                println!(
+                timed_println(&format!(
                     "    📊 Total {} workers migrated: {}",
                     category,
                     configs.len()
-                );
+                ));
             }
         }
     }
 
     // Migrate LLM parameters
-    println!("  🎛️  Migrating LLM parameters...");
+    timed_println("  🎛️  Migrating LLM parameters...");
     let llm_params = [
         ("llm_temperature", "LLM_TEMPERATURE"),
         ("llm_top_p", "LLM_TOP_P"),
@@ -1108,13 +1130,16 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
         if let Ok(value) = env::var(env_var) {
             if !value.is_empty() {
                 set_config(pool, "llm_params", key, &value).await?;
-                println!("    ✅ Migrated LLM parameter: {} = {}", key, value);
+                timed_println(&format!(
+                    "    ✅ Migrated LLM parameter: {} = {}",
+                    key, value
+                ));
             }
         }
     }
 
     // Migrate OpenAI rate limiting configuration
-    println!("  🚦 Migrating rate limiting configuration...");
+    timed_println("  🚦 Migrating rate limiting configuration...");
     let rate_limit_configs = [
         ("enabled", "OPENAI_RATE_LIMIT_ENABLED"),
         ("rpm", "OPENAI_RATE_LIMIT_RPM"),
@@ -1126,13 +1151,16 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
         if let Ok(value) = env::var(env_var) {
             if !value.is_empty() {
                 set_config(pool, "rate_limit", key, &value).await?;
-                println!("    ✅ Migrated rate limit setting: {} = {}", key, value);
+                timed_println(&format!(
+                    "    ✅ Migrated rate limit setting: {} = {}",
+                    key, value
+                ));
             }
         }
     }
 
     // Migrate system settings
-    println!("  ⚙️  Migrating system settings...");
+    timed_println("  ⚙️  Migrating system settings...");
     let system_vars = [
         ("slack_token", "SLACK_TOKEN"),
         ("slack_channel", "SLACK_CHANNEL"),
@@ -1150,15 +1178,15 @@ async fn migrate_env_to_database(pool: &Pool<Postgres>) -> Result<()> {
                 } else {
                     &value
                 };
-                println!(
+                timed_println(&format!(
                     "    ✅ Migrated system setting: {} = {}",
                     key, display_value
-                );
+                ));
             }
         }
     }
 
-    println!("✅ Configuration migration completed");
+    timed_println("✅ Configuration migration completed");
     Ok(())
 }
 
@@ -1179,7 +1207,7 @@ async fn set_config(pool: &Pool<Postgres>, category: &str, name: &str, value: &s
 }
 
 async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
-    println!("✅ Validating migration...");
+    timed_println("✅ Validating migration...");
 
     // Check table counts
     let tables = ["articles", "entities", "article_entities", "configurations"];
@@ -1190,7 +1218,7 @@ async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
             .await
             .unwrap_or(0);
 
-        println!("  ✅ {}: {} records", table, count);
+        timed_println(&format!("  ✅ {}: {} records", table, count));
     }
 
     // Test basic functionality
@@ -1198,14 +1226,14 @@ async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
         .fetch_one(pool)
         .await?;
 
-    println!(
+    timed_println(&format!(
         "  ✅ PostgreSQL version: {}",
         version
             .split_whitespace()
             .take(2)
             .collect::<Vec<_>>()
             .join(" ")
-    );
+    ));
 
     // Test configuration system
     let config_categories: Vec<String> =
@@ -1213,9 +1241,12 @@ async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
             .fetch_all(pool)
             .await?;
 
-    println!("  ✅ Configuration categories: {:?}", config_categories);
+    timed_println(&format!(
+        "  ✅ Configuration categories: {:?}",
+        config_categories
+    ));
 
-    println!("✅ Migration validation completed");
+    timed_println("✅ Migration validation completed");
     Ok(())
 }
 
