@@ -107,6 +107,14 @@ impl MigrationStats {
     }
 }
 
+/// Safely truncate a string for preview display, respecting Unicode boundaries
+fn safe_truncate_for_preview(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((byte_index, _)) => &s[..byte_index],
+        None => s, // String is shorter than max_chars
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = ClapCommand::new("migrate_to_postgres")
@@ -306,8 +314,10 @@ async fn check_prerequisites() -> Result<()> {
         ));
     }
 
-    // Check PostgreSQL connection
-    let output = Command::new("psql")
+    // Check PostgreSQL connection with timeout
+    let output = Command::new("timeout")
+        .arg("10") // 10 second timeout
+        .arg("psql")
         .arg(&database_url)
         .arg("-c")
         .arg("SELECT version();")
@@ -580,16 +590,7 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
 
     // Debug: Check if we have concatenation to fix
     if result.contains(" || ") {
-        let preview = if result.len() > 100 {
-            // Use char_indices to find a safe truncation point
-            result
-                .char_indices()
-                .nth(100)
-                .map(|(i, _)| &result[..i])
-                .unwrap_or(&result[..result.len().min(100)])
-        } else {
-            &result
-        };
+        let preview = safe_truncate_for_preview(&result, 100);
         println!("  🔧 Fixing string concatenation in: {}", preview);
     }
 
@@ -632,26 +633,10 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
 
     // Debug: Show result if we made changes
     if result != original {
-        let preview = if result.len() > 100 {
-            result
-                .char_indices()
-                .nth(100)
-                .map(|(i, _)| &result[..i])
-                .unwrap_or(&result[..result.len().min(100)])
-        } else {
-            &result
-        };
+        let preview = safe_truncate_for_preview(&result, 100);
         println!("  ✅ Fixed to: {}", preview);
     } else if original.contains(" || ") {
-        let preview = if original.len() > 100 {
-            original
-                .char_indices()
-                .nth(100)
-                .map(|(i, _)| &original[..i])
-                .unwrap_or(&original[..original.len().min(100)])
-        } else {
-            &original
-        };
+        let preview = safe_truncate_for_preview(&original, 100);
         println!("  ❌ No changes made to: {}", preview);
     }
 
@@ -1485,14 +1470,7 @@ async fn migrate_incremental_data(
     if debug_mode {
         println!("🔍 First 5 lines of incremental SQL:");
         for (i, line) in incremental_sql.lines().take(5).enumerate() {
-            let preview = if line.len() > 100 {
-                line.char_indices()
-                    .nth(100)
-                    .map(|(i, _)| &line[..i])
-                    .unwrap_or(&line[..line.len().min(100)])
-            } else {
-                line
-            };
+            let preview = safe_truncate_for_preview(line, 100);
             println!("  {}: {}", i + 1, preview);
         }
     }
