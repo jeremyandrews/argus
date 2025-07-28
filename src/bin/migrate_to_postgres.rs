@@ -558,10 +558,17 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
 
     // Debug: Check if we have concatenation to fix
     if result.contains(" || ") {
-        println!(
-            "  🔧 Fixing string concatenation in: {}",
-            &result[..100.min(result.len())]
-        );
+        let preview = if result.len() > 100 {
+            // Use char_indices to find a safe truncation point
+            result
+                .char_indices()
+                .nth(100)
+                .map(|(i, _)| &result[..i])
+                .unwrap_or(&result[..result.len().min(100)])
+        } else {
+            &result
+        };
+        println!("  🔧 Fixing string concatenation in: {}", preview);
     }
 
     // Handle the specific pattern from the error: URL || timestamp
@@ -603,12 +610,27 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
 
     // Debug: Show result if we made changes
     if result != original {
-        println!("  ✅ Fixed to: {}", &result[..100.min(result.len())]);
+        let preview = if result.len() > 100 {
+            result
+                .char_indices()
+                .nth(100)
+                .map(|(i, _)| &result[..i])
+                .unwrap_or(&result[..result.len().min(100)])
+        } else {
+            &result
+        };
+        println!("  ✅ Fixed to: {}", preview);
     } else if original.contains(" || ") {
-        println!(
-            "  ❌ No changes made to: {}",
-            &original[..100.min(original.len())]
-        );
+        let preview = if original.len() > 100 {
+            original
+                .char_indices()
+                .nth(100)
+                .map(|(i, _)| &original[..i])
+                .unwrap_or(&original[..original.len().min(100)])
+        } else {
+            &original
+        };
+        println!("  ❌ No changes made to: {}", preview);
     }
 
     Ok(result)
@@ -1432,7 +1454,15 @@ async fn migrate_incremental_data(
     if debug_mode {
         println!("🔍 First 5 lines of incremental SQL:");
         for (i, line) in incremental_sql.lines().take(5).enumerate() {
-            println!("  {}: {}", i + 1, &line[..100.min(line.len())]);
+            let preview = if line.len() > 100 {
+                line.char_indices()
+                    .nth(100)
+                    .map(|(i, _)| &line[..i])
+                    .unwrap_or(&line[..line.len().min(100)])
+            } else {
+                line
+            };
+            println!("  {}: {}", i + 1, preview);
         }
     }
 
@@ -1675,12 +1705,17 @@ async fn migrate_data_via_dump_enhanced(
             .progress_chars("#>-"),
     );
 
+    // Use optimized PostgreSQL import settings
     let import_output = Command::new("psql")
         .arg(&env::var("DATABASE_URL")?)
         .arg("-f")
         .arg(temp_file)
         .arg("-v")
         .arg("ON_ERROR_STOP=1")
+        .arg("-c")
+        .arg("SET synchronous_commit = off;") // Faster imports
+        .arg("-c")
+        .arg("SET maintenance_work_mem = '512MB';") // More memory for operations
         .output()?;
 
     pb.finish_with_message("✅ Data import completed");
