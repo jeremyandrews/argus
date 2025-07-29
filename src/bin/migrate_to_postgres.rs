@@ -543,23 +543,33 @@ fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
 }
 
 fn transform_insert_statement(line: &str) -> Result<String> {
+    // SQLite dumps use || for concatenation - we need to handle this BEFORE parsing
+    let mut cleaned_line = line.to_string();
+
+    // First pass: Fix concatenated strings in VALUES clause
+    if let Some(values_pos) = cleaned_line.find(" VALUES(") {
+        let before_values = &cleaned_line[..values_pos];
+        let values_part = &cleaned_line[values_pos..];
+
+        // Apply concatenation fixes to the VALUES part
+        let fixed_values = fix_sqlite_dump_concatenation(values_part)?;
+        cleaned_line = format!("{}{}", before_values, fixed_values);
+    }
+
     // Parse INSERT INTO table VALUES(...) and convert to explicit column names
-    if let Some(values_start) = line.find(" VALUES(") {
-        let table_part = &line[..values_start];
-        let values_part = &line[values_start + 8..]; // Skip " VALUES("
+    if let Some(values_start) = cleaned_line.find(" VALUES(") {
+        let table_part = &cleaned_line[..values_start];
+        let values_part = &cleaned_line[values_start + 8..]; // Skip " VALUES("
 
         // Extract table name
         if let Some(table_name) = extract_table_name(table_part) {
             // Get the column specification for this table
             let columns = get_table_columns(&table_name);
             if !columns.is_empty() {
-                // First, fix any string concatenation issues in the values part
-                let fixed_values = fix_string_concatenation(values_part)?;
-
                 // Reconstruct with explicit column names
                 let column_list = columns.join(", ");
                 let mut result = format!("INSERT INTO {} ({}) VALUES(", table_name, column_list);
-                result.push_str(&fixed_values);
+                result.push_str(values_part);
 
                 // Transform boolean values using robust parsing
                 result = transform_boolean_values(&result, &table_name)?;
@@ -573,7 +583,7 @@ fn transform_insert_statement(line: &str) -> Result<String> {
     }
 
     // Fallback: return original line with boolean transformations
-    let mut result = line.to_string();
+    let mut result = cleaned_line;
 
     // Extract table name for fallback transformation
     if let Some(table_name) = extract_table_name(&result) {
@@ -643,6 +653,101 @@ fn fix_string_concatenation(values_part: &str) -> Result<String> {
     Ok(result)
 }
 
+fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
+    // SQLite .dump uses || for concatenation which we need to resolve
+    let mut result = values_str.to_string();
+
+    // Handle patterns like: 'string1' || 'string2'
+    // This needs to be more aggressive than fix_string_concatenation
+
+    // Use a state machine approach to properly handle nested quotes
+    let mut chars = result.chars().peekable();
+    let mut output = String::new();
+    let mut in_string = false;
+    let mut current_string = String::new();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if !in_string => {
+                in_string = true;
+                current_string.clear();
+            }
+            '\'' if in_string => {
+                // Check if this is an escaped quote
+                if chars.peek() == Some(&'\'') {
+                    current_string.push_str("''");
+                    chars.next(); // consume the second quote
+                } else {
+                    // End of string, check for concatenation
+                    in_string = false;
+
+                    // Look ahead for || operator
+                    let mut temp_chars = chars.clone();
+                    let mut found_concat = false;
+                    let mut whitespace = String::new();
+
+                    while let Some(&next_ch) = temp_chars.peek() {
+                        if next_ch.is_whitespace() {
+                            whitespace.push(next_ch);
+                            temp_chars.next();
+                        } else if next_ch == '|' {
+                            temp_chars.next();
+                            if temp_chars.peek() == Some(&'|') {
+                                found_concat = true;
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if found_concat {
+                        // Skip the || operator
+                        for _ in 0..whitespace.len() {
+                            chars.next();
+                        }
+                        chars.next(); // first |
+                        chars.next(); // second |
+
+                        // Skip whitespace after ||
+                        while chars.peek().map_or(false, |c| c.is_whitespace()) {
+                            chars.next();
+                        }
+
+                        // Skip opening quote of next string
+                        if chars.peek() == Some(&'\'') {
+                            chars.next();
+                        }
+
+                        // Continue building the string without closing quote
+                        continue;
+                    } else {
+                        // No concatenation, output the complete string
+                        output.push('\'');
+                        output.push_str(&current_string);
+                        output.push('\'');
+                    }
+                }
+            }
+            _ if in_string => {
+                current_string.push(ch);
+            }
+            _ => {
+                output.push(ch);
+            }
+        }
+    }
+
+    // Handle unclosed string
+    if in_string {
+        output.push('\'');
+        output.push_str(&current_string);
+        output.push('\'');
+    }
+
+    Ok(output)
+}
+
 fn extract_table_name(table_part: &str) -> Option<String> {
     // Extract table name from "INSERT INTO table_name"
     if let Some(into_pos) = table_part.find("INSERT INTO ") {
@@ -664,22 +769,22 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
         "articles" => vec![
             "id".to_string(),
             "url".to_string(),
+            "normalized_url".to_string(), // MOVED UP - matches PostgreSQL schema
             "seen_at".to_string(),
+            "pub_date".to_string(),   // MOVED UP - matches PostgreSQL schema
+            "event_date".to_string(), // MOVED UP - matches PostgreSQL schema
+            "title".to_string(),      // MOVED UP - matches PostgreSQL schema
+            "source".to_string(),     // MOVED UP - matches PostgreSQL schema
             "is_relevant".to_string(),
             "category".to_string(),
+            "tiny_summary".to_string(), // MOVED DOWN - matches PostgreSQL schema
             "analysis".to_string(),
-            "normalized_url".to_string(),
+            "json_data".to_string(), // MOVED DOWN - matches PostgreSQL schema
+            "quality".to_string(),   // MOVED DOWN - matches PostgreSQL schema
             "hash".to_string(),
-            "tiny_summary".to_string(),
             "title_domain_hash".to_string(),
             "r2_url".to_string(),
-            "pub_date".to_string(),
-            "event_date".to_string(),
             "cluster_id".to_string(),
-            "title".to_string(),
-            "json_data".to_string(),
-            "quality".to_string(),
-            "source".to_string(),
         ],
         "entities" => vec![
             "id".to_string(),
@@ -733,14 +838,14 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
 fn get_boolean_columns(table_name: &str) -> Vec<usize> {
     // Return 0-based column indices for boolean columns in each table
     match table_name {
-        "articles" => vec![3],            // is_relevant is 4th column (0-indexed: 3)
-        "configurations" => vec![4],      // enabled is 5th column (0-indexed: 4)
-        "endpoint_alerts" => vec![9],     // is_resolved is 10th column (0-indexed: 9)
+        "articles" => vec![8], // is_relevant is 9th column (0-indexed: 8) after reordering
+        "configurations" => vec![4], // enabled is 5th column (0-indexed: 4)
+        "endpoint_alerts" => vec![9], // is_resolved is 10th column (0-indexed: 9)
         "alias_pattern_stats" => vec![6], // enabled is 7th column (0-indexed: 6)
-        "entity_aliases" => vec![],       // status is TEXT, not boolean
+        "entity_aliases" => vec![], // status is TEXT, not boolean
         "alias_review_batches" => vec![], // status is TEXT, not boolean
         "device_subscriptions" => vec![], // No boolean columns
-        "ip_logs" => vec![],              // No boolean columns
+        "ip_logs" => vec![],   // No boolean columns
         _ => vec![],
     }
 }
@@ -1700,6 +1805,33 @@ async fn migrate_data_via_dump_enhanced(
         line_count, insert_count
     );
 
+    // Validate transformed SQL before writing to file
+    println!("  🔍 Validating transformed SQL...");
+    let mut validation_errors = Vec::new();
+    for (line_num, line) in postgres_sql.lines().enumerate() {
+        if line.trim().starts_with("INSERT INTO") {
+            if let Err(e) = validate_insert_statement(line) {
+                validation_errors.push(format!("Line {}: {}", line_num + 1, e));
+                if validation_errors.len() <= 5 {
+                    println!("  ❌ {}", validation_errors.last().unwrap());
+                    println!(
+                        "     Problem line: {}",
+                        safe_truncate_for_preview(line, 150)
+                    );
+                }
+            }
+        }
+    }
+
+    if !validation_errors.is_empty() {
+        return Err(anyhow::anyhow!(
+            "SQL validation failed with {} errors. First few errors shown above.",
+            validation_errors.len()
+        ));
+    }
+
+    println!("  ✅ SQL validation passed: all INSERT statements have matching column/value counts");
+
     // Write transformed SQL to temp file (using home directory due to /tmp space constraints)
     let temp_dir = "/home/jandrews/argus_migration_temp";
     fs::create_dir_all(temp_dir)?;
@@ -1834,4 +1966,52 @@ async fn create_indexes_after_import_enhanced(
     pb.finish_with_message("✅ All indexes created");
     println!("✅ All indexes created successfully");
     Ok(())
+}
+
+fn validate_insert_statement(statement: &str) -> Result<()> {
+    // Extract column list and values
+    if let Some(col_start) = statement.find("(") {
+        if let Some(col_end) = statement[col_start..].find(")") {
+            let columns_str = &statement[col_start + 1..col_start + col_end];
+            let column_count = columns_str.split(',').count();
+
+            if let Some(val_start) = statement.find("VALUES(") {
+                // Count values (this is tricky due to nested commas in strings)
+                let values_str = &statement[val_start + 7..];
+                let value_count = count_csv_fields(values_str)?;
+
+                if column_count != value_count {
+                    return Err(anyhow::anyhow!(
+                        "Column count ({}) doesn't match value count ({})",
+                        column_count,
+                        value_count
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn count_csv_fields(csv_str: &str) -> Result<usize> {
+    let mut count = 1; // At least one field
+    let mut in_quotes = false;
+    let mut escape_next = false;
+
+    for ch in csv_str.chars() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if in_quotes => escape_next = true,
+            '\'' => in_quotes = !in_quotes,
+            ',' if !in_quotes => count += 1,
+            ')' if !in_quotes => break, // End of values
+            _ => {}
+        }
+    }
+
+    Ok(count)
 }
