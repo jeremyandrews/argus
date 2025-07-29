@@ -543,18 +543,13 @@ fn transform_sqlite_to_postgres(sqlite_sql: &str) -> Result<String> {
 }
 
 fn transform_insert_statement(line: &str) -> Result<String> {
-    // SQLite dumps use || for concatenation - we need to handle this BEFORE parsing
-    let mut cleaned_line = line.to_string();
-
-    // First pass: Fix concatenated strings in VALUES clause
-    if let Some(values_pos) = cleaned_line.find(" VALUES(") {
-        let before_values = &cleaned_line[..values_pos];
-        let values_part = &cleaned_line[values_pos..];
-
-        // Apply concatenation fixes to the VALUES part
-        let fixed_values = fix_sqlite_dump_concatenation(values_part)?;
-        cleaned_line = format!("{}{}", before_values, fixed_values);
-    }
+    // CRITICAL: Handle string concatenation FIRST before any field parsing
+    let cleaned_line = if line.contains(" || ") {
+        // Apply comprehensive concatenation fixes to the entire line
+        fix_sqlite_dump_concatenation(line)?
+    } else {
+        line.to_string()
+    };
 
     // Parse INSERT INTO table VALUES(...) and convert to explicit column names
     if let Some(values_start) = cleaned_line.find(" VALUES(") {
@@ -598,27 +593,47 @@ fn transform_insert_statement(line: &str) -> Result<String> {
     Ok(result)
 }
 
-fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
+fn fix_sqlite_dump_concatenation(line: &str) -> Result<String> {
     // SQLite .dump uses || for concatenation which we need to resolve
-    let result = values_str.to_string();
+    // This function processes the ENTIRE line, not just VALUES part
 
-    // Handle patterns like: 'string1' || 'string2'
-    // This needs to be more aggressive than fix_string_concatenation
+    if !line.contains(" || ") {
+        return Ok(line.to_string());
+    }
 
-    // Use a state machine approach to properly handle nested quotes
-    let mut chars = result.chars().peekable();
+    // Use a state machine approach to properly handle nested quotes and concatenation
+    let mut chars = line.chars().peekable();
     let mut output = String::new();
     let mut in_string = false;
     let mut current_string = String::new();
+    let mut escape_next = false;
 
     while let Some(ch) = chars.next() {
+        if escape_next {
+            if in_string {
+                current_string.push(ch);
+            } else {
+                output.push(ch);
+            }
+            escape_next = false;
+            continue;
+        }
+
         match ch {
+            '\\' => {
+                escape_next = true;
+                if in_string {
+                    current_string.push(ch);
+                } else {
+                    output.push(ch);
+                }
+            }
             '\'' if !in_string => {
                 in_string = true;
                 current_string.clear();
             }
             '\'' if in_string => {
-                // Check if this is an escaped quote
+                // Check if this is an escaped quote (doubled single quote)
                 if chars.peek() == Some(&'\'') {
                     current_string.push_str("''");
                     chars.next(); // consume the second quote
@@ -631,6 +646,7 @@ fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
                     let mut found_concat = false;
                     let mut whitespace = String::new();
 
+                    // Skip whitespace
                     while let Some(&next_ch) = temp_chars.peek() {
                         if next_ch.is_whitespace() {
                             whitespace.push(next_ch);
@@ -640,6 +656,10 @@ fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
                             if temp_chars.peek() == Some(&'|') {
                                 found_concat = true;
                                 break;
+                            } else {
+                                // Put the | back, it's not concatenation
+                                whitespace.push('|');
+                                break;
                             }
                         } else {
                             break;
@@ -647,7 +667,7 @@ fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
                     }
 
                     if found_concat {
-                        // Skip the || operator
+                        // Skip the || operator and whitespace in the main iterator
                         for _ in 0..whitespace.len() {
                             chars.next();
                         }
@@ -671,6 +691,8 @@ fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
                         output.push('\'');
                         output.push_str(&current_string);
                         output.push('\'');
+                        // Also output any whitespace we found
+                        output.push_str(&whitespace);
                     }
                 }
             }
