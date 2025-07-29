@@ -166,9 +166,6 @@ async fn main() -> Result<()> {
         .expect("Failed to initialize migration timing");
 
     timed_println("🚀 Starting Enhanced PostgreSQL Migration...");
-    if debug_mode {
-        timed_println("🔍 Debug mode enabled - detailed performance tracking active");
-    }
 
     // Handle resume mode
     if resume_mode {
@@ -1911,10 +1908,10 @@ async fn migrate_data_via_dump_enhanced(
     debug_mode: bool,
     stats: &mut MigrationStats,
 ) -> Result<()> {
-    println!("📥 Migrating data via dump/restore...");
+    timed_println("📥 Migrating data via dump/restore...");
 
     // Step 1: Export SQLite data
-    println!("  📤 Exporting SQLite data...");
+    timed_println("  📤 Exporting SQLite data...");
     let export_start = Instant::now();
 
     let dump_output = Command::new("sqlite3")
@@ -1939,7 +1936,7 @@ async fn migrate_data_via_dump_enhanced(
     }
 
     // Step 2: Transform SQL for PostgreSQL compatibility
-    println!("  🔄 Transforming SQL for PostgreSQL...");
+    timed_println("  🔄 Transforming SQL for PostgreSQL...");
     let transform_start = Instant::now();
 
     let postgres_sql = transform_sqlite_to_postgres(&sqlite_dump)?;
@@ -1958,13 +1955,13 @@ async fn migrate_data_via_dump_enhanced(
         );
     }
 
-    println!(
+    timed_println(&format!(
         "  📊 Transformed SQL: {} lines, {} INSERT statements",
         line_count, insert_count
-    );
+    ));
 
     // Validate transformed SQL before writing to file
-    println!("  🔍 Validating transformed SQL...");
+    timed_println("  🔍 Validating transformed SQL...");
     let mut validation_errors = Vec::new();
     for (line_num, line) in postgres_sql.lines().enumerate() {
         if line.trim().starts_with("INSERT INTO") {
@@ -1988,7 +1985,9 @@ async fn migrate_data_via_dump_enhanced(
         ));
     }
 
-    println!("  ✅ SQL validation passed: all INSERT statements have matching column/value counts");
+    timed_println(
+        "  ✅ SQL validation passed: all INSERT statements have matching column/value counts",
+    );
 
     // Write transformed SQL to temp file (using home directory due to /tmp space constraints)
     let temp_dir = "/home/jandrews/argus_migration_temp";
@@ -2006,7 +2005,7 @@ async fn migrate_data_via_dump_enhanced(
     }
 
     // Step 3: Import to PostgreSQL with progress tracking
-    println!("  📥 Importing to PostgreSQL...");
+    timed_println("  📥 Importing to PostgreSQL...");
     let import_start = Instant::now();
 
     // Create progress bar for import
@@ -2055,7 +2054,7 @@ async fn migrate_data_via_dump_enhanced(
         );
     }
 
-    println!("  ✅ PostgreSQL import completed successfully");
+    timed_println("  ✅ PostgreSQL import completed successfully");
 
     // Step 4: Reset sequences
     let sequence_start = Instant::now();
@@ -2072,7 +2071,7 @@ async fn migrate_data_via_dump_enhanced(
     // Cleanup
     let _ = fs::remove_file(temp_file);
 
-    println!("✅ Data migration completed");
+    timed_println("✅ Data migration completed");
     Ok(())
 }
 
@@ -2080,7 +2079,7 @@ async fn create_indexes_after_import_enhanced(
     pool: &Pool<Postgres>,
     debug_mode: bool,
 ) -> Result<()> {
-    println!("🔗 Creating indexes after data import for optimal performance...");
+    timed_println("🔗 Creating indexes after data import for optimal performance...");
 
     let index_statements = INDEX_STATEMENTS.lock().unwrap().clone();
 
@@ -2122,7 +2121,7 @@ async fn create_indexes_after_import_enhanced(
     }
 
     pb.finish_with_message("✅ All indexes created");
-    println!("✅ All indexes created successfully");
+    timed_println("✅ All indexes created successfully");
     Ok(())
 }
 

@@ -226,3 +226,37 @@ The migration now handles:
 - **Production Readiness**: ✅ Ready for deployment
 
 The PostgreSQL migration schema mismatch issue has been completely resolved. The migration tool will now run cleanly without the thousands of warnings that were previously flooding the screen.
+
+---
+
+## ✅ COMPLETED: PostgreSQL Migration Timestamp Output Fix (July 29, 2025)
+
+### Issue Resolution Summary
+**Successfully fixed missing timestamps in PostgreSQL migration output by replacing `println!` with `timed_println` throughout the migration code. Migration now provides consistent MM:SS timestamp formatting for all output phases.**
+
+### Problem Addressed
+- **Missing Timestamps**: Many migration output statements lacked timestamps, making it difficult to track progress
+- **Inconsistent Output**: Mixed use of `println!` and `timed_println` resulted in inconsistent formatting
+- **Poor Progress Tracking**: Users couldn't see timing information for individual migration phases
+
+### Technical Solution Implemented
+**Comprehensive `println!` to `timed_println` conversion:**
+- Updated all main migration functions: `migrate_data_via_dump_enhanced()`, `create_indexes_after_import_enhanced()`, `migrate_incremental_data()`, `resume_migration()`, `record_migration_completion()`
+- Fixed all debug mode output statements for consistent timestamp formatting
+- Maintained existing functionality while adding timing information
+
+### Expected Impact
+- **Consistent Timing**: All migration output now includes MM:SS timestamps
+- **Better Progress Tracking**: Users can see timing for each migration phase
+- **Improved Debug Experience**: Debug output also includes timestamps for troubleshooting
+- **Professional Output**: Clean, consistent user experience throughout migration
+
+### Files Modified
+- `src/bin/migrate_to_postgres.rs` - Updated all println! calls to timed_println
+- `memory-bank/postgresql-migration/timestamp-output-fix-july2025.md` - Comprehensive documentation
+
+### Status
+- ✅ All timestamp fixes implemented and tested
+- ✅ Code compiles successfully without warnings
+- ✅ Migration output now consistently formatted with timestamps
+- ✅ Production-ready improvement to user experience
