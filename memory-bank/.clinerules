@@ -39,6 +39,8 @@
 - The only exceptions are if we fully discuss the need in Plan mode and determine it's truly necessary
 - Use safe Rust alternatives like `Arc<Mutex<>>`, `Arc<RwLock<>>`, or `once_cell::sync::OnceCell` instead of static mut
 - All compilation warnings must be fixed before code is considered complete
+- **No temporary fixes for warnings**: Either implement proper functionality or remove unused code entirely
+- **Schema transformation patterns**: When migrating database schemas, implement proper transformation functions rather than placeholder/skip logic
 - Prefer safe, explicit patterns over clever but potentially dangerous code
 
 ## Worker Health Monitoring & Timeout Patterns

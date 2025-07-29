@@ -598,69 +598,9 @@ fn transform_insert_statement(line: &str) -> Result<String> {
     Ok(result)
 }
 
-fn fix_string_concatenation(values_part: &str) -> Result<String> {
-    // Fix string concatenation issues in VALUES clause
-    let original = values_part.to_string();
-    let mut result = original.clone();
-
-    // Debug: Check if we have concatenation to fix
-    if result.contains(" || ") {
-        let preview = safe_truncate_for_preview(&result, 100);
-        println!("  🔧 Fixing string concatenation in: {}", preview);
-    }
-
-    // Handle the specific pattern from the error: URL || timestamp
-    // Look for patterns like 'url' || 'timestamp' and merge them properly
-    use regex::Regex;
-
-    // More aggressive pattern matching to handle all concatenation cases
-    // Pattern 1: 'string1' || 'string2' -> 'string1string2'
-    let quoted_concat_regex = Regex::new(r"'([^']*)'\s*\|\|\s*'([^']*)'").unwrap();
-
-    // Keep applying the regex until no more matches (handles multiple concatenations)
-    loop {
-        let new_result = quoted_concat_regex
-            .replace_all(&result, "'$1$2'")
-            .to_string();
-        if new_result == result {
-            break; // No more changes
-        }
-        result = new_result;
-    }
-
-    // Pattern 2: Handle mixed patterns like value || 'string'
-    let mixed_concat_regex = Regex::new(r"([^,\s']+)\s*\|\|\s*'([^']*)'").unwrap();
-    result = mixed_concat_regex
-        .replace_all(&result, "'$1$2'")
-        .to_string();
-
-    // Pattern 3: Handle 'string' || value patterns
-    let reverse_mixed_regex = Regex::new(r"'([^']*)'\s*\|\|\s*([^,\s']+)").unwrap();
-    result = reverse_mixed_regex
-        .replace_all(&result, "'$1$2'")
-        .to_string();
-
-    // Pattern 4: Handle unquoted || unquoted patterns
-    let unquoted_concat_regex = Regex::new(r"([^,\s']+)\s*\|\|\s*([^,\s']+)").unwrap();
-    result = unquoted_concat_regex
-        .replace_all(&result, "'$1$2'")
-        .to_string();
-
-    // Debug: Show result if we made changes
-    if result != original {
-        let preview = safe_truncate_for_preview(&result, 100);
-        println!("  ✅ Fixed to: {}", preview);
-    } else if original.contains(" || ") {
-        let preview = safe_truncate_for_preview(&original, 100);
-        println!("  ❌ No changes made to: {}", preview);
-    }
-
-    Ok(result)
-}
-
 fn fix_sqlite_dump_concatenation(values_str: &str) -> Result<String> {
     // SQLite .dump uses || for concatenation which we need to resolve
-    let mut result = values_str.to_string();
+    let result = values_str.to_string();
 
     // Handle patterns like: 'string1' || 'string2'
     // This needs to be more aggressive than fix_string_concatenation
@@ -792,16 +732,147 @@ fn detect_old_articles_schema() -> bool {
     false
 }
 
-/// Transform old 7-column articles INSERT to new 19-column format
+/// Transform old 7-column articles INSERT to new 18-column format
 fn transform_old_articles_insert(line: &str) -> Result<String> {
     timed_println("🔧 Transforming old articles schema INSERT statement");
 
-    // For now, skip old articles transformation to avoid the warnings
-    // This is a temporary fix to stop the flood of warnings
-    timed_println("⚠️  Skipping old articles INSERT (temporary fix for warnings)");
+    // Parse the INSERT statement to extract values
+    if let Some(values_start) = line.find(" VALUES(") {
+        let before_values = &line[..values_start];
+        let values_part = &line[values_start + 8..]; // Skip " VALUES("
 
-    // Return an empty string to skip this INSERT
-    Ok(String::new())
+        // Find the end of the VALUES clause
+        if let Some(values_end) = values_part.rfind(')') {
+            let values_data = &values_part[..values_end];
+            let after_values = &values_part[values_end..]; // Include closing paren and semicolon
+
+            // Parse the 7 old values: id, url, seen_at, is_relevant, category, analysis, r2_url
+            let old_values = parse_csv_values(values_data)?;
+
+            if old_values.len() != 7 {
+                return Err(anyhow::anyhow!(
+                    "Expected 7 columns in old articles schema, got {}",
+                    old_values.len()
+                ));
+            }
+
+            // Extract individual values
+            let id = &old_values[0];
+            let url = &old_values[1];
+            let seen_at = &old_values[2];
+            let is_relevant = &old_values[3];
+            let category = &old_values[4];
+            let analysis = &old_values[5];
+            let r2_url = &old_values[6];
+
+            // Derive new values
+            let normalized_url = url; // Use same URL for normalized_url
+            let source = extract_domain_from_url(url);
+            let pub_date = seen_at; // Use seen_at as pub_date
+
+            // Build new 18-column INSERT statement
+            // New order: id, url, normalized_url, seen_at, pub_date, event_date, title, source,
+            //           is_relevant, category, tiny_summary, analysis, json_data, quality,
+            //           hash, title_domain_hash, r2_url, cluster_id
+            let new_values = format!(
+                "{},{},{},{},{},NULL,NULL,'{}',{},{},NULL,{},NULL,NULL,NULL,NULL,{},NULL",
+                id,
+                url,
+                normalized_url,
+                seen_at,
+                pub_date,
+                source,
+                is_relevant,
+                category,
+                analysis,
+                r2_url
+            );
+
+            // Reconstruct the full INSERT statement
+            let table_part = before_values.replace("INSERT INTO articles", "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id)");
+            let result = format!("{} VALUES({}){}", table_part, new_values, after_values);
+
+            // Apply boolean and timestamp transformations
+            let result = transform_boolean_values(&result, "articles")?;
+            let result = convert_unix_timestamps(&result, "articles");
+
+            timed_println("✅ Transformed old articles INSERT to new schema");
+            return Ok(result);
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Could not parse old articles INSERT statement"
+    ))
+}
+
+/// Parse CSV values from a VALUES clause, handling quoted strings properly
+fn parse_csv_values(csv_str: &str) -> Result<Vec<String>> {
+    let mut values = Vec::new();
+    let mut current_value = String::new();
+    let mut in_quotes = false;
+    let mut escape_next = false;
+
+    for ch in csv_str.chars() {
+        if escape_next {
+            current_value.push(ch);
+            escape_next = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if in_quotes => {
+                escape_next = true;
+                current_value.push(ch);
+            }
+            '\'' => {
+                in_quotes = !in_quotes;
+                current_value.push(ch);
+            }
+            ',' if !in_quotes => {
+                values.push(current_value.trim().to_string());
+                current_value.clear();
+            }
+            _ => {
+                current_value.push(ch);
+            }
+        }
+    }
+
+    // Add the last value
+    if !current_value.is_empty() {
+        values.push(current_value.trim().to_string());
+    }
+
+    Ok(values)
+}
+
+/// Extract domain from a URL value (handles quoted strings)
+fn extract_domain_from_url(url_value: &str) -> String {
+    // Remove quotes if present
+    let url = url_value.trim_matches('\'').trim_matches('"');
+
+    // Extract domain from URL
+    if let Ok(parsed_url) = url::Url::parse(url) {
+        if let Some(domain) = parsed_url.host_str() {
+            return domain.to_string();
+        }
+    }
+
+    // Fallback: try to extract domain manually
+    if let Some(start) = url.find("://") {
+        let after_protocol = &url[start + 3..];
+        if let Some(end) = after_protocol.find('/') {
+            return after_protocol[..end].to_string();
+        } else if let Some(end) = after_protocol.find('?') {
+            return after_protocol[..end].to_string();
+        } else {
+            return after_protocol.to_string();
+        }
+    }
+
+    // Last resort: return "unknown"
+    "unknown".to_string()
 }
 
 fn get_table_columns(table_name: &str) -> Vec<String> {

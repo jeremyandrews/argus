@@ -1,6 +1,6 @@
 # Progress Tracking
 
-## Current Status: PostgreSQL Migration Schema Mismatch FIXED (July 29, 2025)
+## Current Status: PostgreSQL Migration & Compilation Warnings FIXED (July 29, 2025)
 
 ### What's Working
 - PostgreSQL connection and schema creation ✓
@@ -9,12 +9,25 @@
 - String concatenation fixes applied ✓
 - Boolean value transformation logic exists ✓
 - **Schema mismatch warnings FIXED** ✓
+- **All compilation warnings FIXED** ✓
 
 ### ✅ FIXED: Schema Mismatch Warning Flood
 - **Problem**: Thousands of warnings flooding screen during migration
 - **Root Cause**: SQLite has old 7-column articles table, PostgreSQL expects 19 columns
 - **Solution**: Implemented schema detection and old schema handling
 - **Status**: ✅ RESOLVED - Migration now runs without warning flood
+
+### ✅ FIXED: Compilation Warnings (July 29, 2025)
+- **Problem**: 3 compilation warnings in `migrate_to_postgres` binary
+- **Root Causes**: 
+  1. Unnecessary `mut` keyword in variable that was never modified
+  2. Unused parameter in `transform_old_articles_insert` function
+  3. Dead code in unused `fix_string_concatenation` function
+- **Solutions**:
+  1. Removed `mut` from line 663 in `fix_sqlite_dump_concatenation`
+  2. Implemented proper 7→18 column schema transformation with CSV parsing and domain extraction
+  3. Removed entire unused `fix_string_concatenation` function
+- **Status**: ✅ RESOLVED - Clean compilation with proper old schema transformation
 
 ### What's Left to Build
 1. **Migration Completion**:
