@@ -924,22 +924,11 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
         "articles" => vec![
             "id".to_string(),
             "url".to_string(),
-            "normalized_url".to_string(), // MOVED UP - matches PostgreSQL schema
             "seen_at".to_string(),
-            "pub_date".to_string(),   // MOVED UP - matches PostgreSQL schema
-            "event_date".to_string(), // MOVED UP - matches PostgreSQL schema
-            "title".to_string(),      // MOVED UP - matches PostgreSQL schema
-            "source".to_string(),     // MOVED UP - matches PostgreSQL schema
             "is_relevant".to_string(),
             "category".to_string(),
-            "tiny_summary".to_string(), // MOVED DOWN - matches PostgreSQL schema
             "analysis".to_string(),
-            "json_data".to_string(), // MOVED DOWN - matches PostgreSQL schema
-            "quality".to_string(),   // MOVED DOWN - matches PostgreSQL schema
-            "hash".to_string(),
-            "title_domain_hash".to_string(),
             "r2_url".to_string(),
-            "cluster_id".to_string(),
         ],
         "entities" => vec![
             "id".to_string(),
