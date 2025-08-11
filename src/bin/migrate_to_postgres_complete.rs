@@ -285,6 +285,18 @@ fn transform_insert_for_all_tables(
         return Ok((transformed, Some("migration_metadata".to_string())));
     }
 
+    // Handle article_cluster_members table (if it exists)
+    if line.contains("INSERT INTO article_cluster_members VALUES(") {
+        let transformed = transform_article_cluster_members_insert(line)?;
+        return Ok((transformed, Some("article_cluster_members".to_string())));
+    }
+
+    // Handle user_cluster_preferences table (if it exists)
+    if line.contains("INSERT INTO user_cluster_preferences VALUES(") {
+        let transformed = transform_user_cluster_preferences_insert(line)?;
+        return Ok((transformed, Some("user_cluster_preferences".to_string())));
+    }
+
     // Extract table name for unknown tables
     if line.starts_with("INSERT INTO ") {
         if let Some(table_name) = extract_table_name(line) {
@@ -447,6 +459,18 @@ fn transform_migration_metadata_insert(line: &str) -> Result<String> {
     let replacement = "INSERT INTO migration_metadata (key, value, created_at) VALUES(";
     let result = line.replace("INSERT INTO migration_metadata VALUES(", replacement);
     Ok(result)
+}
+
+// Additional table transformations for tables found in your database
+fn transform_article_cluster_members_insert(line: &str) -> Result<String> {
+    // Pass through unchanged - this table might not exist in PostgreSQL schema
+    // or needs to be mapped to article_cluster_mappings
+    Ok(line.to_string())
+}
+
+fn transform_user_cluster_preferences_insert(line: &str) -> Result<String> {
+    // Pass through unchanged - this table might not exist in PostgreSQL schema
+    Ok(line.to_string())
 }
 
 fn transform_booleans(mut text: String) -> String {

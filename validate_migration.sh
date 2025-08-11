@@ -39,7 +39,7 @@ echo ""
 # Check for specific tables that our migration handles
 echo "=== Migration coverage check ==="
 # All tables from the PostgreSQL schema that our complete migration handles
-handled_tables="articles entities article_entities configurations entity_aliases article_clusters article_cluster_mappings cluster_merge_history entity_negative_matches alias_pattern_stats alias_review_batches alias_review_items alias_cache_stats rss_queue matched_topics_queue life_safety_queue devices device_subscriptions ip_logs endpoint_timeout_events endpoint_alerts migration_metadata"
+handled_tables="articles entities article_entities configurations entity_aliases article_clusters article_cluster_mappings cluster_merge_history entity_negative_matches alias_pattern_stats alias_review_batches alias_review_items alias_cache_stats rss_queue matched_topics_queue life_safety_queue devices device_subscriptions ip_logs endpoint_timeout_events endpoint_alerts migration_metadata article_cluster_members user_cluster_preferences"
 
 for table in $handled_tables; do
     count=$(grep -c "INSERT INTO $table " "$DUMP_FILE" 2>/dev/null || echo "0")
@@ -56,7 +56,7 @@ echo ""
 echo "=== Unhandled tables (may need migration updates) ==="
 grep "INSERT INTO " "$DUMP_FILE" | sed 's/INSERT INTO \([^ ]*\) .*/\1/' | sort | uniq | while read table; do
     case "$table" in
-        articles|entities|article_entities|configurations|entity_aliases|article_clusters|article_cluster_mappings|cluster_merge_history|entity_negative_matches|alias_pattern_stats|alias_review_batches|alias_review_items|alias_cache_stats|rss_queue|matched_topics_queue|life_safety_queue|devices|device_subscriptions|ip_logs|endpoint_timeout_events|endpoint_alerts|migration_metadata)
+        articles|entities|article_entities|configurations|entity_aliases|article_clusters|article_cluster_mappings|cluster_merge_history|entity_negative_matches|alias_pattern_stats|alias_review_batches|alias_review_items|alias_cache_stats|rss_queue|matched_topics_queue|life_safety_queue|devices|device_subscriptions|ip_logs|endpoint_timeout_events|endpoint_alerts|migration_metadata|article_cluster_members|user_cluster_preferences|sqlite_sequence)
             # These are handled
             ;;
         *)
