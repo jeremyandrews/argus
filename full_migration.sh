@@ -64,16 +64,9 @@ echo
 echo "🔍 Step 3: Validating migration coverage..."
 ./validate_migration.sh "$DUMP_FILE"
 
-# Ask for confirmation
+# Proceeding with migration automatically
 echo
-read -p "🤔 Do you want to proceed with the migration? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "❌ Migration cancelled by user"
-    echo "   Backup preserved: $BACKUP_FILE"
-    echo "   Dump preserved: $DUMP_FILE"
-    exit 1
-fi
+echo "▶️  Proceeding with migration..."
 
 # Step 4: Build migration tool
 echo
