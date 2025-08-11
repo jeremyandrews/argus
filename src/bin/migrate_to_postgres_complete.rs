@@ -314,10 +314,12 @@ fn transform_insert_for_all_tables(
     Ok((line.to_string(), None))
 }
 
-// Article transformation (18-column version)
+// Article transformation (7-column SQLite to PostgreSQL mapping)
 fn transform_articles_insert(line: &str) -> Result<String> {
-    // Full 18-column articles table: id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id
-    let replacement = "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id) VALUES(";
+    // SQLite articles table has 7 columns: id, url, seen_at, is_relevant, category, analysis, r2_url
+    // Map these to the corresponding PostgreSQL columns
+    let replacement =
+        "INSERT INTO articles (id, url, seen_at, is_relevant, category, analysis, r2_url) VALUES(";
     let result = line.replace("INSERT INTO articles VALUES(", replacement);
     Ok(transform_booleans(result))
 }
