@@ -404,8 +404,9 @@ fn transform_cluster_merge_history_insert(line: &str) -> Result<String> {
 
 // Queue transformations
 fn transform_rss_queue_insert(line: &str) -> Result<String> {
-    let replacement =
-        "INSERT INTO rss_queue (id, url, normalized_url, title, seen_at, pub_date) VALUES(";
+    // SQLite rss_queue has only 2 columns: id, url
+    // Map to corresponding PostgreSQL columns
+    let replacement = "INSERT INTO rss_queue (id, url) VALUES(";
     let result = line.replace("INSERT INTO rss_queue VALUES(", replacement);
     Ok(result)
 }
