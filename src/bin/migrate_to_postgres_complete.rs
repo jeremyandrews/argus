@@ -317,7 +317,7 @@ fn transform_insert_for_all_tables(
 // Article transformation (7-column SQLite to PostgreSQL mapping)
 fn transform_articles_insert(line: &str) -> Result<String> {
     // SQLite articles table has 7 columns: id, url, seen_at, is_relevant, category, analysis, r2_url
-    // Map these to the corresponding PostgreSQL columns
+    // For now, just map to the existing columns without adding normalized_url
     let replacement =
         "INSERT INTO articles (id, url, seen_at, is_relevant, category, analysis, r2_url) VALUES(";
     let result = line.replace("INSERT INTO articles VALUES(", replacement);
@@ -405,7 +405,7 @@ fn transform_cluster_merge_history_insert(line: &str) -> Result<String> {
 // Queue transformations
 fn transform_rss_queue_insert(line: &str) -> Result<String> {
     // SQLite rss_queue has only 2 columns: id, url
-    // Map to corresponding PostgreSQL columns
+    // For simplicity, just map to the basic columns that exist
     let replacement = "INSERT INTO rss_queue (id, url) VALUES(";
     let result = line.replace("INSERT INTO rss_queue VALUES(", replacement);
     Ok(result)
@@ -485,6 +485,67 @@ fn transform_booleans(mut text: String) -> String {
     text = text.replace("(1,", "(true,");
 
     text
+}
+
+// Helper function to add normalized_url column to articles INSERT
+fn add_normalized_url_column(line: String) -> String {
+    // The line format is: INSERT INTO articles (...) VALUES(id,'url','seen_at',is_relevant,...)
+    // We need to duplicate the url value as normalized_url
+    // Find the VALUES( part and parse the values to duplicate the second one (url)
+
+    if let Some(values_start) = line.find("VALUES(") {
+        let before_values = &line[..values_start + 7]; // Include "VALUES("
+        let after_values_start = &line[values_start + 7..];
+
+        // Find the end of VALUES(...)
+        if let Some(values_end) = after_values_start.rfind(");") {
+            let values_content = &after_values_start[..values_end];
+
+            // Split by commas, but be careful about quoted strings
+            let mut values = Vec::new();
+            let mut current_value = String::new();
+            let mut in_quotes = false;
+            let mut quote_char = ' ';
+
+            for ch in values_content.chars() {
+                match ch {
+                    '\'' | '"' if !in_quotes => {
+                        in_quotes = true;
+                        quote_char = ch;
+                        current_value.push(ch);
+                    }
+                    ch if in_quotes && ch == quote_char => {
+                        in_quotes = false;
+                        current_value.push(ch);
+                    }
+                    ',' if !in_quotes => {
+                        values.push(current_value.trim().to_string());
+                        current_value.clear();
+                    }
+                    _ => {
+                        current_value.push(ch);
+                    }
+                }
+            }
+
+            // Don't forget the last value
+            if !current_value.is_empty() {
+                values.push(current_value.trim().to_string());
+            }
+
+            // If we have at least 2 values (id, url), duplicate the url as normalized_url
+            if values.len() >= 2 {
+                let url_value = &values[1]; // Second value is the url
+                values.insert(2, url_value.clone()); // Insert as third value (normalized_url)
+            }
+
+            // Reconstruct the line
+            return format!("{}{});", before_values, values.join(","));
+        }
+    }
+
+    // If we couldn't parse it, return the original line
+    line
 }
 
 fn extract_table_name(line: &str) -> Option<String> {
