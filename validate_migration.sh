@@ -42,7 +42,7 @@ echo "=== Migration coverage check ==="
 handled_tables="articles entities article_entities configurations entity_aliases article_clusters article_cluster_mappings cluster_merge_history entity_negative_matches alias_pattern_stats alias_review_batches alias_review_items alias_cache_stats rss_queue matched_topics_queue life_safety_queue devices device_subscriptions ip_logs endpoint_timeout_events endpoint_alerts migration_metadata article_cluster_members user_cluster_preferences"
 
 for table in $handled_tables; do
-    count=$(grep -c "INSERT INTO $table " "$DUMP_FILE" 2>/dev/null || echo "0")
+    count=$(grep -c "INSERT INTO $table " "$DUMP_FILE" 2>/dev/null | tr -d '\n' || echo "0")
     if [ "$count" -gt 0 ]; then
         echo "✓ $table: $count records (handled by migration)"
     else
@@ -60,7 +60,7 @@ grep "INSERT INTO " "$DUMP_FILE" | sed 's/INSERT INTO \([^ ]*\) .*/\1/' | sort |
             # These are handled
             ;;
         *)
-            count=$(grep -c "INSERT INTO $table " "$DUMP_FILE")
+            count=$(grep -c "INSERT INTO $table " "$DUMP_FILE" | tr -d '\n')
             echo "⚠️  $table: $count records (NOT handled - may need migration code)"
             ;;
     esac

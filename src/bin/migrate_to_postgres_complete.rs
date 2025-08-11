@@ -158,7 +158,7 @@ fn transform_insert_for_all_tables(
 ) -> Result<(String, Option<String>)> {
     let line = line.trim();
 
-    // Handle articles table (7-column version based on simple migration)
+    // Handle articles table (18-column version)
     if line.contains("INSERT INTO articles VALUES(") {
         let transformed = transform_articles_insert(line)?;
         return Ok((transformed, Some("articles".to_string())));
@@ -314,11 +314,10 @@ fn transform_insert_for_all_tables(
     Ok((line.to_string(), None))
 }
 
-// Article transformation (7-column version)
+// Article transformation (18-column version)
 fn transform_articles_insert(line: &str) -> Result<String> {
-    // Based on simple migration: id, url, seen_at, is_relevant, category, analysis, r2_url
-    let replacement =
-        "INSERT INTO articles (id, url, seen_at, is_relevant, category, analysis, r2_url) VALUES(";
+    // Full 18-column articles table: id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id
+    let replacement = "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id) VALUES(";
     let result = line.replace("INSERT INTO articles VALUES(", replacement);
     Ok(transform_booleans(result))
 }
