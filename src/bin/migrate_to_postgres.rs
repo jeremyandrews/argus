@@ -898,27 +898,26 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
     // Return the correct column order for each table based on our PostgreSQL schema
     match table_name {
         "articles" if detect_old_articles_schema() => {
-            // Special handling for old 7-column schema
+            // Special handling for old 7-column schema - must match transform_old_articles_insert() exactly
             vec![
                 "id".to_string(),
-                "link".to_string(),           // Map url -> link for PostgreSQL
-                "normalized_url".to_string(), // Set to same as link initially
+                "url".to_string(),
+                "normalized_url".to_string(),
                 "seen_at".to_string(),
-                "pub_date".to_string(),   // Use seen_at value
+                "pub_date".to_string(),
                 "event_date".to_string(), // NULL for old schema
                 "title".to_string(),      // NULL for old schema
                 "source".to_string(),     // Extract from URL domain
-                "is_unsafe".to_string(),  // Default to false
                 "is_relevant".to_string(),
                 "category".to_string(),
                 "tiny_summary".to_string(), // NULL for old schema
                 "analysis".to_string(),
-                "json_data".to_string(),              // NULL for old schema
-                "quality".to_string(),                // NULL for old schema
-                "hash".to_string(),                   // NULL for old schema
-                "title_domain_hash".to_string(),      // NULL for old schema
-                "rss_updated_date".to_string(),       // Use seen_at value
-                "extracted_article_json".to_string(), // NULL for old schema
+                "json_data".to_string(),         // NULL for old schema
+                "quality".to_string(),           // NULL for old schema
+                "hash".to_string(),              // NULL for old schema
+                "title_domain_hash".to_string(), // NULL for old schema
+                "r2_url".to_string(),
+                "cluster_id".to_string(), // NULL for old schema
             ]
         }
         "articles" => vec![
