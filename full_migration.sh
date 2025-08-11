@@ -98,16 +98,50 @@ echo "   PostgreSQL SQL generated: $POSTGRES_SIZE lines"
 # Step 6: Create PostgreSQL schema
 echo
 echo "🏗️  Step 6: Setting up PostgreSQL schema..."
-echo "   Dropping existing tables..."
+echo "   Dropping existing tables (if they exist)..."
+
+# Drop tables individually to avoid schema permission issues
 psql "$DATABASE_URL" -c "
-DROP SCHEMA IF EXISTS public CASCADE;
-CREATE SCHEMA public;
-GRANT ALL ON SCHEMA public TO postgres;
-GRANT ALL ON SCHEMA public TO public;
-" > /dev/null
+-- Drop tables in dependency order (child tables first)
+DROP TABLE IF EXISTS alias_review_items CASCADE;
+DROP TABLE IF EXISTS alias_review_batches CASCADE;
+DROP TABLE IF EXISTS alias_cache_stats CASCADE;
+DROP TABLE IF EXISTS alias_pattern_stats CASCADE;
+DROP TABLE IF EXISTS entity_negative_matches CASCADE;
+DROP TABLE IF EXISTS entity_aliases CASCADE;
+DROP TABLE IF EXISTS article_entities CASCADE;
+DROP TABLE IF EXISTS article_cluster_mappings CASCADE;
+DROP TABLE IF EXISTS cluster_merge_history CASCADE;
+DROP TABLE IF EXISTS article_clusters CASCADE;
+DROP TABLE IF EXISTS entities CASCADE;
+DROP TABLE IF EXISTS articles CASCADE;
+DROP TABLE IF EXISTS device_subscriptions CASCADE;
+DROP TABLE IF EXISTS ip_logs CASCADE;
+DROP TABLE IF EXISTS devices CASCADE;
+DROP TABLE IF EXISTS rss_queue CASCADE;
+DROP TABLE IF EXISTS matched_topics_queue CASCADE;
+DROP TABLE IF EXISTS life_safety_queue CASCADE;
+DROP TABLE IF EXISTS endpoint_timeout_events CASCADE;
+DROP TABLE IF EXISTS endpoint_alerts CASCADE;
+DROP TABLE IF EXISTS configurations CASCADE;
+DROP TABLE IF EXISTS migration_metadata CASCADE;
+-- Drop functions if they exist
+DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
+" > /dev/null 2>&1  # Ignore errors if tables don't exist
 
 echo "   Creating new schema..."
-psql "$DATABASE_URL" -f memory-bank/postgresql-migration/schema.sql > /dev/null
+psql "$DATABASE_URL" -f memory-bank/postgresql-migration/schema.sql > schema_creation_$TIMESTAMP.log 2>&1
+
+# Check if schema creation was successful
+if [ $? -eq 0 ]; then
+    echo "   ✅ Schema created successfully"
+    rm -f schema_creation_$TIMESTAMP.log
+else
+    echo "   ❌ Schema creation had warnings/errors"
+    echo "   Check schema_creation_$TIMESTAMP.log for details"
+    echo "   Last 10 lines of schema log:"
+    tail -10 schema_creation_$TIMESTAMP.log
+fi
 
 # Step 7: Import data
 echo
