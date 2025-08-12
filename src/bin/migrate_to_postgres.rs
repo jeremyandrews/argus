@@ -793,6 +793,16 @@ fn transform_old_articles_insert(line: &str) -> Result<String> {
             // New order: id, url, normalized_url, seen_at, pub_date, event_date, title, source,
             //           is_relevant, category, tiny_summary, analysis, json_data, quality,
             //           hash, title_domain_hash, r2_url, cluster_id
+
+            // CRITICAL FIX: Transform boolean value BEFORE insertion
+            let is_relevant_bool = if is_relevant == "0" {
+                "false"
+            } else if is_relevant == "1" {
+                "true"
+            } else {
+                is_relevant
+            };
+
             let new_values = format!(
                 "{},{},{},{},{},NULL,NULL,'{}',{},{},NULL,{},NULL,NULL,NULL,NULL,{},NULL",
                 id,
@@ -801,7 +811,7 @@ fn transform_old_articles_insert(line: &str) -> Result<String> {
                 seen_at,
                 pub_date,
                 source,
-                is_relevant,
+                is_relevant_bool,
                 category,
                 analysis,
                 r2_url
@@ -811,8 +821,9 @@ fn transform_old_articles_insert(line: &str) -> Result<String> {
             let table_part = before_values.replace("INSERT INTO articles", "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id)");
             let result = format!("{} VALUES({}){}", table_part, new_values, after_values);
 
-            // Apply boolean and timestamp transformations
-            let result = transform_boolean_values(&result, "articles")?;
+            // Apply boolean and timestamp transformations - CRITICAL FIX:
+            // For old articles transformation, we need to transform booleans BEFORE
+            // building the remapped insert statement, not after
             let result = convert_unix_timestamps(&result, "articles");
 
             timed_println("✅ Transformed old articles INSERT to new schema");
