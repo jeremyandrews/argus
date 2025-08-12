@@ -775,43 +775,57 @@ fn transform_old_articles_insert(line: &str) -> Result<String> {
                 ));
             }
 
-            // Extract individual values
-            let id = &old_values[0];
+            // Extract individual values - CRITICAL FIX: preserve original data types
+            let id = &old_values[0]; // Keep numeric ID as-is
             let url = &old_values[1];
             let seen_at = &old_values[2];
-            let is_relevant = &old_values[3];
+            let is_relevant_raw = &old_values[3]; // Raw value before transformation
             let category = &old_values[4];
             let analysis = &old_values[5];
             let r2_url = &old_values[6];
+
+            // Validate that ID is numeric and not transformed to boolean
+            let id_cleaned = id.trim_matches('\'').trim_matches('"');
+            if id_cleaned == "true" || id_cleaned == "false" {
+                return Err(anyhow::anyhow!(
+                    "ID field has been incorrectly transformed to boolean: {}. This indicates a data parsing error.",
+                    id_cleaned
+                ));
+            }
 
             // Derive new values
             let normalized_url = url; // Use same URL for normalized_url
             let source = extract_domain_from_url(url);
             let pub_date = seen_at; // Use seen_at as pub_date
 
+            // CRITICAL FIX: Transform only the is_relevant field to boolean
+            let is_relevant_bool = match is_relevant_raw.trim_matches('\'').trim_matches('"') {
+                "0" => "false",
+                "1" => "true",
+                other => {
+                    // If it's already a boolean string, keep it
+                    if other == "true" || other == "false" {
+                        other
+                    } else {
+                        // Default to false for unexpected values
+                        "false"
+                    }
+                }
+            };
+
             // Build new 18-column INSERT statement
             // New order: id, url, normalized_url, seen_at, pub_date, event_date, title, source,
             //           is_relevant, category, tiny_summary, analysis, json_data, quality,
             //           hash, title_domain_hash, r2_url, cluster_id
-
-            // CRITICAL FIX: Transform boolean value BEFORE insertion
-            let is_relevant_bool = if is_relevant == "0" {
-                "false"
-            } else if is_relevant == "1" {
-                "true"
-            } else {
-                is_relevant
-            };
-
             let new_values = format!(
                 "{},{},{},{},{},NULL,NULL,'{}',{},{},NULL,{},NULL,NULL,NULL,NULL,{},NULL",
-                id,
+                id, // Numeric ID - not transformed
                 url,
                 normalized_url,
                 seen_at,
                 pub_date,
                 source,
-                is_relevant_bool,
+                is_relevant_bool, // Boolean - properly transformed
                 category,
                 analysis,
                 r2_url
@@ -821,9 +835,7 @@ fn transform_old_articles_insert(line: &str) -> Result<String> {
             let table_part = before_values.replace("INSERT INTO articles", "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id)");
             let result = format!("{} VALUES({}){}", table_part, new_values, after_values);
 
-            // Apply boolean and timestamp transformations - CRITICAL FIX:
-            // For old articles transformation, we need to transform booleans BEFORE
-            // building the remapped insert statement, not after
+            // Apply timestamp transformations
             let result = convert_unix_timestamps(&result, "articles");
 
             timed_println("✅ Transformed old articles INSERT to new schema");
@@ -1002,15 +1014,24 @@ fn get_table_columns(table_name: &str) -> Vec<String> {
 
 fn get_boolean_columns(table_name: &str) -> Vec<usize> {
     // Return 0-based column indices for boolean columns in each table
+    // CRITICAL: ID columns (index 0) should NEVER be in this list
     match table_name {
-        "articles" => vec![8], // is_relevant is 9th column (0-indexed: 8) after reordering
+        "articles" => {
+            // For old articles schema, we handle boolean transformation separately
+            // For new articles schema, is_relevant is at position 8
+            if detect_old_articles_schema() {
+                vec![] // No automatic boolean transformation for old schema
+            } else {
+                vec![8] // is_relevant is 9th column (0-indexed: 8) after reordering
+            }
+        }
         "configurations" => vec![4], // enabled is 5th column (0-indexed: 4)
         "endpoint_alerts" => vec![9], // is_resolved is 10th column (0-indexed: 9)
         "alias_pattern_stats" => vec![6], // enabled is 7th column (0-indexed: 6)
-        "entity_aliases" => vec![], // status is TEXT, not boolean
+        "entity_aliases" => vec![],  // status is TEXT, not boolean
         "alias_review_batches" => vec![], // status is TEXT, not boolean
         "device_subscriptions" => vec![], // No boolean columns
-        "ip_logs" => vec![],   // No boolean columns
+        "ip_logs" => vec![],         // No boolean columns
         _ => vec![],
     }
 }
