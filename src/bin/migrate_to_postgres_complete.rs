@@ -314,12 +314,74 @@ fn transform_insert_for_all_tables(
     Ok((line.to_string(), None))
 }
 
-// Article transformation (7-column SQLite to PostgreSQL mapping)
+// Article transformation (7-column SQLite to 18-column PostgreSQL mapping)
 fn transform_articles_insert(line: &str) -> Result<String> {
-    // SQLite articles table has 7 columns: id, url, seen_at, is_relevant, category, analysis, r2_url
-    // For now, just map to the existing columns without adding normalized_url
-    let replacement =
-        "INSERT INTO articles (id, url, seen_at, is_relevant, category, analysis, r2_url) VALUES(";
+    // Actual SQLite has 7 columns: id, url, seen_at, is_relevant, category, analysis, r2_url
+    // PostgreSQL needs 18 columns: id, url, normalized_url, seen_at, pub_date, event_date, title, source,
+    // is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id
+
+    // First check if this is the old 7-column format
+    if let Some(values_start) = line.find(" VALUES(") {
+        let values_part = &line[values_start + 8..];
+        if let Some(values_end) = values_part.rfind(')') {
+            let values_data = &values_part[..values_end];
+            let old_values = parse_csv_values_simple(values_data)?;
+
+            if old_values.len() == 7 {
+                // Transform 7-column to 18-column format
+                let id = &old_values[0];
+                let url = &old_values[1];
+                let normalized_url = url; // Use same URL as normalized_url
+                let seen_at = &old_values[2];
+                let pub_date = seen_at; // Use seen_at as pub_date
+                let event_date = "NULL";
+                let title = "NULL";
+                let source = extract_domain_from_url_value(url);
+                let is_relevant = &old_values[3];
+                let category = &old_values[4];
+                let tiny_summary = "NULL";
+                let analysis = &old_values[5];
+                let json_data = "NULL";
+                let quality = "NULL";
+                let hash = "NULL";
+                let title_domain_hash = "NULL";
+                let r2_url = &old_values[6];
+                let cluster_id = "NULL";
+
+                let new_values = format!(
+                    "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    id,
+                    url,
+                    normalized_url,
+                    seen_at,
+                    pub_date,
+                    event_date,
+                    title,
+                    source,
+                    is_relevant,
+                    category,
+                    tiny_summary,
+                    analysis,
+                    json_data,
+                    quality,
+                    hash,
+                    title_domain_hash,
+                    r2_url,
+                    cluster_id
+                );
+
+                let result = format!(
+                    "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id) VALUES({})",
+                    new_values
+                );
+
+                return Ok(transform_booleans(result));
+            }
+        }
+    }
+
+    // Fallback: assume it's already the correct format
+    let replacement = "INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id) VALUES(";
     let result = line.replace("INSERT INTO articles VALUES(", replacement);
     Ok(transform_booleans(result))
 }
@@ -404,9 +466,9 @@ fn transform_cluster_merge_history_insert(line: &str) -> Result<String> {
 
 // Queue transformations
 fn transform_rss_queue_insert(line: &str) -> Result<String> {
-    // SQLite rss_queue has only 2 columns: id, url
-    // For simplicity, just map to the basic columns that exist
-    let replacement = "INSERT INTO rss_queue (id, url) VALUES(";
+    // SQLite rss_queue has 6 columns: id, url, normalized_url, title, seen_at, pub_date
+    let replacement =
+        "INSERT INTO rss_queue (id, url, normalized_url, title, seen_at, pub_date) VALUES(";
     let result = line.replace("INSERT INTO rss_queue VALUES(", replacement);
     Ok(result)
 }
@@ -487,67 +549,6 @@ fn transform_booleans(mut text: String) -> String {
     text
 }
 
-// Helper function to add normalized_url column to articles INSERT
-fn add_normalized_url_column(line: String) -> String {
-    // The line format is: INSERT INTO articles (...) VALUES(id,'url','seen_at',is_relevant,...)
-    // We need to duplicate the url value as normalized_url
-    // Find the VALUES( part and parse the values to duplicate the second one (url)
-
-    if let Some(values_start) = line.find("VALUES(") {
-        let before_values = &line[..values_start + 7]; // Include "VALUES("
-        let after_values_start = &line[values_start + 7..];
-
-        // Find the end of VALUES(...)
-        if let Some(values_end) = after_values_start.rfind(");") {
-            let values_content = &after_values_start[..values_end];
-
-            // Split by commas, but be careful about quoted strings
-            let mut values = Vec::new();
-            let mut current_value = String::new();
-            let mut in_quotes = false;
-            let mut quote_char = ' ';
-
-            for ch in values_content.chars() {
-                match ch {
-                    '\'' | '"' if !in_quotes => {
-                        in_quotes = true;
-                        quote_char = ch;
-                        current_value.push(ch);
-                    }
-                    ch if in_quotes && ch == quote_char => {
-                        in_quotes = false;
-                        current_value.push(ch);
-                    }
-                    ',' if !in_quotes => {
-                        values.push(current_value.trim().to_string());
-                        current_value.clear();
-                    }
-                    _ => {
-                        current_value.push(ch);
-                    }
-                }
-            }
-
-            // Don't forget the last value
-            if !current_value.is_empty() {
-                values.push(current_value.trim().to_string());
-            }
-
-            // If we have at least 2 values (id, url), duplicate the url as normalized_url
-            if values.len() >= 2 {
-                let url_value = &values[1]; // Second value is the url
-                values.insert(2, url_value.clone()); // Insert as third value (normalized_url)
-            }
-
-            // Reconstruct the line
-            return format!("{}{});", before_values, values.join(","));
-        }
-    }
-
-    // If we couldn't parse it, return the original line
-    line
-}
-
 fn extract_table_name(line: &str) -> Option<String> {
     if let Some(start) = line.find("INSERT INTO ") {
         let after_insert = &line[start + 12..];
@@ -556,4 +557,64 @@ fn extract_table_name(line: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn parse_csv_values_simple(csv_str: &str) -> Result<Vec<String>> {
+    let mut values = Vec::new();
+    let mut current_value = String::new();
+    let mut in_quotes = false;
+    let mut escape_next = false;
+
+    for ch in csv_str.chars() {
+        if escape_next {
+            current_value.push(ch);
+            escape_next = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if in_quotes => {
+                escape_next = true;
+                current_value.push(ch);
+            }
+            '\'' => {
+                in_quotes = !in_quotes;
+                current_value.push(ch);
+            }
+            ',' if !in_quotes => {
+                values.push(current_value.trim().to_string());
+                current_value.clear();
+            }
+            _ => {
+                current_value.push(ch);
+            }
+        }
+    }
+
+    // Add the last value
+    if !current_value.is_empty() {
+        values.push(current_value.trim().to_string());
+    }
+
+    Ok(values)
+}
+
+fn extract_domain_from_url_value(url_value: &str) -> String {
+    // Remove quotes if present
+    let url = url_value.trim_matches('\'').trim_matches('"');
+
+    // Extract domain from URL manually
+    if let Some(start) = url.find("://") {
+        let after_protocol = &url[start + 3..];
+        if let Some(end) = after_protocol.find('/') {
+            return format!("'{}'", &after_protocol[..end]);
+        } else if let Some(end) = after_protocol.find('?') {
+            return format!("'{}'", &after_protocol[..end]);
+        } else {
+            return format!("'{}'", after_protocol);
+        }
+    }
+
+    // Last resort: return 'unknown'
+    "'unknown'".to_string()
 }
