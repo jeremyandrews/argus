@@ -1062,7 +1062,13 @@ fn transform_boolean_values(sql: &str, table_name: &str) -> Result<String> {
         }
     }
 
-    // Fallback: use simple string replacement for basic cases
+    // CRITICAL FIX: Don't use fallback string replacement for articles table
+    // This was causing ID values to be transformed to boolean
+    if table_name == "articles" {
+        return Ok(sql.to_string());
+    }
+
+    // Fallback: use simple string replacement for basic cases (non-articles tables only)
     let mut result = sql.to_string();
 
     // Handle common boolean patterns
