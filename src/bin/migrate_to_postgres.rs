@@ -1667,7 +1667,7 @@ async fn migrate_incremental_data(
     // Build incremental SQLite query
     let incremental_query = format!(
         r#"
-        SELECT 'INSERT INTO articles (id, url, seen_at, is_relevant, category, analysis, normalized_url, hash, tiny_summary, title_domain_hash, r2_url, pub_date, event_date, cluster_id, title, json_data, quality, source) VALUES(' || 
+        SELECT 'INSERT INTO articles (id, url, normalized_url, seen_at, pub_date, event_date, title, source, is_relevant, category, tiny_summary, analysis, json_data, quality, hash, title_domain_hash, r2_url, cluster_id) VALUES(' ||
                id || ',''' || url || ''',''' || seen_at || ''',' || is_relevant || ',''' || 
                COALESCE(category, '') || ''',''' || COALESCE(analysis, '') || ''',''' || 
                normalized_url || ''',''' || COALESCE(hash, '') || ''',''' || 
