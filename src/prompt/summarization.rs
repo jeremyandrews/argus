@@ -292,58 +292,51 @@ Now summarize the article text above using these rules:
 /// Generate a prompt for creating a tiny multi-sentence summary based on an existing summary
 pub fn tiny_summary_prompt(summary_response: &str) -> String {
     format!(
-        r#"Below is the summary of an article between ~~~ markers:
+        r#"Here's a detailed summary of an article:
 ~~~
 {summary}
 ~~~
-CREATE A CONCISE SUMMARY:
-* TARGET LENGTH: 200 characters total
-* ABSOLUTE MAXIMUM: 400 characters total
-* Use 2-3 short, complete sentences instead of one long sentence
-* Each sentence should focus on a distinct aspect of the news
-* If you reach 400 characters, start over and prioritize better
 
-🚨 MANDATORY SOURCE LABEL REMOVAL - VALIDATION ENFORCED 🚨
-* The summary will include an "EVENT:" bullet point with ONE source label ([OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS]) and a "CONTEXT:" bullet point without source labeling
-* You MUST REMOVE BOTH the "EVENT:" and "CONTEXT:" prefixes from your summary
-* **CRITICAL:** You MUST REMOVE the single [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] source label from your summary
-* **VALIDATION ENFORCED:** Your output will be automatically checked to ensure it contains ZERO source labels - any remaining labels will cause system errors
-* However, you MUST PRESERVE the level of certainty indicated by these source types in your language
-* For [OFFICIAL] sources: Use confident, definitive language without qualifiers
-* For [NEWS] sources: Include modest attribution when appropriate
-* For [RUMOR/LEAK] sources: MUST include clear uncertainty qualifiers
-* For [ANALYSIS] sources: Indicate these are opinions or predictions
-* Use the information from the EVENT bullet point as the foundation of your first sentence
-* Add the most important details from other bullet points in subsequent sentences
-* You can incorporate relevant context if space allows
+Your job is to create a short, easy-to-read summary that anyone can understand.
 
-CONTENT FOCUS:
-* **Focus on WHAT the article is about** - the actual news, events, and facts
-* **IGNORE any sentences about article characteristics** - do not include information about what language the article was written in, education level, tone, or purpose
-* **IGNORE meta-commentary** - do not include analysis of the article's writing style, intended audience, or journalistic approach
-* **Focus on substance** - summarize the actual content, events, and newsworthy information
+## What You Need to Do
 
-FORMAT REQUIREMENTS:
-* All sentences MUST be in a SINGLE PARAGRAPH with NO line breaks between sentences
-* Must fit in a tweet
-* Must prioritize most important information
-* Must drop less critical details
-* Must use active voice
-* Must be 2-3 complete, coherent sentences
-* Must preserve source attribution and factual accuracy
-* Must distinguish between confirmed facts vs rumors/leaks/reports
-* Must NEVER convert "reportedly" or "according to leaks" into definitive statements
-* Must maintain the same level of certainty as the original summary
+**Length Goal:** Keep it around 200 characters (about the length of a tweet). If you need more space, you can use up to 400 characters, but shorter is better.
 
-TEMPORAL ACCURACY (CRITICAL):
-* TODAY means {date} - the system's current date at the time of processing
-* ALWAYS use appropriate tense to distinguish between past, present, and future events
-* For PAST events (before today): Use past tense ("announced," "released," "discovered")
-* For PRESENT events (happening now): Use present tense ("is announcing," "is rolling out")
-* For FUTURE events (after today): Use future-indicating phrases ("will announce," "plans to release")
-* NEVER describe future events as if they've already happened
-* Check dates carefully and maintain temporal accuracy
-* When a date is mentioned in the article, compare it to TODAY to determine proper tense
+**Writing Style:** Write 2-3 short, clear sentences. Each sentence should tell us something different about the story.
+
+## Important: Handle the Labels Correctly
+
+The summary above has special labels like [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS]. You need to remove these labels from your summary, but keep the meaning they represent:
+
+1. **Remove the labels:** Don't include [OFFICIAL], [NEWS], [RUMOR/LEAK], or [ANALYSIS] in your final summary
+2. **Remove the prefixes:** Don't include "EVENT:" or "CONTEXT:" in your summary
+3. **Keep the meaning:** Use the right words to show how certain the information is
+
+**How to show certainty without labels:**
+- If it was [OFFICIAL]: Use confident words like "announced" or "confirmed"
+- If it was [NEWS]: You can say "according to reports" when needed
+- If it was [RUMOR/LEAK]: Always use uncertain words like "reportedly" or "according to sources"
+- If it was [ANALYSIS]: Show these are opinions with words like "experts believe" or "analysts predict"
+
+## What to Focus On
+
+**Include:** The actual news, events, and important facts from the story
+**Skip:** Don't mention what language the article was written in, how it was written, or who it was written for
+
+## Time Words Matter
+
+Today's date is {date}. Use the right time words:
+- For things that already happened: "announced," "released," "discovered"
+- For things happening now: "is announcing," "is releasing"
+- For future things: "will announce," "plans to release"
+
+## Format Rules
+
+- Write everything as one paragraph (no line breaks between sentences)
+- Use active voice when possible ("Apple announced" not "it was announced by Apple")
+- Keep the same level of certainty as the original (don't turn rumors into facts)
+- Make sure it fits in a tweet
 
 {write_in_clear_english}
 {dont_tell_me}"#,
