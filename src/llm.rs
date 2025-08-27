@@ -39,6 +39,14 @@ pub fn get_effective_temperature(
     configured_temperature
 }
 
+/// **SINGLE SOURCE OF TRUTH FOR MAX TOKENS PARAMETER COMPATIBILITY**
+///
+/// This function determines the correct max tokens parameter name based on the model.
+/// GPT-5 models require 'max_completion_tokens', all other OpenAI models use 'max_tokens'.
+fn is_gpt5_model(model: &str) -> bool {
+    model.starts_with("gpt-5")
+}
+
 const CONTEXT_WINDOW: u32 = 8192;
 
 // Response schema for threat location analysis
@@ -461,9 +469,18 @@ async fn generate_llm_response_internal(
                     effective_temperature, params.temperature
                 );
 
-                // Apply context window if available
+                // Apply context window if available with GPT-5 compatibility
                 if let Some(context_window) = params.context_window {
-                    request_builder.max_tokens(context_window);
+                    if is_gpt5_model(&params.model) {
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "[{} {} {} {}]: Using max_completion_tokens for GPT-5 model",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
+                        );
+                        request_builder.max_completion_tokens(context_window);
+                    } else {
+                        request_builder.max_tokens(context_window);
+                    }
                 }
 
                 let request = request_builder
@@ -829,8 +846,18 @@ async fn generate_llm_response_enhanced_internal(
                     effective_temperature, params.temperature
                 );
 
+                // Apply context window if available with GPT-5 compatibility
                 if let Some(context_window) = params.context_window {
-                    request_builder.max_tokens(context_window);
+                    if is_gpt5_model(&params.model) {
+                        debug!(
+                            target: TARGET_LLM_REQUEST,
+                            "[{} {} {} {}]: Using max_completion_tokens for GPT-5 model (enhanced)",
+                            worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info
+                        );
+                        request_builder.max_completion_tokens(context_window);
+                    } else {
+                        request_builder.max_tokens(context_window);
+                    }
                 }
 
                 let request = request_builder
