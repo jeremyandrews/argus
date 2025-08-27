@@ -76,22 +76,9 @@ fn create_model_config(
     }
 }
 
-/// Get temperature based on provider, model, thinking mode, and environment overrides
-fn get_temperature(
-    llm_client: &LLMClient,
-    model: &str,
-    no_think: bool,
-    env_temperature: f32,
-) -> f32 {
-    // Check if this is a GPT-5 model that requires temperature = 1.0
-    if let LLMClient::OpenAI(_) = llm_client {
-        if model.starts_with("gpt-5") {
-            // GPT-5 models only support temperature = 1.0
-            return 1.0;
-        }
-    }
-
-    // For all other models (Ollama and non-GPT-5 OpenAI), use the existing logic
+/// Calculate temperature based on thinking mode and environment overrides
+/// Note: GPT-5 temperature restrictions are now handled centrally in llm.rs
+fn get_temperature(no_think: bool, env_temperature: f32) -> f32 {
     if no_think {
         // Non-thinking mode: use 0.7 or environment override
         if env_temperature > 0.0 {
@@ -411,8 +398,7 @@ async fn main() -> Result<()> {
             let worker_model_config = Some(create_model_config(
                 no_think, env_top_p, env_top_k, env_min_p,
             ));
-            let worker_temperature =
-                get_temperature(&llm_client, &decision_model, no_think, env_temperature);
+            let worker_temperature = get_temperature(no_think, env_temperature);
 
             info!(
                 target: TARGET_LLM_REQUEST,
@@ -472,12 +458,7 @@ async fn main() -> Result<()> {
                 env_top_k,
                 env_min_p,
             ));
-            let worker_temperature = get_temperature(
-                &worker_config.llm_client,
-                &worker_model,
-                worker_config.no_think,
-                env_temperature,
-            );
+            let worker_temperature = get_temperature(worker_config.no_think, env_temperature);
 
             info!(
                 target: TARGET_LLM_REQUEST,

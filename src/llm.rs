@@ -18,6 +18,27 @@ use crate::rate_limiter::OpenAIRateLimiter;
 use crate::TARGET_LLM_REQUEST;
 use crate::{JsonLLMParams, JsonSchemaType, LLMClient, LLMParamsBase, TextLLMParams, WorkerDetail};
 
+/// **SINGLE SOURCE OF TRUTH FOR TEMPERATURE SETTINGS**
+///
+/// This function centralizes all temperature logic and must be used by all LLM API calls.
+/// GPT-5 models only support temperature=1.0, all other models use their configured temperature.
+pub fn get_effective_temperature(
+    llm_client: &LLMClient,
+    model: &str,
+    configured_temperature: f32,
+) -> f32 {
+    // Check if this is a GPT-5 model that requires temperature = 1.0
+    if let LLMClient::OpenAI(_) = llm_client {
+        if model.starts_with("gpt-5") {
+            // GPT-5 models only support temperature = 1.0
+            return 1.0;
+        }
+    }
+
+    // For all other models (Ollama and non-GPT-5 OpenAI), use configured temperature
+    configured_temperature
+}
+
 const CONTEXT_WINDOW: u32 = 8192;
 
 // Response schema for threat location analysis
@@ -415,7 +436,13 @@ async fn generate_llm_response_internal(
                     prompt.to_string()
                 };
 
-                // Build Chat Completion request
+                // Build Chat Completion request using centralized temperature logic
+                let effective_temperature = get_effective_temperature(
+                    &params.llm_client,
+                    &params.model,
+                    params.temperature,
+                );
+
                 let mut request_builder = CreateChatCompletionRequestArgs::default();
                 request_builder
                     .model(params.model.clone())
@@ -425,7 +452,14 @@ async fn generate_llm_response_internal(
                             .build()
                             .expect("Failed to build user message"),
                     )])
-                    .temperature(params.temperature);
+                    .temperature(effective_temperature);
+
+                debug!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {} {}]: Using effective temperature {} (configured: {}) for OpenAI request",
+                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info,
+                    effective_temperature, params.temperature
+                );
 
                 // Apply context window if available
                 if let Some(context_window) = params.context_window {
@@ -770,7 +804,13 @@ async fn generate_llm_response_enhanced_internal(
                     prompt.to_string()
                 };
 
-                // Build Chat Completion request (same as original)
+                // Build Chat Completion request using centralized temperature logic
+                let effective_temperature = get_effective_temperature(
+                    &params.llm_client,
+                    &params.model,
+                    params.temperature,
+                );
+
                 let mut request_builder = CreateChatCompletionRequestArgs::default();
                 request_builder
                     .model(params.model.clone())
@@ -780,7 +820,14 @@ async fn generate_llm_response_enhanced_internal(
                             .build()
                             .expect("Failed to build user message"),
                     )])
-                    .temperature(params.temperature);
+                    .temperature(effective_temperature);
+
+                debug!(
+                    target: TARGET_LLM_REQUEST,
+                    "[{} {} {} {}]: Using effective temperature {} (configured: {}) for enhanced OpenAI request",
+                    worker_detail.name, worker_detail.id, worker_detail.model, worker_detail.connection_info,
+                    effective_temperature, params.temperature
+                );
 
                 if let Some(context_window) = params.context_window {
                     request_builder.max_tokens(context_window);
