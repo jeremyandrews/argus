@@ -1,8 +1,9 @@
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::db::core::Database;
 use crate::rate_limiter::OpenAIRateLimiter;
@@ -23,18 +24,13 @@ pub async fn decision_loop(
     slack_channel: &str,
     no_think: bool,
     model_config: Option<crate::ModelConfig>,
+    shared_rate_limiter: Option<Arc<OpenAIRateLimiter>>,
 ) -> Result<()> {
     let db = Database::instance().await;
     let mut rng = StdRng::seed_from_u64(rand::random());
 
-    // Create rate limiter for OpenAI requests
-    let rate_limiter = match OpenAIRateLimiter::from_env() {
-        Ok(limiter) => Some(limiter),
-        Err(e) => {
-            warn!(target: TARGET_LLM_REQUEST, "[{} {} {}]: Failed to create rate limiter: {}. OpenAI requests will not be rate limited.", "decision worker", worker_id, model, e);
-            None
-        }
-    };
+    // Use shared rate limiter instead of creating individual ones
+    let rate_limiter = shared_rate_limiter.as_deref();
 
     // Extract connection info from the LLM client
     let connection_info = build_connection_info(llm_client, worker_id, "DECISION_OLLAMA_CONFIGS");
@@ -129,7 +125,7 @@ pub async fn decision_loop(
                     places: places_clone,
                     model_config: model_config.clone(),
                     no_think,
-                    openai_rate_limiter: rate_limiter.as_ref(),
+                    openai_rate_limiter: rate_limiter,
                 };
 
                 process_item(item, &mut params, &worker_detail).await;

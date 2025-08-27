@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 const DECISION_OLLAMA_CONFIGS_ENV: &str = "DECISION_OLLAMA_CONFIGS";
 const ANALYSIS_OLLAMA_CONFIGS_ENV: &str = "ANALYSIS_OLLAMA_CONFIGS";
@@ -25,6 +25,7 @@ use argus::app::api;
 use argus::decision_worker;
 use argus::environment;
 use argus::logging;
+use argus::rate_limiter::OpenAIRateLimiter;
 use argus::rss;
 use argus::{
     FallbackConfig, LLMClient, ModelConfig, START_TIME, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST,
@@ -345,6 +346,18 @@ async fn main() -> Result<()> {
         env_temperature, env_top_p, env_top_k, env_min_p
     );
 
+    // Create shared OpenAI rate limiter for all workers
+    let shared_openai_rate_limiter = match OpenAIRateLimiter::from_env() {
+        Ok(limiter) => {
+            info!(target: TARGET_LLM_REQUEST, "Created shared OpenAI rate limiter for all workers");
+            Some(Arc::new(limiter))
+        }
+        Err(e) => {
+            warn!(target: TARGET_LLM_REQUEST, "Failed to create shared rate limiter: {}. OpenAI requests will not be rate limited.", e);
+            None
+        }
+    };
+
     // Define panic notification mechanism
     let panic_notify = Arc::new(Notify::new());
 
@@ -390,6 +403,7 @@ async fn main() -> Result<()> {
         let decision_worker_slack_channel = slack_channel.clone();
         let worker_notify = Arc::clone(&panic_notify);
         let thread_name = format!("Decision Worker {}", decision_id);
+        let worker_rate_limiter = shared_openai_rate_limiter.clone();
 
         let decision_worker_handle = tokio::spawn(async move {
             info!(target: TARGET_LLM_REQUEST, "{}: Starting Decision Worker with model '{}' (decision_loop)", thread_name, decision_model);
@@ -421,6 +435,7 @@ async fn main() -> Result<()> {
                 &decision_worker_slack_channel,
                 no_think,
                 worker_model_config,
+                worker_rate_limiter,
             )
             .await
             {

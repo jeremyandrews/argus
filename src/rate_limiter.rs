@@ -168,8 +168,11 @@ impl OpenAIRateLimiter {
             return Ok(Self::disabled());
         }
 
+        // Updated defaults for GPT-5 official limits:
+        // GPT-5: 30,000 TPM, 500 RPM, 900,000 TPD
+        // Use conservative defaults slightly below official limits for safety margin
         let rpm = std::env::var("OPENAI_RATE_LIMIT_RPM")
-            .unwrap_or_else(|_| "500".to_string())
+            .unwrap_or_else(|_| "450".to_string()) // 90% of 500 RPM limit for safety
             .parse::<u32>()
             .map_err(|e| {
                 RateLimitError::ConfigurationError(format!(
@@ -179,7 +182,7 @@ impl OpenAIRateLimiter {
             })?;
 
         let rpd = std::env::var("OPENAI_RATE_LIMIT_RPD")
-            .unwrap_or_else(|_| "10000".to_string())
+            .unwrap_or_else(|_| "800000".to_string()) // Conservative based on 900,000 TPD
             .parse::<u32>()
             .map_err(|e| {
                 RateLimitError::ConfigurationError(format!(
@@ -189,7 +192,7 @@ impl OpenAIRateLimiter {
             })?;
 
         let burst = std::env::var("OPENAI_RATE_LIMIT_BURST")
-            .unwrap_or_else(|_| "10".to_string())
+            .unwrap_or_else(|_| "5".to_string()) // Allow small burst within RPM limit
             .parse::<u32>()
             .map_err(|e| {
                 RateLimitError::ConfigurationError(format!(
@@ -200,7 +203,7 @@ impl OpenAIRateLimiter {
 
         info!(
             target: TARGET_LLM_REQUEST,
-            "OpenAI rate limiter configured: {} RPM, {} RPD, burst={}", rpm, rpd, burst
+            "OpenAI rate limiter configured with GPT-5 official limits: {} RPM (500 max), {} RPD (~900K tokens max), burst={}", rpm, rpd, burst
         );
 
         Ok(Self::new(rpm, rpd, burst))
