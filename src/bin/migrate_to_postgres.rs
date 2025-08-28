@@ -25,10 +25,8 @@ fn timestamp() -> String {
     format!("[{}]", now.format("%Y-%m-%d %H:%M:%S"))
 }
 
-fn extract_table_name_from_insert(insert_stmt: &str) -> Option<String> {
+fn extract_table_name_from_insert(insert_stmt: &str, re: &regex::Regex) -> Option<String> {
     // Parse INSERT INTO table_name ... to extract table_name
-    use regex::Regex;
-    let re = Regex::new(r"^INSERT\s+INTO\s+`?([a-zA-Z0-9_]+)`?").unwrap();
     if let Some(captures) = re.captures(insert_stmt) {
         return Some(captures[1].to_string());
     }
@@ -361,6 +359,10 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         total_lines
     );
 
+    // Compile regex once for performance
+    use regex::Regex;
+    let insert_regex = Regex::new(r"^INSERT\s+INTO\s+`?([a-zA-Z0-9_]+)`?").unwrap();
+
     // First pass: collect and group INSERT statements by table with progress
     for line in dump_lines.iter() {
         let trimmed = line.trim();
@@ -395,7 +397,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         // Process INSERT statements
         if trimmed.starts_with("INSERT INTO") {
             // Extract table name from INSERT statement
-            if let Some(table_name) = extract_table_name_from_insert(trimmed) {
+            if let Some(table_name) = extract_table_name_from_insert(trimmed, &insert_regex) {
                 table_inserts
                     .entry(table_name)
                     .or_insert_with(Vec::new)
