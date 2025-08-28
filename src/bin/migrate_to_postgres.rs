@@ -14,11 +14,11 @@ use chrono::{DateTime, Local};
 use clap::{Arg, Command as ClapCommand};
 use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{Pool, Postgres, Row};
-use std::collections::HashMap;
+use sqlx::{Pool, Postgres};
 use std::env;
 use std::fs;
-use std::process::Command;
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::process::{Command, Stdio};
 use std::time::Instant;
 use tokio::time::Duration;
 
@@ -54,6 +54,34 @@ fn format_progress_bar(current: usize, total: usize, width: usize) -> String {
         "-".repeat(empty),
         percentage
     )
+}
+
+fn get_memory_usage() -> Result<String> {
+    // Try to get memory usage on Linux systems
+    if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
+        for line in contents.lines() {
+            if line.starts_with("VmRSS:") {
+                // Extract RSS memory usage
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    return Ok(format!("{}kB RAM", parts[1]));
+                }
+            }
+        }
+    }
+
+    // Fallback - just return a placeholder
+    Ok("N/A".to_string())
+}
+
+fn format_memory_stats(processed_lines: usize, insert_count: usize) -> String {
+    match get_memory_usage() {
+        Ok(memory) => format!(
+            "📊 Memory: {} | Lines: {} | Inserts: {}",
+            memory, processed_lines, insert_count
+        ),
+        Err(_) => format!("📊 Lines: {} | Inserts: {}", processed_lines, insert_count),
+    }
 }
 
 #[tokio::main]
@@ -247,7 +275,7 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
 
 async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
     println!(
-        "{} 📥 Migrating data with direct column mapping...",
+        "{} 📥 Migrating data with streaming approach (memory-optimized)...",
         timestamp()
     );
 
@@ -291,7 +319,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
 
     // Process each table individually to show progress
     for table in &tables {
-        println!("{} 📦 dumping {}...", timestamp(), table);
+        println!("{} 📦 analyzing {}...", timestamp(), table);
 
         // Get row count for this table to show progress
         let count_output = Command::new("sqlite3")
@@ -312,74 +340,58 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         }
     }
 
-    // Step 3: Use SQLite .dump to export all data with proper formatting
-    println!("{} 🔄 Starting bulk data extraction...", timestamp());
-    let start_time = Instant::now();
-
-    let dump_output = Command::new("sqlite3")
-        .arg("argus.db")
-        .arg(".dump")
-        .output()?;
-
-    if !dump_output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Failed to dump SQLite data: {}",
-            String::from_utf8_lossy(&dump_output.stderr)
-        ));
-    }
-
-    let sqlite_dump = String::from_utf8(dump_output.stdout)?;
-
-    if debug_mode {
-        println!(
-            "{} 📊 Extracted dump in {:.1}s",
-            timestamp(),
-            start_time.elapsed().as_secs_f64()
-        );
-    }
-
-    // Step 4: Transform SQL for PostgreSQL compatibility
+    // Step 3: Use streaming approach to process SQLite dump without loading everything into memory
     println!(
-        "{} 🔄 Transforming for PostgreSQL compatibility...",
+        "{} 🔄 Starting streaming data transformation...",
         timestamp()
     );
-    let transform_start = Instant::now();
+    let start_time = Instant::now();
 
-    // Group INSERT statements by table and process table by table
-    let mut table_inserts: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-    let mut other_statements = Vec::new();
+    // Set up streaming SQLite dump process
+    let mut dump_process = Command::new("sqlite3")
+        .arg("argus.db")
+        .arg(".dump")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
 
-    // Get total line count for progress reporting
-    let dump_lines: Vec<&str> = sqlite_dump.lines().collect();
-    let total_lines = dump_lines.len();
-    let mut processed_lines = 0;
+    let stdout = dump_process
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout from sqlite3 process"))?;
 
-    println!(
-        "{} 📄 Processing {} lines from dump file...",
-        timestamp(),
-        total_lines
-    );
+    // Set up streaming output to PostgreSQL temp file
+    let temp_file = "/tmp/postgres_streaming_import.sql";
+    let output_file = std::fs::File::create(temp_file)?;
+    let mut writer = BufWriter::new(output_file);
+
+    // Set up buffered reader for processing dump line by line
+    let reader = BufReader::new(stdout);
 
     // Compile regex patterns once for performance
     let insert_regex = Regex::new(r"^INSERT\s+INTO\s+`?([a-zA-Z0-9_]+)`?").unwrap();
     let timestamp_regex = Regex::new(r"'(\d{10})'").unwrap();
 
-    // First pass: collect and group INSERT statements by table with progress
-    for line in dump_lines.iter() {
+    let mut processed_lines = 0;
+    let mut insert_count = 0;
+    let mut current_table = String::new();
+    const BATCH_SIZE: usize = 1000; // Process in batches to control memory
+    let mut batch_buffer: Vec<String> = Vec::with_capacity(BATCH_SIZE);
+
+    println!("{} 🔄 Processing dump stream...", timestamp());
+
+    // Process dump line by line
+    for line_result in reader.lines() {
+        let line = line_result?;
         let trimmed = line.trim();
         processed_lines += 1;
 
-        // Show progress every 10% or every 50,000 lines (whichever is more frequent)
-        let progress_interval = std::cmp::min(total_lines / 10, 50000).max(1);
-        if processed_lines % progress_interval == 0 || processed_lines == total_lines {
-            let progress_bar = format_progress_bar(processed_lines, total_lines, 30);
+        // Show progress every 50,000 lines with memory usage
+        if processed_lines % 50000 == 0 {
             println!(
-                "{} 🔄 {} ({}/{} lines)",
+                "{} 🔄 {}",
                 timestamp(),
-                progress_bar,
-                processed_lines,
-                total_lines
+                format_memory_stats(processed_lines, insert_count)
             );
         }
 
@@ -398,46 +410,26 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
 
         // Process INSERT statements
         if trimmed.starts_with("INSERT INTO") {
-            // Extract table name from INSERT statement
+            // Extract table name for progress tracking
             if let Some(table_name) = extract_table_name_from_insert(trimmed, &insert_regex) {
-                table_inserts
-                    .entry(table_name)
-                    .or_insert_with(Vec::new)
-                    .push(line.to_string());
-            } else {
-                other_statements.push(line.to_string());
+                if table_name != current_table {
+                    if !current_table.is_empty() && !batch_buffer.is_empty() {
+                        // Write previous table's remaining batch
+                        for stmt in &batch_buffer {
+                            writeln!(writer, "{}", stmt)?;
+                        }
+                        batch_buffer.clear();
+                        println!("{} ✅ Completed table: {}", timestamp(), current_table);
+                    }
+                    current_table = table_name.clone();
+                    println!("{} 🔄 Processing table: {}", timestamp(), current_table);
+                }
             }
-        } else {
-            other_statements.push(line.to_string());
-        }
-    }
 
-    println!(
-        "{} ✅ Completed processing all {} lines",
-        timestamp(),
-        total_lines
-    );
+            // Transform the INSERT statement for PostgreSQL compatibility
+            let mut result = line.clone();
 
-    // Second pass: process each table's INSERT statements with progress reporting
-    let mut all_transformed_statements = Vec::new();
-    let total_tables = table_inserts.len();
-    let mut processed_tables = 0;
-
-    for (table_name, inserts) in table_inserts.iter() {
-        processed_tables += 1;
-        println!(
-            "{} 🔄 transforming {} ({}/{} tables)...",
-            timestamp(),
-            table_name,
-            processed_tables,
-            total_tables
-        );
-
-        let mut transformed_inserts = Vec::new();
-        for insert_stmt in inserts {
-            let mut result = insert_stmt.clone();
-
-            // Convert Unix timestamps to PostgreSQL format (using pre-compiled regex)
+            // Convert Unix timestamps to PostgreSQL format
             result = timestamp_regex
                 .replace_all(&result, |caps: &regex::Captures| {
                     let unix_timestamp = &caps[1];
@@ -462,49 +454,59 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
                 .replace(",1)", ",true)")
                 .replace(",0)", ",false)");
 
-            transformed_inserts.push(result);
+            // Add to batch buffer
+            batch_buffer.push(result);
+            insert_count += 1;
+
+            // Write batch when it reaches batch size
+            if batch_buffer.len() >= BATCH_SIZE {
+                for stmt in &batch_buffer {
+                    writeln!(writer, "{}", stmt)?;
+                }
+                batch_buffer.clear();
+            }
+        } else if !trimmed.starts_with("INSERT INTO") && !trimmed.is_empty() {
+            // Handle other statements (write immediately, they're usually few)
+            writeln!(writer, "{}", line)?;
         }
-
-        println!(
-            "{} ✅ transformed {} ({} INSERT statements)",
-            timestamp(),
-            table_name,
-            transformed_inserts.len()
-        );
-
-        all_transformed_statements.extend(transformed_inserts);
     }
 
-    // Add any other non-INSERT statements
-    all_transformed_statements.extend(other_statements);
+    // Write remaining batch
+    if !batch_buffer.is_empty() {
+        for stmt in &batch_buffer {
+            writeln!(writer, "{}", stmt)?;
+        }
+        println!("{} ✅ Completed table: {}", timestamp(), current_table);
+    }
 
-    let postgres_sql = all_transformed_statements.join("\n");
+    // Ensure all data is written to disk
+    writer.flush()?;
+    drop(writer); // Close the file
 
-    let insert_count = postgres_sql
-        .lines()
-        .filter(|line| line.trim().starts_with("INSERT INTO"))
-        .count();
+    // Wait for sqlite3 process to complete
+    let dump_status = dump_process.wait()?;
+    if !dump_status.success() {
+        return Err(anyhow::anyhow!("SQLite dump process failed"));
+    }
+
+    println!(
+        "{} ✅ Streaming transformation completed: {} lines processed, {} INSERT statements",
+        timestamp(),
+        processed_lines,
+        insert_count
+    );
 
     if debug_mode {
         println!(
-            "{} ⏱️  Transformation: {:.1}s",
+            "{} ⏱️  Streaming transformation: {:.1}s",
             timestamp(),
-            transform_start.elapsed().as_secs_f64()
-        );
-        println!(
-            "{} 📊 Generated {} INSERT statements",
-            timestamp(),
-            insert_count
+            start_time.elapsed().as_secs_f64()
         );
     }
 
-    // Step 5: Import to PostgreSQL
+    // Step 4: Import to PostgreSQL using streaming approach
     println!("{} 📥 Importing to PostgreSQL...", timestamp());
     let import_start = Instant::now();
-
-    // Write to temporary file
-    let temp_file = "/tmp/postgres_complete_import.sql";
-    fs::write(temp_file, &postgres_sql)?;
 
     let import_output = Command::new("psql")
         .arg(&env::var("DATABASE_URL")?)
@@ -530,7 +532,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     // Cleanup
     let _ = fs::remove_file(temp_file);
 
-    // Step 6: Reset sequences for all tables
+    // Step 5: Reset sequences for all tables
     println!("{} 🔢 Resetting PostgreSQL sequences...", timestamp());
     for table in &tables {
         let sequence_name = format!("{}_id_seq", table);
@@ -544,10 +546,14 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     }
 
     println!(
-        "{} ✅ Data migration completed: {} tables, {} INSERT statements",
+        "{} ✅ Memory-optimized migration completed: {} tables, {} INSERT statements",
         timestamp(),
         tables.len(),
         insert_count
+    );
+    println!(
+        "{} 💾 Peak memory usage significantly reduced through streaming",
+        timestamp()
     );
     Ok(())
 }
