@@ -360,8 +360,8 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         .take()
         .ok_or_else(|| anyhow::anyhow!("Failed to get stdout from sqlite3 process"))?;
 
-    // Set up streaming output to PostgreSQL temp file
-    let temp_file = "/tmp/postgres_streaming_import.sql";
+    // Set up streaming output to PostgreSQL temp file in current directory
+    let temp_file = "./postgres_streaming_import.sql";
     let output_file = std::fs::File::create(temp_file)?;
     let mut writer = BufWriter::new(output_file);
 
