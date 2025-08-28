@@ -1,7 +1,7 @@
-//! Simplified PostgreSQL Migration Tool
+//! PostgreSQL Migration Tool
 //!
 //! This tool provides a direct migration path from SQLite to PostgreSQL by:
-//! 1. Creating a simplified PostgreSQL schema that closely matches SQLite
+//! 1. Creating a PostgreSQL schema that closely matches SQLite
 //! 2. Direct 7-column mapping with minimal transformation
 //! 3. No complex column mapping or NULL generation
 //!
@@ -10,6 +10,7 @@
 //! be added later via ALTER TABLE statements once the migration is complete.
 
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use clap::{Arg, Command as ClapCommand};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
@@ -19,14 +20,50 @@ use std::process::Command;
 use std::time::Instant;
 use tokio::time::Duration;
 
+fn timestamp() -> String {
+    let now: DateTime<Local> = Local::now();
+    format!("[{}]", now.format("%Y-%m-%d %H:%M:%S"))
+}
+
+fn extract_table_name_from_insert(insert_stmt: &str) -> Option<String> {
+    // Parse INSERT INTO table_name ... to extract table_name
+    use regex::Regex;
+    let re = Regex::new(r"^INSERT\s+INTO\s+`?([a-zA-Z0-9_]+)`?").unwrap();
+    if let Some(captures) = re.captures(insert_stmt) {
+        return Some(captures[1].to_string());
+    }
+    None
+}
+
+fn format_progress_bar(current: usize, total: usize, width: usize) -> String {
+    let percentage = if total > 0 {
+        (current * 100) / total
+    } else {
+        0
+    };
+    let filled = if total > 0 {
+        (current * width) / total
+    } else {
+        0
+    };
+    let empty = width.saturating_sub(filled);
+
+    format!(
+        "[{}{}] {}%",
+        "=".repeat(filled),
+        "-".repeat(empty),
+        percentage
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = ClapCommand::new("migrate_to_postgres_simple")
-        .about("Simplified PostgreSQL migration - direct 7-column mapping")
+        .about("Simplified PostgreSQL migration - direct 7-column mapping ")
         .arg(
             Arg::new("debug")
                 .long("debug")
-                .help("Enable detailed debugging output")
+                .help("Enable detailed debugging output ")
                 .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
@@ -34,7 +71,7 @@ async fn main() -> Result<()> {
     let debug_mode = matches.get_flag("debug");
 
     println!("🎯 Starting SIMPLIFIED PostgreSQL migration from SQLite...");
-    println!("🔧 Direct 7-column mapping (SQLite → PostgreSQL)");
+    println!("🔧 Direct 7-column mapping (SQLite -> PostgreSQL)");
     println!();
 
     // Step 1: Prerequisites
@@ -53,10 +90,10 @@ async fn main() -> Result<()> {
     validate_simple_migration(&pool).await?;
 
     println!("✅ Simplified migration completed successfully!");
-    println!("📝 Schema uses direct 7-column mapping from SQLite");
-    println!("🚀 You can now test with: cargo run --release");
+    println!("📝 Schema uses direct 7-column mapping from SQLite ");
+    println!("🚀 You can now test with: cargo run --release ");
     println!();
-    println!("💡 Additional columns can be added later via ALTER TABLE statements");
+    println!("💡 Additional columns can be added later via ALTER TABLE statements ");
 
     Ok(())
 }
@@ -65,13 +102,13 @@ async fn check_prerequisites() -> Result<()> {
     println!("🔍 Checking prerequisites...");
 
     // Check SQLite database exists
-    if !std::path::Path::new("argus.db").exists() {
-        return Err(anyhow::anyhow!("SQLite database 'argus.db' not found"));
+    if !std::path::Path::new("argus.db ").exists() {
+        return Err(anyhow::anyhow!("SQLite database argus.db not found "));
     }
 
     // Check DATABASE_URL is set
     let database_url = env::var("DATABASE_URL")
-        .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable not set"))?;
+        .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable not set "))?;
 
     // Validate that it's a PostgreSQL URL
     if !database_url.starts_with("postgresql://") && !database_url.starts_with("postgres://") {
@@ -200,16 +237,25 @@ async fn create_simple_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
         sqlx::query(statement).execute(pool).await?;
     }
 
-    println!("✅ Complete PostgreSQL schema created (core tables)");
+    println!(
+        "{} ✅ Complete PostgreSQL schema created (core tables)",
+        timestamp()
+    );
 
     Ok(())
 }
 
 async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
-    println!("📥 Migrating data with direct column mapping...");
+    println!(
+        "{} 📥 Migrating data with direct column mapping...",
+        timestamp()
+    );
 
     // Step 1: Get all table names that exist in SQLite
-    println!("  🔍 Discovering tables in SQLite database...");
+    println!(
+        "{} 🔍 Discovering tables in SQLite database...",
+        timestamp()
+    );
     let tables_output = Command::new("sqlite3")
         .arg("argus.db")
         .arg("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence';")
@@ -229,18 +275,45 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         .collect();
 
     println!(
-        "  📋 Found {} tables to migrate: {:?}",
+        "{} 📋 Found {} tables to migrate: {:?}",
+        timestamp(),
         tables.len(),
         tables
     );
 
     if tables.is_empty() {
-        println!("  ⚠️  No tables found in SQLite database");
+        println!("{} ⚠️  No tables found in SQLite database", timestamp());
         return Ok(());
     }
 
-    // Step 2: Use SQLite .dump to export all data with proper formatting
-    println!("  📤 Extracting all data from SQLite...");
+    // Step 2: Show per-table progress before bulk extraction
+    println!("{} 📤 Extracting data from SQLite tables...", timestamp());
+
+    // Process each table individually to show progress
+    for table in &tables {
+        println!("{} 📦 dumping {}...", timestamp(), table);
+
+        // Get row count for this table to show progress
+        let count_output = Command::new("sqlite3")
+            .arg("argus.db")
+            .arg(&format!("SELECT COUNT(*) FROM {};", table))
+            .output()?;
+
+        if count_output.status.success() {
+            if let Ok(count_str) = String::from_utf8(count_output.stdout) {
+                if let Ok(count) = count_str.trim().parse::<i32>() {
+                    if count > 0 {
+                        println!("{} � {} has {} rows to migrate", timestamp(), table, count);
+                    } else {
+                        println!("{} 📭 {} is empty, skipping", timestamp(), table);
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 3: Use SQLite .dump to export all data with proper formatting
+    println!("{} 🔄 Starting bulk data extraction...", timestamp());
     let start_time = Instant::now();
 
     let dump_output = Command::new("sqlite3")
@@ -259,72 +332,152 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
 
     if debug_mode {
         println!(
-            "  📊 Extracted dump in {:.1}s",
+            "{} 📊 Extracted dump in {:.1}s",
+            timestamp(),
             start_time.elapsed().as_secs_f64()
         );
     }
 
-    // Step 3: Transform SQL for PostgreSQL compatibility
-    println!("  🔄 Transforming for PostgreSQL compatibility...");
+    // Step 4: Transform SQL for PostgreSQL compatibility
+    println!(
+        "{} 🔄 Transforming for PostgreSQL compatibility...",
+        timestamp()
+    );
     let transform_start = Instant::now();
 
-    let postgres_sql = sqlite_dump
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
+    // Group INSERT statements by table and process table by table
+    let mut table_inserts: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut other_statements = Vec::new();
 
-            // Skip SQLite-specific statements
-            if trimmed.starts_with("PRAGMA")
-                || trimmed.starts_with("BEGIN TRANSACTION")
-                || trimmed.starts_with("COMMIT")
-                || trimmed.contains("sqlite_sequence")
-                || trimmed.starts_with("CREATE TABLE")
-                || trimmed.starts_with("CREATE INDEX")
-                || trimmed.starts_with("CREATE UNIQUE INDEX")
-                || trimmed.is_empty()
-            {
-                return None;
+    // Get total line count for progress reporting
+    let dump_lines: Vec<&str> = sqlite_dump.lines().collect();
+    let total_lines = dump_lines.len();
+    let mut processed_lines = 0;
+
+    println!(
+        "{} 📄 Processing {} lines from dump file...",
+        timestamp(),
+        total_lines
+    );
+
+    // First pass: collect and group INSERT statements by table with progress
+    for line in dump_lines.iter() {
+        let trimmed = line.trim();
+        processed_lines += 1;
+
+        // Show progress every 10% or every 50,000 lines (whichever is more frequent)
+        let progress_interval = std::cmp::min(total_lines / 10, 50000).max(1);
+        if processed_lines % progress_interval == 0 || processed_lines == total_lines {
+            let progress_bar = format_progress_bar(processed_lines, total_lines, 30);
+            println!(
+                "{} 🔄 {} ({}/{} lines)",
+                timestamp(),
+                progress_bar,
+                processed_lines,
+                total_lines
+            );
+        }
+
+        // Skip SQLite-specific statements
+        if trimmed.starts_with("PRAGMA")
+            || trimmed.starts_with("BEGIN TRANSACTION")
+            || trimmed.starts_with("COMMIT")
+            || trimmed.contains("sqlite_sequence")
+            || trimmed.starts_with("CREATE TABLE")
+            || trimmed.starts_with("CREATE INDEX")
+            || trimmed.starts_with("CREATE UNIQUE INDEX")
+            || trimmed.is_empty()
+        {
+            continue;
+        }
+
+        // Process INSERT statements
+        if trimmed.starts_with("INSERT INTO") {
+            // Extract table name from INSERT statement
+            if let Some(table_name) = extract_table_name_from_insert(trimmed) {
+                table_inserts
+                    .entry(table_name)
+                    .or_insert_with(Vec::new)
+                    .push(line.to_string());
+            } else {
+                other_statements.push(line.to_string());
             }
+        } else {
+            other_statements.push(line.to_string());
+        }
+    }
 
-            // Process INSERT statements
-            if trimmed.starts_with("INSERT INTO") {
-                let mut result = line.to_string();
+    println!(
+        "{} ✅ Completed processing all {} lines",
+        timestamp(),
+        total_lines
+    );
 
-                // Convert Unix timestamps to PostgreSQL format
-                use regex::Regex;
-                let timestamp_regex = Regex::new(r"'(\d{10})'").unwrap();
+    // Second pass: process each table's INSERT statements with progress reporting
+    let mut all_transformed_statements = Vec::new();
+    let total_tables = table_inserts.len();
+    let mut processed_tables = 0;
 
-                result = timestamp_regex
-                    .replace_all(&result, |caps: &regex::Captures| {
-                        let unix_timestamp = &caps[1];
-                        if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
-                            if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
-                                format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
-                            } else {
-                                format!("'{}'", unix_timestamp)
-                            }
+    for (table_name, inserts) in table_inserts.iter() {
+        processed_tables += 1;
+        println!(
+            "{} 🔄 transforming {} ({}/{} tables)...",
+            timestamp(),
+            table_name,
+            processed_tables,
+            total_tables
+        );
+
+        let mut transformed_inserts = Vec::new();
+        for insert_stmt in inserts {
+            let mut result = insert_stmt.clone();
+
+            // Convert Unix timestamps to PostgreSQL format
+            use regex::Regex;
+            let timestamp_regex = Regex::new(r"'(\d{10})'").unwrap();
+
+            result = timestamp_regex
+                .replace_all(&result, |caps: &regex::Captures| {
+                    let unix_timestamp = &caps[1];
+                    if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
+                        if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
+                            format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
                         } else {
                             format!("'{}'", unix_timestamp)
                         }
-                    })
-                    .to_string();
+                    } else {
+                        format!("'{}'", unix_timestamp)
+                    }
+                })
+                .to_string();
 
-                // Convert boolean values (SQLite uses 1/0, PostgreSQL uses true/false)
-                result = result
-                    .replace(",1,", ",true,")
-                    .replace(",0,", ",false,")
-                    .replace("(1,", "(true,")
-                    .replace("(0,", "(false,")
-                    .replace(",1)", ",true)")
-                    .replace(",0)", ",false)");
+            // Convert boolean values (SQLite uses 1/0, PostgreSQL uses true/false)
+            result = result
+                .replace(",1,", ",true,")
+                .replace(",0,", ",false,")
+                .replace("(1,", "(true,")
+                .replace("(0,", "(false,")
+                .replace(",1)", ",true)")
+                .replace(",0)", ",false)");
 
-                Some(result)
-            } else {
-                Some(line.to_string())
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+            transformed_inserts.push(result);
+        }
+
+        println!(
+            "{} ✅ transformed {} ({} INSERT statements)",
+            timestamp(),
+            table_name,
+            transformed_inserts.len()
+        );
+
+        all_transformed_statements.extend(transformed_inserts);
+    }
+
+    // Add any other non-INSERT statements
+    all_transformed_statements.extend(other_statements);
+
+    let postgres_sql = all_transformed_statements.join("\n");
 
     let insert_count = postgres_sql
         .lines()
@@ -333,14 +486,19 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
 
     if debug_mode {
         println!(
-            "  ⏱️  Transformation: {:.1}s",
+            "{} ⏱️  Transformation: {:.1}s",
+            timestamp(),
             transform_start.elapsed().as_secs_f64()
         );
-        println!("  📊 Generated {} INSERT statements", insert_count);
+        println!(
+            "{} 📊 Generated {} INSERT statements",
+            timestamp(),
+            insert_count
+        );
     }
 
-    // Step 4: Import to PostgreSQL
-    println!("  📥 Importing to PostgreSQL...");
+    // Step 5: Import to PostgreSQL
+    println!("{} 📥 Importing to PostgreSQL...", timestamp());
     let import_start = Instant::now();
 
     // Write to temporary file
@@ -361,14 +519,18 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     }
 
     if debug_mode {
-        println!("  ⏱️  Import: {:.1}s", import_start.elapsed().as_secs_f64());
+        println!(
+            "{} ⏱️  Import: {:.1}s",
+            timestamp(),
+            import_start.elapsed().as_secs_f64()
+        );
     }
 
     // Cleanup
     let _ = fs::remove_file(temp_file);
 
-    // Step 5: Reset sequences for all tables
-    println!("  🔢 Resetting PostgreSQL sequences...");
+    // Step 6: Reset sequences for all tables
+    println!("{} 🔢 Resetting PostgreSQL sequences...", timestamp());
     for table in &tables {
         let sequence_name = format!("{}_id_seq", table);
         let reset_sql = format!(
@@ -381,7 +543,8 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     }
 
     println!(
-        "✅ Data migration completed: {} tables, {} INSERT statements",
+        "{} ✅ Data migration completed: {} tables, {} INSERT statements",
+        timestamp(),
         tables.len(),
         insert_count
     );
@@ -389,7 +552,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
 }
 
 async fn validate_simple_migration(pool: &Pool<Postgres>) -> Result<()> {
-    println!("✅ Validating migration...");
+    println!("{} ✅ Validating migration...", timestamp());
 
     // Count records
     let pg_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM articles")
@@ -407,11 +570,11 @@ async fn validate_simple_migration(pool: &Pool<Postgres>) -> Result<()> {
         .parse()
         .unwrap_or(0);
 
-    println!("  📊 SQLite articles: {}", sqlite_count);
-    println!("  📊 PostgreSQL articles: {}", pg_count);
+    println!("{} 📊 SQLite articles: {}", timestamp(), sqlite_count);
+    println!("{} 📊 PostgreSQL articles: {}", timestamp(), pg_count);
 
     if pg_count == sqlite_count {
-        println!("  ✅ Record counts match");
+        println!("{} ✅ Record counts match", timestamp());
     } else {
         return Err(anyhow::anyhow!(
             "Record count mismatch: SQLite={}, PostgreSQL={}",
@@ -425,11 +588,11 @@ async fn validate_simple_migration(pool: &Pool<Postgres>) -> Result<()> {
         .fetch_all(pool)
         .await?;
 
-    println!("  📋 Sample records:");
+    println!("{} 📋 Sample records:", timestamp());
     for (id, url) in sample {
-        println!("    {}: {}", id, &url[..url.len().min(50)]);
+        println!("{}   {}: {}", timestamp(), id, &url[..url.len().min(50)]);
     }
 
-    println!("✅ Migration validation completed");
+    println!("{} ✅ Migration validation completed", timestamp());
     Ok(())
 }
