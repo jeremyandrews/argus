@@ -213,36 +213,21 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
 
     // Execute schema statements individually to avoid multi-statement issues
     let schema_statements = vec![
-        // Core Articles Table
+        // Core Articles Table - FIXED: Match SQLite schema exactly (7 columns)
         "CREATE TABLE articles (
             id BIGSERIAL PRIMARY KEY,
-            url TEXT NOT NULL,
-            normalized_url TEXT NOT NULL UNIQUE,
+            url TEXT NOT NULL UNIQUE,
             seen_at TIMESTAMPTZ NOT NULL,
-            pub_date TIMESTAMPTZ,
-            event_date TIMESTAMPTZ,
-            title TEXT,
-            source TEXT,
             is_relevant BOOLEAN NOT NULL,
             category TEXT,
-            tiny_summary TEXT,
             analysis TEXT,
-            json_data TEXT,
-            quality REAL,
-            hash TEXT,
-            title_domain_hash TEXT,
-            r2_url TEXT,
-            cluster_id BIGINT
+            r2_url TEXT
         )",
+        // FIXED: Only create indexes for columns that actually exist
         "CREATE INDEX idx_relevant_category ON articles (is_relevant, category)",
-        "CREATE INDEX idx_hash ON articles (hash)",
-        "CREATE INDEX idx_title_domain_hash ON articles (title_domain_hash)",
         "CREATE INDEX idx_r2_url ON articles (r2_url)",
         "CREATE INDEX idx_seen_at_r2_url ON articles (seen_at, r2_url)",
         "CREATE INDEX idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url)",
-        "CREATE INDEX idx_articles_event_date ON articles (event_date)",
-        "CREATE INDEX idx_articles_pub_date ON articles (pub_date)",
-        "CREATE INDEX idx_articles_cluster_id ON articles (cluster_id)",
         // Entity tables
         "CREATE TABLE entities (
             id BIGSERIAL PRIMARY KEY,
@@ -654,12 +639,12 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
             // Transform the INSERT statement for PostgreSQL compatibility
             let mut result = line.clone();
 
+            // CRITICAL FIX: Convert boolean values FIRST, then timestamps
+            // This prevents boolean 0/1 values from being converted to timestamps
+            result = convert_boolean_values_precise(&result);
+
             // Convert Unix timestamps to PostgreSQL format with enhanced logic
             result = convert_timestamps_enhanced(&result, &current_table);
-
-            // More precise boolean conversion - only convert standalone 0/1 values
-            // that are clearly boolean fields (not part of other numbers)
-            result = convert_boolean_values_precise(&result);
 
             // Add to batch buffer
             batch_buffer.push(result);
