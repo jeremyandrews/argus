@@ -466,13 +466,15 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
                 .to_string();
 
             // Convert boolean values (SQLite uses 1/0, PostgreSQL uses true/false)
-            result = result
-                .replace(",1,", ",true,")
-                .replace(",0,", ",false,")
-                .replace("(1,", "(true,")
-                .replace("(0,", "(false,")
-                .replace(",1)", ",true)")
-                .replace(",0)", ",false)");
+            // Use regex to be very specific and avoid converting ID or other integer values
+            // Only convert standalone 1/0 values that are clearly boolean (between commas or at end)
+            let boolean_regex = Regex::new(r",([01])([,)])").unwrap();
+            result = boolean_regex
+                .replace_all(&result, |caps: &regex::Captures| {
+                    let boolean_val = if &caps[1] == "1" { "true" } else { "false" };
+                    format!(",{}{}", boolean_val, &caps[2])
+                })
+                .to_string();
 
             // Add to batch buffer
             batch_buffer.push(result);
