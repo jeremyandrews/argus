@@ -261,6 +261,64 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     Ok(())
 }
 
+/// Parse SQL VALUES and filter to first N columns, properly handling quoted strings
+fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
+    let mut values = Vec::new();
+    let mut current_value = String::new();
+    let mut in_quotes = false;
+    let mut chars = values_str.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if !in_quotes => {
+                in_quotes = true;
+                current_value.push(ch);
+            }
+            '\'' if in_quotes => {
+                // Check for escaped quote
+                if chars.peek() == Some(&'\'') {
+                    current_value.push(ch);
+                    current_value.push(chars.next().unwrap());
+                } else {
+                    in_quotes = false;
+                    current_value.push(ch);
+                }
+            }
+            ',' if !in_quotes => {
+                // End of value
+                values.push(current_value.trim().to_string());
+                current_value.clear();
+
+                // Stop if we have enough values
+                if values.len() >= take_count {
+                    break;
+                }
+            }
+            _ => {
+                current_value.push(ch);
+            }
+        }
+    }
+
+    // Don't forget the last value if we haven't reached take_count
+    if !current_value.trim().is_empty() && values.len() < take_count {
+        values.push(current_value.trim().to_string());
+    }
+
+    // Ensure we have exactly take_count values
+    if values.len() >= take_count {
+        values.truncate(take_count);
+        values.join(",")
+    } else {
+        println!(
+            "Warning: articles INSERT has fewer than {} columns: {}",
+            take_count,
+            values.len()
+        );
+        values.join(",")
+    }
+}
+
 /// Filter articles INSERT statements to only include the 7 columns we want
 /// SQLite articles has 18 columns, PostgreSQL articles has 7 columns
 /// Columns we want: id, url, seen_at, is_relevant, category, analysis, r2_url
@@ -280,19 +338,10 @@ fn filter_articles_columns(line: &str) -> String {
                 let values_inner = &values_part[paren_start + 1..paren_end];
                 let after_values = &values_part[paren_end..];
 
-                // Split values and take only first 7
-                let all_values: Vec<&str> = values_inner.split(',').collect();
-                if all_values.len() >= 7 {
-                    let filtered_values: Vec<&str> = all_values[..7].to_vec();
-                    let filtered_values_str = filtered_values.join(",");
+                // Parse values properly, respecting quoted strings
+                let filtered_values = parse_and_filter_sql_values(values_inner, 7);
 
-                    return format!("{}({}){}", before_values, filtered_values_str, after_values);
-                } else {
-                    println!(
-                        "Warning: articles INSERT has fewer than 7 columns: {}",
-                        all_values.len()
-                    );
-                }
+                return format!("{}({}){}", before_values, filtered_values, after_values);
             }
         }
     }
