@@ -385,7 +385,7 @@ fn convert_boolean_values_precise(line: &str) -> String {
 
     // Define boolean column positions for each table (0-indexed)
     let boolean_columns: Vec<usize> = match table_name {
-        "articles" => vec![8], // is_relevant is at position 8 (9th column)
+        "articles" => vec![3], // is_relevant is at position 3 (4th column)
         _ => vec![],           // No boolean columns for other tables
     };
 
@@ -472,6 +472,9 @@ fn convert_single_boolean_value(value: &str) -> String {
     match value {
         "0" => "false".to_string(),
         "1" => "true".to_string(),
+        "NULL" => "false".to_string(), // Convert NULL to false for NOT NULL constraints
+        "null" => "false".to_string(), // Handle lowercase null
+        "" => "false".to_string(),     // Handle empty string
         _ => value.to_string(),
     }
 }
