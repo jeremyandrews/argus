@@ -378,6 +378,9 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     const BATCH_SIZE: usize = 1000; // Process in batches to control memory
     let mut batch_buffer: Vec<String> = Vec::with_capacity(BATCH_SIZE);
 
+    // State tracking for multi-line CREATE statements
+    let mut inside_create_statement = false;
+
     println!("{} 🔄 Processing dump stream...", timestamp());
 
     // Process dump line by line
@@ -395,14 +398,31 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
             );
         }
 
-        // Skip SQLite-specific statements
+        // Check if starting a CREATE statement (multi-line)
+        if trimmed.starts_with("CREATE TABLE")
+            || trimmed.starts_with("CREATE INDEX")
+            || trimmed.starts_with("CREATE UNIQUE INDEX")
+        {
+            inside_create_statement = true;
+            continue;
+        }
+
+        // Check if ending a CREATE statement
+        if inside_create_statement && trimmed.ends_with(");") {
+            inside_create_statement = false;
+            continue;
+        }
+
+        // Skip if inside CREATE statement
+        if inside_create_statement {
+            continue;
+        }
+
+        // Skip other SQLite-specific statements
         if trimmed.starts_with("PRAGMA")
             || trimmed.starts_with("BEGIN TRANSACTION")
             || trimmed.starts_with("COMMIT")
             || trimmed.contains("sqlite_sequence")
-            || trimmed.starts_with("CREATE TABLE")
-            || trimmed.starts_with("CREATE INDEX")
-            || trimmed.starts_with("CREATE UNIQUE INDEX")
             || trimmed.is_empty()
         {
             continue;
