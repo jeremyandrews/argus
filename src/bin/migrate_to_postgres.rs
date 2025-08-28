@@ -12,6 +12,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use clap::{Arg, Command as ClapCommand};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
@@ -21,6 +22,14 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 use tokio::time::Duration;
+
+// Pre-compiled regex patterns for maximum performance
+static QUOTED_TIMESTAMP_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"'(\d{10,})'").unwrap());
+
+static ZERO_TIMESTAMP_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r",0,|,0\)|^0,|\(0,").unwrap());
+
+static UNQUOTED_TIMESTAMP_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(,|\()(\d{10,})(,|\))").unwrap());
 
 fn timestamp() -> String {
     let now: DateTime<Local> = Local::now();
@@ -273,8 +282,9 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     Ok(())
 }
 
-/// Fast timestamp conversion using optimized regex patterns
+/// Fast timestamp conversion using optimized pre-compiled regex patterns
 fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
+    // Fast pre-checks to avoid unnecessary processing
     if !line.contains("INSERT INTO") || !line.contains("VALUES") {
         return line.to_string();
     }
@@ -292,12 +302,15 @@ fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
         return line.to_string();
     }
 
-    // Fast regex replacements - much more efficient than character parsing
+    // Early bailout if no digits that could be timestamps
+    if !line.contains(char::is_numeric) {
+        return line.to_string();
+    }
+
     let mut result = line.to_string();
 
-    // 1. Convert quoted Unix timestamps (10+ digits)
-    let quoted_timestamp_regex = Regex::new(r"'(\d{10,})'").unwrap();
-    result = quoted_timestamp_regex
+    // 1. Convert quoted Unix timestamps (10+ digits) using pre-compiled regex
+    result = QUOTED_TIMESTAMP_REGEX
         .replace_all(&result, |caps: &regex::Captures| {
             let unix_timestamp = &caps[1];
             if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
@@ -312,10 +325,8 @@ fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
         })
         .to_string();
 
-    // 2. Convert unquoted 0 values in timestamp contexts to NULL
-    // This handles the main case that was causing the integer error
-    let zero_timestamp_regex = Regex::new(r",0,|,0\)|^0,|\(0,").unwrap();
-    result = zero_timestamp_regex
+    // 2. Convert unquoted 0 values in timestamp contexts to NULL using pre-compiled regex
+    result = ZERO_TIMESTAMP_REGEX
         .replace_all(&result, |caps: &regex::Captures| {
             let matched = caps.get(0).unwrap().as_str();
             if matched.starts_with(',') && matched.ends_with(',') {
@@ -332,10 +343,8 @@ fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
         })
         .to_string();
 
-    // 3. Convert unquoted Unix timestamps (handle remaining cases)
-    // Use capture groups instead of lookahead/lookbehind
-    let unquoted_timestamp_regex = Regex::new(r"(,|\()(\d{10,})(,|\))").unwrap();
-    result = unquoted_timestamp_regex
+    // 3. Convert unquoted Unix timestamps using pre-compiled regex
+    result = UNQUOTED_TIMESTAMP_REGEX
         .replace_all(&result, |caps: &regex::Captures| {
             let prefix = &caps[1];
             let unix_timestamp = &caps[2];
