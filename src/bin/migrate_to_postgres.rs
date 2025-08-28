@@ -15,6 +15,7 @@ use clap::{Arg, Command as ClapCommand};
 use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -271,6 +272,171 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     );
 
     Ok(())
+}
+
+/// Enhanced timestamp conversion that handles both quoted and unquoted timestamp values
+/// and converts them based on column positions
+fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
+    // Define timestamp columns for each table (0-based positions)
+    let timestamp_columns: std::collections::HashMap<&str, Vec<usize>> = [
+        ("articles", vec![3, 4, 5]), // seen_at, pub_date, event_date (0-based, excluding id which is position 0)
+        ("rss_queue", vec![4, 5]),   // seen_at, pub_date
+        ("life_safety_queue", vec![1]), // added_at
+        ("matched_topics_queue", vec![1]), // added_at
+        ("article_clusters", vec![2]), // created_at
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
+    let columns = match timestamp_columns.get(table_name) {
+        Some(cols) => cols,
+        None => return line.to_string(), // No timestamp columns for this table
+    };
+
+    if !line.contains("INSERT INTO") || !line.contains("VALUES") {
+        return line.to_string();
+    }
+
+    // First handle quoted timestamps (existing logic)
+    let timestamp_regex = Regex::new(r"'(\d{10,})'").unwrap();
+    let mut result = timestamp_regex
+        .replace_all(line, |caps: &regex::Captures| {
+            let unix_timestamp = &caps[1];
+            if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
+                if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
+                    format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
+                } else {
+                    format!("'{}'", unix_timestamp)
+                }
+            } else {
+                format!("'{}'", unix_timestamp)
+            }
+        })
+        .to_string();
+
+    // Now handle unquoted values at timestamp column positions
+    if let Some(values_start) = result.find("VALUES(") {
+        let values_section_start = values_start + 7; // after "VALUES("
+        if let Some(values_end) = result[values_section_start..].find(");") {
+            let values_end = values_section_start + values_end;
+            let values_content = &result[values_section_start..values_end];
+
+            // Split by comma and process each value, being careful about quoted strings
+            let mut new_values = Vec::new();
+            let mut current_value = String::new();
+            let mut in_quotes = false;
+            let mut escape_next = false;
+            let mut chars = values_content.chars().peekable();
+            let mut column_index = 0;
+
+            while let Some(ch) = chars.next() {
+                if escape_next {
+                    current_value.push(ch);
+                    escape_next = false;
+                    continue;
+                }
+
+                match ch {
+                    '\\' => {
+                        escape_next = true;
+                        current_value.push(ch);
+                    }
+                    '\'' if !in_quotes => {
+                        in_quotes = true;
+                        current_value.push(ch);
+                    }
+                    '\'' if in_quotes => {
+                        // Check if it's an escaped quote
+                        if chars.peek() == Some(&'\'') {
+                            current_value.push(ch);
+                            current_value.push(chars.next().unwrap());
+                        } else {
+                            in_quotes = false;
+                            current_value.push(ch);
+                        }
+                    }
+                    ',' if !in_quotes => {
+                        // Process the current value for timestamp conversion
+                        let processed_value = if columns.contains(&column_index) {
+                            convert_timestamp_value(&current_value.trim())
+                        } else {
+                            current_value.trim().to_string()
+                        };
+                        new_values.push(processed_value);
+                        current_value.clear();
+                        column_index += 1;
+                    }
+                    _ => {
+                        current_value.push(ch);
+                    }
+                }
+            }
+
+            // Don't forget the last value
+            if !current_value.is_empty() {
+                let processed_value = if columns.contains(&column_index) {
+                    convert_timestamp_value(&current_value.trim())
+                } else {
+                    current_value.trim().to_string()
+                };
+                new_values.push(processed_value);
+            }
+
+            // Rebuild the line with processed values
+            let new_values_content = new_values.join(",");
+            result = format!(
+                "{}{}{}",
+                &result[..values_section_start],
+                new_values_content,
+                &result[values_end..]
+            );
+        }
+    }
+
+    result
+}
+
+/// Convert a single timestamp value, handling various formats
+fn convert_timestamp_value(value: &str) -> String {
+    match value {
+        "0" | "NULL" => "NULL".to_string(),
+        v if v.starts_with('\'') && v.ends_with('\'') => {
+            // Already quoted, check if it needs conversion
+            let inner_val = &v[1..v.len() - 1];
+            if let Ok(timestamp) = inner_val.parse::<i64>() {
+                if timestamp > 0 {
+                    if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
+                        format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
+                    } else {
+                        "NULL".to_string()
+                    }
+                } else {
+                    "NULL".to_string()
+                }
+            } else {
+                // Already a formatted timestamp or other string
+                v.to_string()
+            }
+        }
+        v => {
+            // Unquoted value
+            if let Ok(timestamp) = v.parse::<i64>() {
+                if timestamp > 0 {
+                    if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
+                        format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
+                    } else {
+                        "NULL".to_string()
+                    }
+                } else {
+                    "NULL".to_string()
+                }
+            } else {
+                // Non-numeric, keep as is (might be NULL or other value)
+                v.to_string()
+            }
+        }
+    }
 }
 
 /// Convert boolean values (0/1) to PostgreSQL format (false/true) with precision
@@ -562,21 +728,8 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
             // Transform the INSERT statement for PostgreSQL compatibility
             let mut result = line.clone();
 
-            // Convert Unix timestamps to PostgreSQL format
-            result = timestamp_regex
-                .replace_all(&result, |caps: &regex::Captures| {
-                    let unix_timestamp = &caps[1];
-                    if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
-                        if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
-                            format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
-                        } else {
-                            format!("'{}'", unix_timestamp)
-                        }
-                    } else {
-                        format!("'{}'", unix_timestamp)
-                    }
-                })
-                .to_string();
+            // Convert Unix timestamps to PostgreSQL format with enhanced logic
+            result = convert_timestamps_enhanced(&result, &current_table);
 
             // More precise boolean conversion - only convert standalone 0/1 values
             // that are clearly boolean fields (not part of other numbers)
