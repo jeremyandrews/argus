@@ -58,8 +58,8 @@ fn format_progress_bar(current: usize, total: usize, width: usize) -> String {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = ClapCommand::new("migrate_to_postgres_simple")
-        .about("Simplified PostgreSQL migration - direct 7-column mapping ")
+    let matches = ClapCommand::new("migrate_to_postgres")
+        .about("PostgreSQL migration - direct column mapping ")
         .arg(
             Arg::new("debug")
                 .long("debug")
@@ -70,8 +70,8 @@ async fn main() -> Result<()> {
 
     let debug_mode = matches.get_flag("debug");
 
-    println!("🎯 Starting SIMPLIFIED PostgreSQL migration from SQLite...");
-    println!("🔧 Direct 7-column mapping (SQLite -> PostgreSQL)");
+    println!("🎯 Starting PostgreSQL migration from SQLite...");
+    println!("🔧 Direct column mapping (SQLite -> PostgreSQL)");
     println!();
 
     // Step 1: Prerequisites
@@ -81,15 +81,15 @@ async fn main() -> Result<()> {
     let pool = setup_postgres_connection().await?;
 
     // Step 3: Create simplified schema
-    create_simple_postgres_schema(&pool).await?;
+    create_postgres_schema(&pool).await?;
 
     // Step 4: Migrate data with direct mapping
     migrate_data_direct_mapping(&pool, debug_mode).await?;
 
     // Step 5: Basic validation
-    validate_simple_migration(&pool).await?;
+    validate_migration(&pool).await?;
 
-    println!("✅ Simplified migration completed successfully!");
+    println!("✅ Migration completed successfully!");
     println!("📝 Schema uses direct 7-column mapping from SQLite ");
     println!("🚀 You can now test with: cargo run --release ");
     println!();
@@ -102,8 +102,8 @@ async fn check_prerequisites() -> Result<()> {
     println!("🔍 Checking prerequisites...");
 
     // Check SQLite database exists
-    if !std::path::Path::new("argus.db ").exists() {
-        return Err(anyhow::anyhow!("SQLite database argus.db not found "));
+    if !std::path::Path::new("argus.db").exists() {
+        return Err(anyhow::anyhow!("SQLite database argus.db not found"));
     }
 
     // Check DATABASE_URL is set
@@ -138,7 +138,7 @@ async fn setup_postgres_connection() -> Result<Pool<Postgres>> {
     Ok(pool)
 }
 
-async fn create_simple_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
+async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     println!("🏗️  Creating simplified PostgreSQL schema...");
     println!("📋 Converting SQLite schema to PostgreSQL with direct column mapping");
 
@@ -551,7 +551,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     Ok(())
 }
 
-async fn validate_simple_migration(pool: &Pool<Postgres>) -> Result<()> {
+async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
     println!("{} ✅ Validating migration...", timestamp());
 
     // Count records
