@@ -256,17 +256,11 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
         "CREATE INDEX idx_entities_normalized_name ON entities (normalized_name)",
         "CREATE INDEX idx_entities_type ON entities (type)",
         "CREATE INDEX idx_entities_parent_id ON entities (parent_id)",
-        // Queue tables
+        // Queue tables - FIXED: Match actual SQLite schema (no seen_at or pub_date columns)
         "CREATE TABLE rss_queue (
             id BIGSERIAL PRIMARY KEY,
-            url TEXT NOT NULL,
-            normalized_url TEXT NOT NULL UNIQUE,
-            title TEXT,
-            seen_at TIMESTAMPTZ NOT NULL,
-            pub_date TIMESTAMPTZ
+            url TEXT NOT NULL UNIQUE
         )",
-        "CREATE UNIQUE INDEX idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url)",
-        "CREATE UNIQUE INDEX idx_pub_date_normalized_url ON rss_queue (pub_date, normalized_url)",
     ];
 
     // Execute each statement individually
@@ -283,21 +277,16 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
 }
 
 /// Fast timestamp conversion using optimized pre-compiled regex patterns
+/// FIXED: Only process tables that actually have timestamp columns in SQLite
 fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
     // Fast pre-checks to avoid unnecessary processing
     if !line.contains("INSERT INTO") || !line.contains("VALUES") {
         return line.to_string();
     }
 
-    // Only process tables that have timestamp columns
-    let has_timestamps = matches!(
-        table_name,
-        "articles"
-            | "rss_queue"
-            | "life_safety_queue"
-            | "matched_topics_queue"
-            | "article_clusters"
-    );
+    // CRITICAL FIX: Only process tables that actually have timestamp columns in SQLite
+    // Based on actual SQLite schema analysis, only 'articles' table has seen_at
+    let has_timestamps = matches!(table_name, "articles");
     if !has_timestamps {
         return line.to_string();
     }
@@ -325,18 +314,21 @@ fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
         })
         .to_string();
 
-    // 2. Convert unquoted 0 values in timestamp contexts to NULL using pre-compiled regex
+    // 2. CRITICAL FIX: DO NOT convert legitimate timestamp values to NULL
+    // Only convert actual 0 values that represent missing timestamps
+    // But since seen_at is NOT NULL in both SQLite and PostgreSQL, we should convert 0 to a valid timestamp
     result = ZERO_TIMESTAMP_REGEX
         .replace_all(&result, |caps: &regex::Captures| {
             let matched = caps.get(0).unwrap().as_str();
+            // Convert 0 timestamps to epoch time instead of NULL (since seen_at is NOT NULL)
             if matched.starts_with(',') && matched.ends_with(',') {
-                ",NULL,".to_string()
+                ",'1970-01-01 00:00:00+0000',".to_string()
             } else if matched.starts_with(',') && matched.ends_with(')') {
-                ",NULL)".to_string()
+                ",'1970-01-01 00:00:00+0000')".to_string()
             } else if matched.starts_with('(') && matched.ends_with(',') {
-                "(NULL,".to_string()
+                "('1970-01-01 00:00:00+0000',".to_string()
             } else if matched.ends_with(',') {
-                "NULL,".to_string()
+                "'1970-01-01 00:00:00+0000',".to_string()
             } else {
                 matched.to_string() // fallback
             }
