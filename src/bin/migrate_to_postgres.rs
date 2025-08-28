@@ -12,8 +12,10 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use clap::{Arg, Command as ClapCommand};
+use regex::Regex;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Row};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::process::Command;
@@ -301,7 +303,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
             if let Ok(count_str) = String::from_utf8(count_output.stdout) {
                 if let Ok(count) = count_str.trim().parse::<i32>() {
                     if count > 0 {
-                        println!("{} � {} has {} rows to migrate", timestamp(), table, count);
+                        println!("{} 📊 {} has {} rows to migrate", timestamp(), table, count);
                     } else {
                         println!("{} 📭 {} is empty, skipping", timestamp(), table);
                     }
@@ -359,9 +361,9 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         total_lines
     );
 
-    // Compile regex once for performance
-    use regex::Regex;
+    // Compile regex patterns once for performance
     let insert_regex = Regex::new(r"^INSERT\s+INTO\s+`?([a-zA-Z0-9_]+)`?").unwrap();
+    let timestamp_regex = Regex::new(r"'(\d{10})'").unwrap();
 
     // First pass: collect and group INSERT statements by table with progress
     for line in dump_lines.iter() {
@@ -435,10 +437,7 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
         for insert_stmt in inserts {
             let mut result = insert_stmt.clone();
 
-            // Convert Unix timestamps to PostgreSQL format
-            use regex::Regex;
-            let timestamp_regex = Regex::new(r"'(\d{10})'").unwrap();
-
+            // Convert Unix timestamps to PostgreSQL format (using pre-compiled regex)
             result = timestamp_regex
                 .replace_all(&result, |caps: &regex::Captures| {
                     let unix_timestamp = &caps[1];
