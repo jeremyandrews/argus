@@ -261,6 +261,46 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     Ok(())
 }
 
+/// Filter articles INSERT statements to only include the 7 columns we want
+/// SQLite articles has 18 columns, PostgreSQL articles has 7 columns
+/// Columns we want: id, url, seen_at, is_relevant, category, analysis, r2_url
+fn filter_articles_columns(line: &str) -> String {
+    if !line.contains("INSERT INTO articles") {
+        return line.to_string();
+    }
+
+    // Find the VALUES part
+    if let Some(values_start) = line.find("VALUES") {
+        let before_values = &line[..values_start + 6]; // Include "VALUES"
+        let values_part = &line[values_start + 6..];
+
+        // Find the parentheses containing the values
+        if let Some(paren_start) = values_part.find('(') {
+            if let Some(paren_end) = values_part.rfind(')') {
+                let values_inner = &values_part[paren_start + 1..paren_end];
+                let after_values = &values_part[paren_end..];
+
+                // Split values and take only first 7
+                let all_values: Vec<&str> = values_inner.split(',').collect();
+                if all_values.len() >= 7 {
+                    let filtered_values: Vec<&str> = all_values[..7].to_vec();
+                    let filtered_values_str = filtered_values.join(",");
+
+                    return format!("{}({}){}", before_values, filtered_values_str, after_values);
+                } else {
+                    println!(
+                        "Warning: articles INSERT has fewer than 7 columns: {}",
+                        all_values.len()
+                    );
+                }
+            }
+        }
+    }
+
+    // If we can't parse properly, return original line
+    line.to_string()
+}
+
 /// Fast timestamp conversion using optimized pre-compiled regex patterns
 /// FIXED: Only process tables that actually have timestamp columns in SQLite
 fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
@@ -638,6 +678,11 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
 
             // Transform the INSERT statement for PostgreSQL compatibility
             let mut result = line.clone();
+
+            // CRITICAL FIX: For articles table, filter to only the 7 columns we want
+            if current_table == "articles" {
+                result = filter_articles_columns(&result);
+            }
 
             // CRITICAL FIX: Convert boolean values FIRST, then timestamps
             // This prevents boolean 0/1 values from being converted to timestamps
