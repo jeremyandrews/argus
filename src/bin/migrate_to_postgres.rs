@@ -274,19 +274,36 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
 }
 
 /// Convert boolean values (0/1) to PostgreSQL format (false/true) with precision
-/// Only converts values that are clearly boolean fields, avoiding timestamps and IDs
+/// Only converts values that are in known boolean column positions
 fn convert_boolean_values_precise(line: &str) -> String {
     // For INSERT INTO ... VALUES(...) statements, we need to be more careful
     if !line.contains("INSERT INTO") || !line.contains("VALUES") {
         return line.to_string();
     }
 
-    let mut result = line.to_string();
+    // Extract table name to determine which columns are boolean
+    let table_name = if let Some(start) = line.find("INSERT INTO ") {
+        let start = start + 12;
+        if let Some(end) = line[start..].find(" VALUES") {
+            line[start..start + end].trim()
+        } else {
+            return line.to_string();
+        }
+    } else {
+        return line.to_string();
+    };
 
-    // Strategy: Convert 0/1 values that are:
-    // 1. Preceded by a comma and followed by a comma (middle of VALUES list)
-    // 2. Preceded by a comma and followed by closing paren (end of VALUES list)
-    // 3. NOT part of a longer number (no digits before/after)
+    // Define boolean column positions for each table (0-indexed)
+    let boolean_columns: Vec<usize> = match table_name {
+        "articles" => vec![8], // is_relevant is at position 8 (9th column)
+        _ => vec![],           // No boolean columns for other tables
+    };
+
+    if boolean_columns.is_empty() {
+        return line.to_string(); // No boolean columns to convert
+    }
+
+    let mut result = line.to_string();
 
     // Use a more precise approach: find VALUES(...) section and process it carefully
     if let Some(values_start) = result.find("VALUES(") {
@@ -300,6 +317,7 @@ fn convert_boolean_values_precise(line: &str) -> String {
             let mut current_value = String::new();
             let mut in_quotes = false;
             let mut chars = values_content.chars().peekable();
+            let mut column_index = 0;
 
             while let Some(ch) = chars.next() {
                 match ch {
@@ -319,9 +337,14 @@ fn convert_boolean_values_precise(line: &str) -> String {
                     }
                     ',' if !in_quotes => {
                         // Process the current value for boolean conversion
-                        let processed_value = convert_single_value(&current_value.trim());
+                        let processed_value = if boolean_columns.contains(&column_index) {
+                            convert_single_boolean_value(&current_value.trim())
+                        } else {
+                            current_value.trim().to_string()
+                        };
                         new_values.push(processed_value);
                         current_value.clear();
+                        column_index += 1;
                     }
                     _ => {
                         current_value.push(ch);
@@ -331,7 +354,11 @@ fn convert_boolean_values_precise(line: &str) -> String {
 
             // Don't forget the last value
             if !current_value.is_empty() {
-                let processed_value = convert_single_value(&current_value.trim());
+                let processed_value = if boolean_columns.contains(&column_index) {
+                    convert_single_boolean_value(&current_value.trim())
+                } else {
+                    current_value.trim().to_string()
+                };
                 new_values.push(processed_value);
             }
 
@@ -350,7 +377,8 @@ fn convert_boolean_values_precise(line: &str) -> String {
 }
 
 /// Convert a single value if it's clearly a boolean (standalone 0 or 1)
-fn convert_single_value(value: &str) -> String {
+/// Only called for values that are confirmed to be in boolean columns
+fn convert_single_boolean_value(value: &str) -> String {
     match value {
         "0" => "false".to_string(),
         "1" => "true".to_string(),
