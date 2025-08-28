@@ -273,6 +273,91 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     Ok(())
 }
 
+/// Convert boolean values (0/1) to PostgreSQL format (false/true) with precision
+/// Only converts values that are clearly boolean fields, avoiding timestamps and IDs
+fn convert_boolean_values_precise(line: &str) -> String {
+    // For INSERT INTO ... VALUES(...) statements, we need to be more careful
+    if !line.contains("INSERT INTO") || !line.contains("VALUES") {
+        return line.to_string();
+    }
+
+    let mut result = line.to_string();
+
+    // Strategy: Convert 0/1 values that are:
+    // 1. Preceded by a comma and followed by a comma (middle of VALUES list)
+    // 2. Preceded by a comma and followed by closing paren (end of VALUES list)
+    // 3. NOT part of a longer number (no digits before/after)
+
+    // Use a more precise approach: find VALUES(...) section and process it carefully
+    if let Some(values_start) = result.find("VALUES(") {
+        let values_section_start = values_start + 7; // after "VALUES("
+        if let Some(values_end) = result[values_section_start..].find(");") {
+            let values_end = values_section_start + values_end;
+            let values_content = &result[values_section_start..values_end];
+
+            // Split by comma and process each value, being careful about quoted strings
+            let mut new_values = Vec::new();
+            let mut current_value = String::new();
+            let mut in_quotes = false;
+            let mut chars = values_content.chars().peekable();
+
+            while let Some(ch) = chars.next() {
+                match ch {
+                    '\'' if !in_quotes => {
+                        in_quotes = true;
+                        current_value.push(ch);
+                    }
+                    '\'' if in_quotes => {
+                        // Check if it's an escaped quote
+                        if chars.peek() == Some(&'\'') {
+                            current_value.push(ch);
+                            current_value.push(chars.next().unwrap());
+                        } else {
+                            in_quotes = false;
+                            current_value.push(ch);
+                        }
+                    }
+                    ',' if !in_quotes => {
+                        // Process the current value for boolean conversion
+                        let processed_value = convert_single_value(&current_value.trim());
+                        new_values.push(processed_value);
+                        current_value.clear();
+                    }
+                    _ => {
+                        current_value.push(ch);
+                    }
+                }
+            }
+
+            // Don't forget the last value
+            if !current_value.is_empty() {
+                let processed_value = convert_single_value(&current_value.trim());
+                new_values.push(processed_value);
+            }
+
+            // Rebuild the line with processed values
+            let new_values_content = new_values.join(",");
+            result = format!(
+                "{}{}{}",
+                &result[..values_section_start],
+                new_values_content,
+                &result[values_end..]
+            );
+        }
+    }
+
+    result
+}
+
+/// Convert a single value if it's clearly a boolean (standalone 0 or 1)
+fn convert_single_value(value: &str) -> String {
+    match value {
+        "0" => "false".to_string(),
+        "1" => "true".to_string(),
+        _ => value.to_string(),
+    }
+}
+
 async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
     println!(
         "{} 📥 Migrating data with streaming approach (memory-optimized)...",
@@ -465,16 +550,9 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
                 })
                 .to_string();
 
-            // Convert boolean values (SQLite uses 1/0, PostgreSQL uses true/false)
-            // Use regex to be very specific and avoid converting ID or other integer values
-            // Only convert standalone 1/0 values that are clearly boolean (between commas or at end)
-            // Fast string replacements for boolean conversion
-            // Only convert values that are clearly boolean (after commas or before closing paren)
-            result = result
-                .replace(",1,", ",true,")
-                .replace(",0,", ",false,")
-                .replace(",1)", ",true)")
-                .replace(",0)", ",false)");
+            // More precise boolean conversion - only convert standalone 0/1 values
+            // that are clearly boolean fields (not part of other numbers)
+            result = convert_boolean_values_precise(&result);
 
             // Add to batch buffer
             batch_buffer.push(result);
