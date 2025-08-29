@@ -261,11 +261,12 @@ async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
     Ok(())
 }
 
-/// Parse SQL VALUES and filter to first N columns, properly handling quoted strings
+/// Parse SQL VALUES and filter to first N columns, properly handling quoted strings, JSON, and functions
 fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
     let mut values = Vec::new();
     let mut current_value = String::new();
     let mut in_quotes = false;
+    let mut paren_depth = 0;
     let mut chars = values_str.chars().peekable();
 
     while let Some(ch) = chars.next() {
@@ -275,7 +276,7 @@ fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
                 current_value.push(ch);
             }
             '\'' if in_quotes => {
-                // Check for escaped quote
+                // Check for escaped quote (doubled single quotes in SQL)
                 if chars.peek() == Some(&'\'') {
                     current_value.push(ch);
                     current_value.push(chars.next().unwrap());
@@ -284,8 +285,23 @@ fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
                     current_value.push(ch);
                 }
             }
-            ',' if !in_quotes => {
-                // End of value
+            '\\' if in_quotes => {
+                // Handle backslash escapes within quoted strings
+                current_value.push(ch);
+                if let Some(next_ch) = chars.peek() {
+                    current_value.push(chars.next().unwrap());
+                }
+            }
+            '(' if !in_quotes => {
+                paren_depth += 1;
+                current_value.push(ch);
+            }
+            ')' if !in_quotes => {
+                paren_depth -= 1;
+                current_value.push(ch);
+            }
+            ',' if !in_quotes && paren_depth == 0 => {
+                // End of value only if we're not inside parentheses or quotes
                 values.push(current_value.trim().to_string());
                 current_value.clear();
 
@@ -300,23 +316,31 @@ fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
         }
     }
 
-    // Don't forget the last value if we haven't reached take_count
+    // Add the last value if we haven't reached take_count
     if !current_value.trim().is_empty() && values.len() < take_count {
         values.push(current_value.trim().to_string());
     }
 
-    // Ensure we have exactly take_count values
-    if values.len() >= take_count {
-        values.truncate(take_count);
-        values.join(",")
-    } else {
+    // If we still don't have enough values, something went wrong
+    if values.len() < take_count {
         println!(
-            "Warning: articles INSERT has fewer than {} columns: {}",
+            "Warning: articles INSERT has fewer than {} columns: {} (values: {})",
             take_count,
-            values.len()
+            values.len(),
+            values
+                .iter()
+                .take(3)
+                .map(|v| format!("'{}'", &v[..v.len().min(50)]))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
-        values.join(",")
+        // Return all values we found
+        return values.join(",");
     }
+
+    // Take exactly the number of columns we want
+    values.truncate(take_count);
+    values.join(",")
 }
 
 /// Filter articles INSERT statements to only include the 7 columns we want
@@ -746,10 +770,9 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
             // Transform the INSERT statement for PostgreSQL compatibility
             let mut result = line.clone();
 
-            // CRITICAL FIX: For articles table, filter to only the 7 columns we want
-            if current_table == "articles" {
-                result = filter_articles_columns(&result);
-            }
+            // CRITICAL FIX: SQLite articles already has exactly 7 columns, no filtering needed!
+            // The original SQLite dump generates perfect INSERT statements with 7 values
+            // Filtering was causing malformed SQL - just do type conversions
 
             // CRITICAL FIX: Convert boolean values FIRST, then timestamps
             // This prevents boolean 0/1 values from being converted to timestamps
