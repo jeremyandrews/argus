@@ -334,7 +334,25 @@ fn filter_articles_columns(line: &str) -> String {
 
         // Find the parentheses containing the values
         if let Some(paren_start) = values_part.find('(') {
-            if let Some(paren_end) = values_part.rfind(')') {
+            // Find the matching closing parenthesis (not the last one in the line)
+            let mut paren_count = 0;
+            let mut paren_end = None;
+
+            for (i, ch) in values_part[paren_start..].char_indices() {
+                match ch {
+                    '(' => paren_count += 1,
+                    ')' => {
+                        paren_count -= 1;
+                        if paren_count == 0 {
+                            paren_end = Some(paren_start + i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(paren_end) = paren_end {
                 let values_inner = &values_part[paren_start + 1..paren_end];
                 let after_values = &values_part[paren_end..];
 
