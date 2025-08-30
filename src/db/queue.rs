@@ -1,6 +1,6 @@
 use sqlx::Row;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 use urlnorm::UrlNormalizer;
 
@@ -341,7 +341,7 @@ impl Database {
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
-            info!(target: TARGET_DB, "Successfully fetched URL from queue: {}", url);
+            warn!(target: TARGET_DB, "Successfully fetched URL from queue: {}", url);
             Ok(Some((url, title, pub_date)))
         } else {
             transaction.rollback().await?;
