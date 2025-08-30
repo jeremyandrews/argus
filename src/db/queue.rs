@@ -341,6 +341,7 @@ impl Database {
                 .execute(&mut *transaction)
                 .await?;
             transaction.commit().await?;
+            info!(target: TARGET_DB, "Successfully fetched URL from queue: {}", url);
             Ok(Some((url, title, pub_date)))
         } else {
             transaction.rollback().await?;
