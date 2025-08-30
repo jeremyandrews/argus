@@ -288,7 +288,7 @@ fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
             '\\' if in_quotes => {
                 // Handle backslash escapes within quoted strings
                 current_value.push(ch);
-                if let Some(next_ch) = chars.peek() {
+                if let Some(_next_ch) = chars.peek() {
                     current_value.push(chars.next().unwrap());
                 }
             }
@@ -378,12 +378,12 @@ fn filter_articles_columns(line: &str) -> String {
 
             if let Some(paren_end) = paren_end {
                 let values_inner = &values_part[paren_start + 1..paren_end];
-                let after_values = &values_part[paren_end..];
 
                 // Parse values properly, respecting quoted strings
                 let filtered_values = parse_and_filter_sql_values(values_inner, 7);
 
-                return format!("{}({}){}", before_values, filtered_values, after_values);
+                // Always end with just the closing parenthesis and semicolon - ignore any trailing content
+                return format!("{}({});", before_values, filtered_values);
             }
         }
     }
@@ -669,9 +669,11 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
     );
     let start_time = Instant::now();
 
-    // Set up streaming SQLite dump process
+    // Set up streaming SQLite dump process with proper JSON escaping
     let mut dump_process = Command::new("sqlite3")
         .arg("argus.db")
+        .arg("-cmd")
+        .arg(".mode insert")
         .arg(".dump")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -770,9 +772,11 @@ async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) ->
             // Transform the INSERT statement for PostgreSQL compatibility
             let mut result = line.clone();
 
-            // CRITICAL FIX: SQLite articles already has exactly 7 columns, no filtering needed!
-            // The original SQLite dump generates perfect INSERT statements with 7 values
-            // Filtering was causing malformed SQL - just do type conversions
+            // CRITICAL FIX: Production database has 18 columns, we need to filter to 7
+            // Development database has 7 columns, production has 18 - filter both safely
+            if current_table == "articles" {
+                result = filter_articles_columns(&result);
+            }
 
             // CRITICAL FIX: Convert boolean values FIRST, then timestamps
             // This prevents boolean 0/1 values from being converted to timestamps
