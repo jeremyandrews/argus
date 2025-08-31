@@ -315,6 +315,11 @@ async fn process_article_entry(
             .await
         {
             error!(target: TARGET_WEB_REQUEST, "Failed to log old article: {}", err);
+        } else {
+            // Increment counter for processed articles (even old ones that are logged)
+            if let Err(e) = db.increment_counter("articles_processed_total", 1).await {
+                debug!(target: TARGET_WEB_REQUEST, "Failed to increment articles_processed_total counter: {}", e);
+            }
         }
         return Ok(false);
     }

@@ -407,7 +407,7 @@ async fn process_life_safety_item(
         }
 
         // Collect database statistics
-        let stats = match db.collect_stats().await {
+        let stats = match db.collect_runtime_stats().await {
             Ok(stats) => stats,
             Err(e) => {
                 error!(target: TARGET_LLM_REQUEST, "Failed to collect database stats: {:?}", e);
@@ -664,7 +664,7 @@ async fn process_matched_topic_item(
         && !logical_fallacies.is_empty()
     {
         // Collect database statistics
-        let stats = match db.collect_stats().await {
+        let stats = match db.collect_runtime_stats().await {
             Ok(stats) => stats,
             Err(e) => {
                 error!(target: TARGET_LLM_REQUEST, "Failed to collect database stats: {:?}", e);
@@ -891,6 +891,20 @@ async fn process_similarity_and_clustering_inline(
                     extracted_entities.entities.len(),
                     entity_extraction_start.elapsed()
                 );
+
+                // Increment entity extraction counter
+                if let Err(e) = db
+                    .increment_counter(
+                        "entities_extracted_total",
+                        extracted_entities.entities.len() as i32,
+                    )
+                    .await
+                {
+                    warn!(
+                        "Failed to increment entities_extracted_total counter: {}",
+                        e
+                    );
+                }
 
                 // Add entities to response JSON
                 response_json["entities"] = json!(extracted_entities.to_frontend_json_array());

@@ -27,6 +27,7 @@ use argus::environment;
 use argus::logging;
 use argus::rate_limiter::OpenAIRateLimiter;
 use argus::rss;
+use argus::workers;
 use argus::{
     FallbackConfig, LLMClient, ModelConfig, START_TIME, TARGET_LLM_REQUEST, TARGET_WEB_REQUEST,
 };
@@ -393,6 +394,22 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Spawn the maintenance worker
+    let maintenance_notify = Arc::clone(&panic_notify);
+    let maintenance_handle = tokio::spawn(async move {
+        let thread_name = "Maintenance Worker".to_string();
+        info!("{}: Starting maintenance worker", thread_name);
+        match workers::maintenance::run_maintenance_worker().await {
+            Ok(_) => {
+                info!("{}: maintenance worker completed successfully", thread_name)
+            }
+            Err(e) => {
+                error!("{}: maintenance worker failed: {}", thread_name, e);
+                maintenance_notify.notify_one();
+            }
+        }
+    });
+
     // Launch DECISION workers
     let mut decision_handles = Vec::new();
     for (decision_id, llm_client, decision_model, no_think) in
@@ -544,6 +561,11 @@ async fn main() -> Result<()> {
     // Await rss_loop completion
     if let Err(e) = rss_handle.await {
         error!(target: TARGET_WEB_REQUEST, "RSS task (rss_loop) encountered an error: {}", e);
+    }
+
+    // Await maintenance worker completion
+    if let Err(e) = maintenance_handle.await {
+        error!("Maintenance worker encountered an error: {}", e);
     }
 
     Ok(())

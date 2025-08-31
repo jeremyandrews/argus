@@ -81,6 +81,18 @@ impl Database {
         .await {
             Ok((id,)) => {
                 debug!(target: TARGET_DB, "Article added/updated: {} with id {}", url, id);
+
+                // Increment counters for statistics tracking
+                if let Err(e) = self.increment_counter("articles_processed_total", 1).await {
+                    error!(target: TARGET_DB, "Failed to increment articles_processed_total counter: {}", e);
+                }
+
+                if is_relevant {
+                    if let Err(e) = self.increment_counter("articles_relevant_total", 1).await {
+                        error!(target: TARGET_DB, "Failed to increment articles_relevant_total counter: {}", e);
+                    }
+                }
+
                 return Ok(id);
             }
             Err(err) => {

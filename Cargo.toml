@@ -1,6 +1,6 @@
 [package]
 name = "argus"
-version = "0.14.7"
+version = "0.15.0"
 edition = "2021"
 
 [dependencies]
@@ -63,24 +63,8 @@ whatlang = "0.16.4"
 chrono = "0.4"
 
 [[bin]]
-name = "process_entities"
-path = "src/bin/process_entities.rs"
-
-[[bin]]
-name = "test_entity_extraction"
-path = "src/bin/test_entity_extraction.rs"
-
-[[bin]]
 name = "test_ollama_endpoints"
 path = "src/bin/test_ollama_endpoints.rs"
-
-[[bin]]
-name = "test_thinking_model"
-path = "src/bin/test_thinking_model.rs"
-
-[[bin]]
-name = "test_entity_normalizer"
-path = "src/bin/test_entity_normalizer.rs"
 
 [[bin]]
 name = "manage_aliases"
@@ -89,31 +73,3 @@ path = "src/bin/manage_aliases.rs"
 [[bin]]
 name = "migrate_to_postgres"
 path = "src/bin/migrate_to_postgres.rs"
-
-[[bin]]
-name = "argus_admin"
-path = "src/bin/argus_admin.rs"
-
-[[bin]]
-name = "test_openai_json"
-path = "src/bin/test_openai_json.rs"
-
-[[bin]]
-name = "test_postgres_migration"
-path = "src/bin/test_postgres_migration.rs"
-
-[[bin]]
-name = "test_boolean_migration"
-path = "src/bin/test_boolean_migration.rs"
-
-[[bin]]
-name = "test_postgres_compatibility"
-path = "src/bin/test_postgres_compatibility.rs"
-
-[[bin]]
-name = "test_string_concatenation_fix"
-path = "src/bin/test_string_concatenation_fix.rs"
-
-[[bin]]
-name = "test_real_migration_patterns"
-path = "src/bin/test_real_migration_patterns.rs"

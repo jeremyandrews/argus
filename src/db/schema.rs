@@ -299,6 +299,40 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_endpoint_alerts_endpoint_model ON endpoint_alerts (endpoint_url, model_name);
             CREATE INDEX IF NOT EXISTS idx_endpoint_alerts_type_resolved ON endpoint_alerts (alert_type, is_resolved);
             CREATE INDEX IF NOT EXISTS idx_endpoint_alerts_occurrence ON endpoint_alerts (last_occurrence);
+
+            -- Database maintenance statistics tables
+            CREATE TABLE IF NOT EXISTS processing_statistics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date DATE NOT NULL UNIQUE,
+                articles_queued INTEGER NOT NULL DEFAULT 0,
+                articles_processed INTEGER NOT NULL DEFAULT 0,
+                articles_relevant INTEGER NOT NULL DEFAULT 0,
+                articles_irrelevant INTEGER NOT NULL DEFAULT 0,
+                entities_extracted INTEGER NOT NULL DEFAULT 0,
+                clusters_created INTEGER NOT NULL DEFAULT 0,
+                cleanup_articles_removed INTEGER NOT NULL DEFAULT 0,
+                cleanup_entities_removed INTEGER NOT NULL DEFAULT 0,
+                cleanup_queue_entries_removed INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_processing_statistics_date ON processing_statistics (date);
+
+            -- Cumulative counters (preserved through cleanup)
+            CREATE TABLE IF NOT EXISTS system_counters (
+                counter_name TEXT PRIMARY KEY,
+                counter_value INTEGER NOT NULL DEFAULT 0,
+                last_updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Maintenance schedule table for automated maintenance
+            CREATE TABLE IF NOT EXISTS maintenance_schedule (
+                task_name TEXT PRIMARY KEY,
+                last_run TIMESTAMP,
+                next_run TIMESTAMP,
+                interval_hours INTEGER NOT NULL,
+                enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
             "#,
         )
         .execute(&mut *conn)

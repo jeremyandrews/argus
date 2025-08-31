@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod common;
 pub mod decision;
+pub mod maintenance;
 
 // Common re-exports
 pub use common::{
