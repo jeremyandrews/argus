@@ -142,10 +142,28 @@ impl MigrationContext {
         // Drop existing tables (in dependency order)
         let drop_tables = vec![
             "device_subscriptions",
+            "ip_logs",
+            "article_entities",
+            "article_cluster_mappings",
+            "cluster_merge_history",
+            "entity_aliases",
+            "entity_negative_matches",
+            "alias_review_items",
+            "endpoint_timeout_events",
+            "endpoint_alerts",
             "devices",
+            "entities",
+            "article_clusters",
+            "alias_review_batches",
             "matched_topics_queue",
+            "life_safety_queue",
             "rss_queue",
             "articles",
+            "alias_pattern_stats",
+            "alias_cache_stats",
+            "processing_statistics",
+            "system_counters",
+            "maintenance_schedule",
             "migration_tracking",
         ];
 
@@ -579,21 +597,60 @@ impl MigrationContext {
 
                 // Handle different data types and bind to query
                 match column_name.as_str() {
-                    "is_relevant" => {
-                        // Convert SQLite boolean (0/1) to PostgreSQL boolean
+                    // Boolean fields (SQLite INTEGER 0/1 → PostgreSQL BOOLEAN)
+                    "is_relevant"
+                    | "enabled"
+                    | "is_resolved"
+                    | "needs_summary_update"
+                    | "has_timeline" => {
                         let val: Option<i64> = row.try_get(column_name.as_str()).unwrap_or(None);
                         query = query.bind(val.map(|v| v != 0));
                     }
-                    "quality" => {
+
+                    // Real/Float fields
+                    "quality" | "confidence" | "importance_score" | "similarity_score" => {
                         let val: Option<f64> = row.try_get(column_name.as_str()).unwrap_or(None);
                         query = query.bind(val);
                     }
-                    "cluster_id" => {
+
+                    // Foreign key INTEGER fields (SQLite INTEGER → PostgreSQL BIGINT)
+                    "parent_id"
+                    | "article_id"
+                    | "entity_id"
+                    | "cluster_id"
+                    | "device_id"
+                    | "entity_id1"
+                    | "entity_id2"
+                    | "batch_id"
+                    | "alias_id"
+                    | "original_cluster_id"
+                    | "merged_into_cluster_id" => {
+                        let val: Option<i64> = row.try_get(column_name.as_str()).unwrap_or(None);
+                        query = query.bind(val);
+                    }
+
+                    // Regular INTEGER fields (counters, etc.)
+                    "total_suggestions"
+                    | "approved_count"
+                    | "rejected_count"
+                    | "total_count"
+                    | "processed_count"
+                    | "article_count"
+                    | "summary_version"
+                    | "persistence_level"
+                    | "hit_count"
+                    | "occurrence_count"
+                    | "consecutive_failures"
+                    | "counter_value"
+                    | "interval_hours"
+                    | "first_seen"
+                    | "last_seen" => {
                         let val: Option<i64> = row.try_get(column_name.as_str()).unwrap_or(None);
                         query = query.bind(val.map(|v| v as i32));
                     }
+
+                    // All other fields as TEXT
                     _ => {
-                        // Handle as text
                         let val: Option<String> = row.try_get(column_name.as_str()).unwrap_or(None);
                         query = query.bind(val);
                     }
