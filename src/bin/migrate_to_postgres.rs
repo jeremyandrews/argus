@@ -286,6 +286,61 @@ impl MigrationContext {
         .await
         .context("Failed to create device_subscriptions table")?;
 
+        // Create missing maintenance and tracking tables
+        info!("Creating system_counters table");
+        sqlx::query(
+            r#"
+            CREATE TABLE system_counters (
+                counter_name TEXT PRIMARY KEY,
+                counter_value BIGINT NOT NULL DEFAULT 0,
+                last_updated TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create system_counters table")?;
+
+        info!("Creating processing_statistics table");
+        sqlx::query(
+            r#"
+            CREATE TABLE processing_statistics (
+                id BIGSERIAL PRIMARY KEY,
+                date DATE NOT NULL UNIQUE,
+                articles_queued INTEGER NOT NULL DEFAULT 0,
+                articles_processed INTEGER NOT NULL DEFAULT 0,
+                articles_relevant INTEGER NOT NULL DEFAULT 0,
+                articles_irrelevant INTEGER NOT NULL DEFAULT 0,
+                entities_extracted INTEGER NOT NULL DEFAULT 0,
+                clusters_created INTEGER NOT NULL DEFAULT 0,
+                cleanup_articles_removed INTEGER NOT NULL DEFAULT 0,
+                cleanup_entities_removed INTEGER NOT NULL DEFAULT 0,
+                cleanup_queue_entries_removed INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create processing_statistics table")?;
+
+        info!("Creating maintenance_schedule table");
+        sqlx::query(
+            r#"
+            CREATE TABLE maintenance_schedule (
+                task_name TEXT PRIMARY KEY,
+                last_run TIMESTAMPTZ,
+                next_run TIMESTAMPTZ,
+                interval_hours INTEGER NOT NULL,
+                enabled BOOLEAN DEFAULT true,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create maintenance_schedule table")?;
+
         // Verify all tables were created
         let tables_check = sqlx::query(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
@@ -305,6 +360,9 @@ impl MigrationContext {
             "matched_topics_queue",
             "devices",
             "device_subscriptions",
+            "system_counters",
+            "processing_statistics",
+            "maintenance_schedule",
         ];
         for table in &required_tables {
             if !created_tables.contains(&table.to_string()) {
