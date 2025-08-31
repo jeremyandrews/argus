@@ -155,138 +155,222 @@ impl MigrationContext {
                 .await?;
         }
 
-        // First create all tables
-        let table_sql = r#"
--- Migration tracking table
-CREATE TABLE migration_tracking (
-    table_name TEXT PRIMARY KEY,
-    last_migrated_id BIGINT,
-    migrated_count BIGINT DEFAULT 0,
-    last_updated TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
+        // Create tables one by one with individual error handling
+        info!("Creating migration_tracking table");
+        sqlx::query(
+            r#"
+            CREATE TABLE migration_tracking (
+                table_name TEXT PRIMARY KEY,
+                last_migrated_id BIGINT,
+                migrated_count BIGINT DEFAULT 0,
+                last_updated TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create migration_tracking table")?;
 
--- Articles table (matches SQLite structure)
-CREATE TABLE articles (
-    id BIGSERIAL PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    seen_at TEXT NOT NULL,
-    is_relevant BOOLEAN NOT NULL,
-    category TEXT,
-    analysis TEXT,
-    normalized_url TEXT,
-    hash TEXT,
-    tiny_summary TEXT,
-    title_domain_hash TEXT,
-    r2_url TEXT,
-    pub_date TEXT,
-    event_date TEXT,
-    cluster_id INTEGER,
-    title TEXT,
-    json_data TEXT,
-    quality REAL,
-    source TEXT
-);
+        info!("Creating articles table");
+        sqlx::query(
+            r#"
+            CREATE TABLE articles (
+                id BIGSERIAL PRIMARY KEY,
+                url TEXT NOT NULL UNIQUE,
+                seen_at TEXT NOT NULL,
+                is_relevant BOOLEAN NOT NULL,
+                category TEXT,
+                analysis TEXT,
+                normalized_url TEXT,
+                hash TEXT,
+                tiny_summary TEXT,
+                title_domain_hash TEXT,
+                r2_url TEXT,
+                pub_date TEXT,
+                event_date TEXT,
+                cluster_id INTEGER,
+                title TEXT,
+                json_data TEXT,
+                quality REAL,
+                source TEXT
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create articles table")?;
 
--- RSS queue table  
-CREATE TABLE rss_queue (
-    id BIGSERIAL PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    title TEXT,
-    seen_at TEXT NOT NULL,
-    normalized_url TEXT,
-    pub_date TEXT
-);
+        info!("Creating rss_queue table");
+        sqlx::query(
+            r#"
+            CREATE TABLE rss_queue (
+                id BIGSERIAL PRIMARY KEY,
+                url TEXT NOT NULL UNIQUE,
+                title TEXT,
+                seen_at TEXT NOT NULL,
+                normalized_url TEXT,
+                pub_date TEXT
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create rss_queue table")?;
 
--- Matched topics queue
-CREATE TABLE matched_topics_queue (
-    id BIGSERIAL PRIMARY KEY,
-    article_text TEXT NOT NULL,
-    article_html TEXT NOT NULL,
-    article_url TEXT NOT NULL UNIQUE,
-    article_title TEXT NOT NULL,
-    topic_matched TEXT NOT NULL,
-    article_hash TEXT NOT NULL,
-    title_domain_hash TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    pub_date TEXT
-);
+        info!("Creating matched_topics_queue table");
+        sqlx::query(
+            r#"
+            CREATE TABLE matched_topics_queue (
+                id BIGSERIAL PRIMARY KEY,
+                article_text TEXT NOT NULL,
+                article_html TEXT NOT NULL,
+                article_url TEXT NOT NULL UNIQUE,
+                article_title TEXT NOT NULL,
+                topic_matched TEXT NOT NULL,
+                article_hash TEXT NOT NULL,
+                title_domain_hash TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                pub_date TEXT
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create matched_topics_queue table")?;
 
--- Devices table
-CREATE TABLE devices (
-    id BIGSERIAL PRIMARY KEY,
-    device_id TEXT NOT NULL UNIQUE
-);
+        info!("Creating devices table");
+        sqlx::query(
+            r#"
+            CREATE TABLE devices (
+                id BIGSERIAL PRIMARY KEY,
+                device_id TEXT NOT NULL UNIQUE
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create devices table")?;
 
--- Device subscriptions
-CREATE TABLE device_subscriptions (
-    id BIGSERIAL PRIMARY KEY,
-    device_id INTEGER NOT NULL,
-    topic TEXT NOT NULL,
-    priority TEXT,
-    FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
-    UNIQUE(device_id, topic)
-);
-"#;
+        info!("Creating device_subscriptions table");
+        sqlx::query(
+            r#"
+            CREATE TABLE device_subscriptions (
+                id BIGSERIAL PRIMARY KEY,
+                device_id INTEGER NOT NULL,
+                topic TEXT NOT NULL,
+                priority TEXT,
+                FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
+                UNIQUE(device_id, topic)
+            )
+        "#,
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create device_subscriptions table")?;
 
-        // Create tables first
-        for statement in table_sql.split(';') {
-            let statement = statement.trim();
-            if !statement.is_empty() && !statement.starts_with("--") {
-                info!("Executing table statement: {}", statement);
-                let result = sqlx::query(statement)
-                    .execute(&self.pg_pool)
-                    .await
-                    .with_context(|| format!("Failed to execute table statement: {}", statement))?;
-                info!(
-                    "Table statement executed successfully, rows affected: {}",
-                    result.rows_affected()
-                );
-            }
-        }
-
-        // Verify tables were created
-        let tables_check =
-            sqlx::query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
-                .fetch_all(&self.pg_pool)
-                .await?;
+        // Verify all tables were created
+        let tables_check = sqlx::query(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
+        )
+        .fetch_all(&self.pg_pool)
+        .await?;
         let created_tables: Vec<String> = tables_check
             .iter()
             .map(|row| row.get::<String, _>("tablename"))
             .collect();
         info!("Created tables: {:?}", created_tables);
 
-        // Then create indexes
-        let index_sql = r#"
-CREATE INDEX idx_relevant_category ON articles (is_relevant, category);
-CREATE INDEX idx_articles_normalized_url ON articles (normalized_url);
-CREATE INDEX idx_r2_url ON articles (r2_url);
-CREATE INDEX idx_seen_at_r2_url ON articles (seen_at, r2_url);
-CREATE INDEX idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url);
-
-CREATE INDEX idx_rss_queue_normalized_url ON rss_queue (normalized_url);
-CREATE INDEX idx_seen_at_url ON rss_queue (seen_at, url);
-CREATE INDEX idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url);
-
-CREATE INDEX idx_matched_topics_article_url ON matched_topics_queue (article_url);
-
-CREATE INDEX idx_devices_device_id ON devices (device_id);
-CREATE INDEX idx_topic_device_id_priority ON device_subscriptions (topic, device_id, priority);
-CREATE INDEX idx_topic_device_id ON device_subscriptions (topic, device_id);
-CREATE INDEX idx_device_subscriptions_device_id_topic ON device_subscriptions (device_id, topic);
-"#;
-
-        // Create indexes
-        for statement in index_sql.split(';') {
-            let statement = statement.trim();
-            if !statement.is_empty() && !statement.starts_with("--") {
-                sqlx::query(statement)
-                    .execute(&self.pg_pool)
-                    .await
-                    .with_context(|| format!("Failed to execute index statement: {}", statement))?;
+        // Verify critical tables exist before creating indexes
+        let required_tables = vec![
+            "articles",
+            "rss_queue",
+            "matched_topics_queue",
+            "devices",
+            "device_subscriptions",
+        ];
+        for table in &required_tables {
+            if !created_tables.contains(&table.to_string()) {
+                return Err(anyhow::anyhow!(
+                    "Required table '{}' was not created",
+                    table
+                ));
             }
         }
 
-        info!("PostgreSQL schema created successfully");
+        // Now create indexes - one by one with individual error handling
+        info!("Creating indexes on articles table");
+        sqlx::query("CREATE INDEX idx_relevant_category ON articles (is_relevant, category)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_relevant_category index")?;
+
+        sqlx::query("CREATE INDEX idx_articles_normalized_url ON articles (normalized_url)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_articles_normalized_url index")?;
+
+        sqlx::query("CREATE INDEX idx_r2_url ON articles (r2_url)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_r2_url index")?;
+
+        sqlx::query("CREATE INDEX idx_seen_at_r2_url ON articles (seen_at, r2_url)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_seen_at_r2_url index")?;
+
+        sqlx::query(
+            "CREATE INDEX idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url)",
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create idx_seen_at_category_r2_url index")?;
+
+        info!("Creating indexes on rss_queue table");
+        sqlx::query("CREATE INDEX idx_rss_queue_normalized_url ON rss_queue (normalized_url)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_rss_queue_normalized_url index")?;
+
+        sqlx::query("CREATE INDEX idx_seen_at_url ON rss_queue (seen_at, url)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_seen_at_url index")?;
+
+        sqlx::query(
+            "CREATE INDEX idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url)",
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create idx_seen_at_normalized_url index")?;
+
+        info!("Creating indexes on other tables");
+        sqlx::query(
+            "CREATE INDEX idx_matched_topics_article_url ON matched_topics_queue (article_url)",
+        )
+        .execute(&self.pg_pool)
+        .await
+        .context("Failed to create idx_matched_topics_article_url index")?;
+
+        sqlx::query("CREATE INDEX idx_devices_device_id ON devices (device_id)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_devices_device_id index")?;
+
+        sqlx::query("CREATE INDEX idx_topic_device_id_priority ON device_subscriptions (topic, device_id, priority)")
+            .execute(&self.pg_pool).await
+            .context("Failed to create idx_topic_device_id_priority index")?;
+
+        sqlx::query("CREATE INDEX idx_topic_device_id ON device_subscriptions (topic, device_id)")
+            .execute(&self.pg_pool)
+            .await
+            .context("Failed to create idx_topic_device_id index")?;
+
+        sqlx::query("CREATE INDEX idx_device_subscriptions_device_id_topic ON device_subscriptions (device_id, topic)")
+            .execute(&self.pg_pool).await
+            .context("Failed to create idx_device_subscriptions_device_id_topic index")?;
+
+        info!("PostgreSQL schema created successfully with all tables and indexes");
         Ok(())
     }
 
@@ -614,7 +698,7 @@ CREATE INDEX idx_device_subscriptions_device_id_topic ON device_subscriptions (d
 
     fn print_summary(&self) {
         info!("=== Migration Summary ===");
-        for (table, stats) in &self.stats {
+        for (_table, stats) in &self.stats {
             let success_rate = if stats.total_records > 0 {
                 (stats.migrated_records as f64 / stats.total_records as f64) * 100.0
             } else {
@@ -623,7 +707,7 @@ CREATE INDEX idx_device_subscriptions_device_id_topic ON device_subscriptions (d
 
             info!(
                 "{}: {}/{} migrated ({:.1}%)",
-                table, stats.migrated_records, stats.total_records, success_rate
+                stats.table_name, stats.migrated_records, stats.total_records, success_rate
             );
         }
     }
