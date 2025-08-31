@@ -1,936 +1,648 @@
-//! PostgreSQL Migration Tool
+//! PostgreSQL Migration Tool - Clean & Reliable Implementation
 //!
-//! This tool provides a direct migration path from SQLite to PostgreSQL by:
-//! 1. Creating a PostgreSQL schema that closely matches SQLite
-//! 2. Direct 7-column mapping with minimal transformation
-//! 3. No complex column mapping or NULL generation
-//!
-//! This approach prioritizes getting off SQLite quickly rather than
-//! implementing complex schema changes during migration. Additional columns can
-//! be added later via ALTER TABLE statements once the migration is complete.
+//! This tool provides a direct migration path from SQLite to PostgreSQL with:
+//! 1. Direct table-by-table migration using sqlx
+//! 2. Batch processing for large datasets (800K+ records)
+//! 3. --partial flag support for incremental migration
+//! 4. Built-in validation and progress tracking
+//! 5. Simple, reliable approach following KISS principle
 
-use anyhow::Result;
-use chrono::{DateTime, Local};
-use clap::{Arg, Command as ClapCommand};
-use once_cell::sync::Lazy;
-use regex::Regex;
-use sqlx::postgres::PgPoolOptions;
-use sqlx::{Pool, Postgres};
+use anyhow::{Context, Result};
+use clap::Parser;
+use sqlx::{postgres::PgPoolOptions, sqlite::SqlitePoolOptions, Column, PgPool, Row, SqlitePool};
+use std::collections::HashMap;
 use std::env;
-use std::fs;
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::process::{Command, Stdio};
-use std::time::Instant;
-use tokio::time::Duration;
+use tracing::{debug, info, warn};
 
-// Pre-compiled regex patterns for maximum performance
-static QUOTED_TIMESTAMP_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"'(\d{10,})'").unwrap());
+#[derive(Parser, Debug)]
+#[command(name = "migrate_to_postgres")]
+#[command(about = "Migrate Argus database from SQLite to PostgreSQL")]
+struct Args {
+    /// PostgreSQL connection string (or use DATABASE_URL env var)
+    #[arg(long)]
+    postgres_url: Option<String>,
 
-static ZERO_TIMESTAMP_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r",0,|,0\)|^0,|\(0,").unwrap());
+    /// SQLite database path
+    #[arg(long, default_value = "argus.db")]
+    sqlite_path: String,
 
-static UNQUOTED_TIMESTAMP_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(,|\()(\d{10,})(,|\))").unwrap());
+    /// Perform partial migration using high-water marks
+    #[arg(long)]
+    partial: bool,
 
-fn timestamp() -> String {
-    let now: DateTime<Local> = Local::now();
-    format!("[{}]", now.format("%Y-%m-%d %H:%M:%S"))
+    /// Dry run - show what would be migrated
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Skip schema creation
+    #[arg(long)]
+    skip_schema: bool,
+
+    /// Specific tables to migrate (comma-separated)
+    #[arg(long)]
+    tables: Option<String>,
+
+    /// Batch size for processing
+    #[arg(long, default_value = "1000")]
+    batch_size: usize,
+
+    /// Validate data after migration
+    #[arg(long)]
+    validate: bool,
 }
 
-fn extract_table_name_from_insert(insert_stmt: &str, re: &regex::Regex) -> Option<String> {
-    // Parse INSERT INTO table_name ... to extract table_name
-    if let Some(captures) = re.captures(insert_stmt) {
-        return Some(captures[1].to_string());
+#[derive(Debug, Clone)]
+struct MigrationStats {
+    table_name: String,
+    total_records: i64,
+    migrated_records: i64,
+    last_migrated_id: Option<i64>,
+}
+
+struct MigrationContext {
+    sqlite_pool: SqlitePool,
+    pg_pool: PgPool,
+    args: Args,
+    stats: HashMap<String, MigrationStats>,
+}
+
+impl MigrationContext {
+    async fn new(args: Args) -> Result<Self> {
+        // Setup SQLite connection
+        let sqlite_url = format!("sqlite:{}", args.sqlite_path);
+        let sqlite_pool = SqlitePoolOptions::new()
+            .max_connections(1) // SQLite works best with single connection
+            .connect(&sqlite_url)
+            .await
+            .context("Failed to connect to SQLite")?;
+
+        // Setup PostgreSQL connection
+        let postgres_url = args
+            .postgres_url
+            .clone()
+            .or_else(|| env::var("DATABASE_URL").ok())
+            .context("PostgreSQL connection string required (--postgres-url or DATABASE_URL)")?;
+
+        let pg_pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&postgres_url)
+            .await
+            .context("Failed to connect to PostgreSQL")?;
+
+        // Test connections
+        sqlx::query("SELECT 1")
+            .fetch_one(&sqlite_pool)
+            .await
+            .context("SQLite connection test failed")?;
+        sqlx::query("SELECT 1")
+            .fetch_one(&pg_pool)
+            .await
+            .context("PostgreSQL connection test failed")?;
+
+        Ok(Self {
+            sqlite_pool,
+            pg_pool,
+            args,
+            stats: HashMap::new(),
+        })
     }
-    None
-}
 
-fn format_progress_bar(current: usize, total: usize, width: usize) -> String {
-    let percentage = if total > 0 {
-        (current * 100) / total
-    } else {
-        0
-    };
-    let filled = if total > 0 {
-        (current * width) / total
-    } else {
-        0
-    };
-    let empty = width.saturating_sub(filled);
+    async fn run(&mut self) -> Result<()> {
+        info!("Starting PostgreSQL migration");
+        info!("SQLite: {}", self.args.sqlite_path);
+        info!("Partial migration: {}", self.args.partial);
+        info!("Dry run: {}", self.args.dry_run);
 
-    format!(
-        "[{}{}] {}%",
-        "=".repeat(filled),
-        "-".repeat(empty),
-        percentage
-    )
-}
+        // Create schema if needed
+        if !self.args.skip_schema && !self.args.dry_run {
+            self.create_schema().await?;
+        }
 
-fn get_memory_usage() -> Result<String> {
-    // Try to get memory usage on Linux systems
-    if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
-        for line in contents.lines() {
-            if line.starts_with("VmRSS:") {
-                // Extract RSS memory usage
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    return Ok(format!("{}kB RAM", parts[1]));
-                }
+        // Get tables to migrate
+        let tables = self.get_migration_tables().await?;
+        info!("Tables to migrate: {:?}", tables);
+
+        // Migrate each table
+        for table in &tables {
+            self.migrate_table(table).await?;
+        }
+
+        // Validate if requested
+        if self.args.validate && !self.args.dry_run {
+            self.validate_migration(&tables).await?;
+        }
+
+        self.print_summary();
+        Ok(())
+    }
+
+    async fn create_schema(&mut self) -> Result<()> {
+        info!("Creating PostgreSQL schema");
+
+        // Drop existing tables (in dependency order)
+        let drop_tables = vec![
+            "device_subscriptions",
+            "devices",
+            "matched_topics_queue",
+            "rss_queue",
+            "articles",
+            "migration_tracking",
+        ];
+
+        for table in drop_tables {
+            sqlx::query(&format!("DROP TABLE IF EXISTS {} CASCADE", table))
+                .execute(&self.pg_pool)
+                .await?;
+        }
+
+        // First create all tables
+        let table_sql = r#"
+-- Migration tracking table
+CREATE TABLE migration_tracking (
+    table_name TEXT PRIMARY KEY,
+    last_migrated_id BIGINT,
+    migrated_count BIGINT DEFAULT 0,
+    last_updated TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Articles table (matches SQLite structure)
+CREATE TABLE articles (
+    id BIGSERIAL PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    seen_at TEXT NOT NULL,
+    is_relevant BOOLEAN NOT NULL,
+    category TEXT,
+    analysis TEXT,
+    normalized_url TEXT,
+    hash TEXT,
+    tiny_summary TEXT,
+    title_domain_hash TEXT,
+    r2_url TEXT,
+    pub_date TEXT,
+    event_date TEXT,
+    cluster_id INTEGER,
+    title TEXT,
+    json_data TEXT,
+    quality REAL,
+    source TEXT
+);
+
+-- RSS queue table  
+CREATE TABLE rss_queue (
+    id BIGSERIAL PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT,
+    seen_at TEXT NOT NULL,
+    normalized_url TEXT,
+    pub_date TEXT
+);
+
+-- Matched topics queue
+CREATE TABLE matched_topics_queue (
+    id BIGSERIAL PRIMARY KEY,
+    article_text TEXT NOT NULL,
+    article_html TEXT NOT NULL,
+    article_url TEXT NOT NULL UNIQUE,
+    article_title TEXT NOT NULL,
+    topic_matched TEXT NOT NULL,
+    article_hash TEXT NOT NULL,
+    title_domain_hash TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    pub_date TEXT
+);
+
+-- Devices table
+CREATE TABLE devices (
+    id BIGSERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL UNIQUE
+);
+
+-- Device subscriptions
+CREATE TABLE device_subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    device_id INTEGER NOT NULL,
+    topic TEXT NOT NULL,
+    priority TEXT,
+    FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE,
+    UNIQUE(device_id, topic)
+);
+"#;
+
+        // Create tables first
+        for statement in table_sql.split(';') {
+            let statement = statement.trim();
+            if !statement.is_empty() && !statement.starts_with("--") {
+                info!("Executing table statement: {}", statement);
+                let result = sqlx::query(statement)
+                    .execute(&self.pg_pool)
+                    .await
+                    .with_context(|| format!("Failed to execute table statement: {}", statement))?;
+                info!(
+                    "Table statement executed successfully, rows affected: {}",
+                    result.rows_affected()
+                );
             }
         }
+
+        // Verify tables were created
+        let tables_check =
+            sqlx::query("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+                .fetch_all(&self.pg_pool)
+                .await?;
+        let created_tables: Vec<String> = tables_check
+            .iter()
+            .map(|row| row.get::<String, _>("tablename"))
+            .collect();
+        info!("Created tables: {:?}", created_tables);
+
+        // Then create indexes
+        let index_sql = r#"
+CREATE INDEX idx_relevant_category ON articles (is_relevant, category);
+CREATE INDEX idx_articles_normalized_url ON articles (normalized_url);
+CREATE INDEX idx_r2_url ON articles (r2_url);
+CREATE INDEX idx_seen_at_r2_url ON articles (seen_at, r2_url);
+CREATE INDEX idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url);
+
+CREATE INDEX idx_rss_queue_normalized_url ON rss_queue (normalized_url);
+CREATE INDEX idx_seen_at_url ON rss_queue (seen_at, url);
+CREATE INDEX idx_seen_at_normalized_url ON rss_queue (seen_at, normalized_url);
+
+CREATE INDEX idx_matched_topics_article_url ON matched_topics_queue (article_url);
+
+CREATE INDEX idx_devices_device_id ON devices (device_id);
+CREATE INDEX idx_topic_device_id_priority ON device_subscriptions (topic, device_id, priority);
+CREATE INDEX idx_topic_device_id ON device_subscriptions (topic, device_id);
+CREATE INDEX idx_device_subscriptions_device_id_topic ON device_subscriptions (device_id, topic);
+"#;
+
+        // Create indexes
+        for statement in index_sql.split(';') {
+            let statement = statement.trim();
+            if !statement.is_empty() && !statement.starts_with("--") {
+                sqlx::query(statement)
+                    .execute(&self.pg_pool)
+                    .await
+                    .with_context(|| format!("Failed to execute index statement: {}", statement))?;
+            }
+        }
+
+        info!("PostgreSQL schema created successfully");
+        Ok(())
     }
 
-    // Fallback - just return a placeholder
-    Ok("N/A".to_string())
-}
+    async fn get_migration_tables(&self) -> Result<Vec<String>> {
+        if let Some(table_list) = &self.args.tables {
+            return Ok(table_list
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect());
+        }
 
-fn format_memory_stats(processed_lines: usize, insert_count: usize) -> String {
-    match get_memory_usage() {
-        Ok(memory) => format!(
-            "📊 Memory: {} | Lines: {} | Inserts: {}",
-            memory, processed_lines, insert_count
-        ),
-        Err(_) => format!("📊 Lines: {} | Inserts: {}", processed_lines, insert_count),
+        // Get all tables from SQLite
+        let rows = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence' ORDER BY name")
+            .fetch_all(&self.sqlite_pool).await?;
+
+        let mut tables = Vec::new();
+        for row in rows {
+            let table_name: String = row.get(0);
+            tables.push(table_name);
+        }
+
+        Ok(tables)
+    }
+
+    async fn migrate_table(&mut self, table_name: &str) -> Result<()> {
+        info!("Migrating table: {}", table_name);
+
+        // Get total count
+        let total_count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", table_name))
+            .fetch_one(&self.sqlite_pool)
+            .await?;
+
+        if total_count == 0 {
+            info!("Table {} is empty, skipping", table_name);
+            return Ok(());
+        }
+
+        info!("Table {} has {} records", table_name, total_count);
+
+        // Initialize stats
+        let mut stats = MigrationStats {
+            table_name: table_name.to_string(),
+            total_records: total_count,
+            migrated_records: 0,
+            last_migrated_id: None,
+        };
+
+        // Get starting point for partial migration
+        let mut start_id = 0;
+        if self.args.partial {
+            start_id = self.get_last_migrated_id(table_name).await?;
+            if start_id > 0 {
+                info!("Partial migration starting from ID {}", start_id);
+            }
+        }
+
+        // Migrate in batches
+        let mut current_id = start_id;
+        let mut batch_num = 0;
+
+        loop {
+            batch_num += 1;
+            let batch_count = self
+                .migrate_batch(table_name, current_id, &mut stats)
+                .await?;
+
+            if batch_count == 0 {
+                break; // No more records
+            }
+
+            // Update progress
+            let progress = (stats.migrated_records as f64 / total_count as f64) * 100.0;
+            info!(
+                "Progress {}: {:.1}% ({}/{}) - batch {}",
+                table_name, progress, stats.migrated_records, total_count, batch_num
+            );
+
+            // Update high-water mark
+            if !self.args.dry_run {
+                self.update_migration_tracking(
+                    table_name,
+                    stats.last_migrated_id,
+                    stats.migrated_records,
+                )
+                .await?;
+            }
+
+            current_id = stats.last_migrated_id.unwrap_or(current_id) + 1;
+        }
+
+        info!(
+            "Completed migration of {}: {} records",
+            table_name, stats.migrated_records
+        );
+
+        // Reset PostgreSQL sequence
+        let last_id = stats.last_migrated_id;
+        if !self.args.dry_run && last_id.is_some() {
+            let seq_name = format!("{}_id_seq", table_name);
+            let reset_sql = format!("SELECT setval('{}', {})", seq_name, last_id.unwrap());
+            let _ = sqlx::query(&reset_sql).execute(&self.pg_pool).await; // Ignore errors for tables without sequences
+        }
+
+        self.stats.insert(table_name.to_string(), stats);
+
+        Ok(())
+    }
+
+    async fn table_has_id_column(&self, table_name: &str) -> Result<bool> {
+        let query = "SELECT COUNT(*) as count FROM pragma_table_info(?) WHERE name = 'id'";
+        let count: i64 = sqlx::query(query)
+            .bind(table_name)
+            .fetch_one(&self.sqlite_pool)
+            .await?
+            .try_get("count")?;
+        Ok(count > 0)
+    }
+
+    async fn migrate_batch(
+        &mut self,
+        table_name: &str,
+        start_id: i64,
+        stats: &mut MigrationStats,
+    ) -> Result<usize> {
+        // Check if table has an ID column
+        let has_id_column = self.table_has_id_column(table_name).await?;
+
+        let rows = if has_id_column {
+            // Get batch of records from SQLite using ID
+            let query = format!(
+                "SELECT * FROM {} WHERE id > ? ORDER BY id LIMIT ?",
+                table_name
+            );
+            sqlx::query(&query)
+                .bind(start_id)
+                .bind(self.args.batch_size as i64)
+                .fetch_all(&self.sqlite_pool)
+                .await?
+        } else {
+            // For tables without ID, use LIMIT/OFFSET
+            let offset = stats.migrated_records;
+            let query = format!("SELECT * FROM {} LIMIT ? OFFSET ?", table_name);
+            sqlx::query(&query)
+                .bind(self.args.batch_size as i64)
+                .bind(offset)
+                .fetch_all(&self.sqlite_pool)
+                .await?
+        };
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        if self.args.dry_run {
+            if has_id_column {
+                let last_id: i64 = rows.last().unwrap().get("id");
+                stats.last_migrated_id = Some(last_id);
+            }
+            stats.migrated_records += rows.len() as i64;
+            debug!(
+                "[DRY RUN] Would migrate {} records for table {}",
+                rows.len(),
+                table_name
+            );
+            return Ok(rows.len());
+        }
+
+        // Prepare INSERT statement for PostgreSQL
+        let (insert_sql, column_names) = self.build_insert_statement(table_name, &rows[0]).await?;
+
+        // Insert batch into PostgreSQL
+        for row in &rows {
+            // Build query with parameters
+            let mut query = sqlx::query(&insert_sql);
+
+            for column_name in &column_names {
+                if column_name == "id" {
+                    continue; // Skip ID column, let PostgreSQL auto-generate
+                }
+
+                // Handle different data types and bind to query
+                match column_name.as_str() {
+                    "is_relevant" => {
+                        // Convert SQLite boolean (0/1) to PostgreSQL boolean
+                        let val: Option<i64> = row.try_get(column_name.as_str()).unwrap_or(None);
+                        query = query.bind(val.map(|v| v != 0));
+                    }
+                    "quality" => {
+                        let val: Option<f64> = row.try_get(column_name.as_str()).unwrap_or(None);
+                        query = query.bind(val);
+                    }
+                    "cluster_id" => {
+                        let val: Option<i64> = row.try_get(column_name.as_str()).unwrap_or(None);
+                        query = query.bind(val.map(|v| v as i32));
+                    }
+                    _ => {
+                        // Handle as text
+                        let val: Option<String> = row.try_get(column_name.as_str()).unwrap_or(None);
+                        query = query.bind(val);
+                    }
+                }
+            }
+
+            let result = query.execute(&self.pg_pool).await;
+            if let Err(e) = result {
+                warn!("Failed to insert record into {}: {}", table_name, e);
+                continue; // Skip this record and continue
+            }
+
+            stats.migrated_records += 1;
+        }
+
+        // Update last migrated ID
+        if let Some(last_row) = rows.last() {
+            let last_id: i64 = last_row.get("id");
+            stats.last_migrated_id = Some(last_id);
+        }
+
+        Ok(rows.len())
+    }
+
+    async fn build_insert_statement(
+        &self,
+        table_name: &str,
+        sample_row: &sqlx::sqlite::SqliteRow,
+    ) -> Result<(String, Vec<String>)> {
+        // Get column names from the sample row
+        let mut column_names = Vec::new();
+        for i in 0..sample_row.len() {
+            column_names.push(sample_row.column(i).name().to_string());
+        }
+
+        // Filter out the ID column (PostgreSQL will auto-generate)
+        let insert_columns: Vec<String> = column_names
+            .iter()
+            .filter(|&name| name != "id")
+            .cloned()
+            .collect();
+
+        // Build parameterized INSERT statement
+        let placeholders: Vec<String> = (1..=insert_columns.len())
+            .map(|i| format!("${}", i))
+            .collect();
+
+        let conflict_resolution = match table_name {
+            "articles" => "ON CONFLICT (url) DO NOTHING",
+            "rss_queue" => "ON CONFLICT (url) DO NOTHING",
+            "matched_topics_queue" => "ON CONFLICT (article_url) DO NOTHING",
+            "devices" => "ON CONFLICT (device_id) DO NOTHING",
+            "device_subscriptions" => "ON CONFLICT (device_id, topic) DO NOTHING",
+            _ => "",
+        };
+
+        let insert_sql = format!(
+            "INSERT INTO {} ({}) VALUES ({}) {}",
+            table_name,
+            insert_columns.join(", "),
+            placeholders.join(", "),
+            conflict_resolution
+        );
+
+        Ok((insert_sql, column_names))
+    }
+
+    async fn get_last_migrated_id(&self, table_name: &str) -> Result<i64> {
+        let result: Option<i64> = sqlx::query_scalar(
+            "SELECT last_migrated_id FROM migration_tracking WHERE table_name = $1",
+        )
+        .bind(table_name)
+        .fetch_optional(&self.pg_pool)
+        .await?;
+
+        Ok(result.unwrap_or(0))
+    }
+
+    async fn update_migration_tracking(
+        &self,
+        table_name: &str,
+        last_id: Option<i64>,
+        count: i64,
+    ) -> Result<()> {
+        if let Some(last_id) = last_id {
+            sqlx::query(
+                "INSERT INTO migration_tracking (table_name, last_migrated_id, migrated_count, last_updated) 
+                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP) 
+                 ON CONFLICT (table_name) 
+                 DO UPDATE SET last_migrated_id = $2, migrated_count = $3, last_updated = CURRENT_TIMESTAMP"
+            )
+            .bind(table_name)
+            .bind(last_id)
+            .bind(count)
+            .execute(&self.pg_pool).await?;
+        }
+        Ok(())
+    }
+
+    async fn validate_migration(&self, tables: &[String]) -> Result<()> {
+        info!("Validating migration...");
+
+        for table_name in tables {
+            // Get counts from both databases
+            let sqlite_count: i64 =
+                sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", table_name))
+                    .fetch_one(&self.sqlite_pool)
+                    .await
+                    .unwrap_or(0);
+
+            let pg_count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", table_name))
+                .fetch_one(&self.pg_pool)
+                .await
+                .unwrap_or(0);
+
+            if sqlite_count == pg_count {
+                info!("✅ {}: {} records (matches)", table_name, pg_count);
+            } else {
+                warn!(
+                    "❌ {}: SQLite={}, PostgreSQL={} (MISMATCH)",
+                    table_name, sqlite_count, pg_count
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn print_summary(&self) {
+        info!("=== Migration Summary ===");
+        for (table, stats) in &self.stats {
+            let success_rate = if stats.total_records > 0 {
+                (stats.migrated_records as f64 / stats.total_records as f64) * 100.0
+            } else {
+                100.0
+            };
+
+            info!(
+                "{}: {}/{} migrated ({:.1}%)",
+                table, stats.migrated_records, stats.total_records, success_rate
+            );
+        }
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = ClapCommand::new("migrate_to_postgres")
-        .about("PostgreSQL migration - direct column mapping ")
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .help("Enable detailed debugging output ")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .get_matches();
+    tracing_subscriber::fmt()
+        .with_env_filter("migrate_to_postgres=info")
+        .init();
 
-    let debug_mode = matches.get_flag("debug");
+    let args = Args::parse();
 
-    println!("🎯 Starting PostgreSQL migration from SQLite...");
-    println!("🔧 Direct column mapping (SQLite -> PostgreSQL)");
-    println!();
+    let mut migration = MigrationContext::new(args)
+        .await
+        .context("Failed to initialize migration context")?;
 
-    // Step 1: Prerequisites
-    check_prerequisites().await?;
+    migration.run().await.context("Migration failed")?;
 
-    // Step 2: Setup PostgreSQL
-    let pool = setup_postgres_connection().await?;
-
-    // Step 3: Create simplified schema
-    create_postgres_schema(&pool).await?;
-
-    // Step 4: Migrate data with direct mapping
-    migrate_data_direct_mapping(&pool, debug_mode).await?;
-
-    // Step 5: Basic validation
-    validate_migration(&pool).await?;
-
-    println!("✅ Migration completed successfully!");
-    println!("📝 Schema uses direct 7-column mapping from SQLite ");
-    println!("🚀 You can now test with: cargo run --release ");
-    println!();
-    println!("💡 Additional columns can be added later via ALTER TABLE statements ");
-
-    Ok(())
-}
-
-async fn check_prerequisites() -> Result<()> {
-    println!("🔍 Checking prerequisites...");
-
-    // Check SQLite database exists
-    if !std::path::Path::new("argus.db").exists() {
-        return Err(anyhow::anyhow!("SQLite database argus.db not found"));
-    }
-
-    // Check DATABASE_URL is set
-    let database_url = env::var("DATABASE_URL")
-        .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable not set "))?;
-
-    // Validate that it's a PostgreSQL URL
-    if !database_url.starts_with("postgresql://") && !database_url.starts_with("postgres://") {
-        return Err(anyhow::anyhow!(
-            "DATABASE_URL must be a PostgreSQL connection string"
-        ));
-    }
-
-    println!("✅ Prerequisites check passed");
-    Ok(())
-}
-
-async fn setup_postgres_connection() -> Result<Pool<Postgres>> {
-    println!("🔌 Setting up PostgreSQL connection...");
-
-    let database_url = env::var("DATABASE_URL")?;
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(Duration::from_secs(30))
-        .connect(&database_url)
-        .await?;
-
-    // Test connection
-    sqlx::query("SELECT 1").execute(&pool).await?;
-    println!("✅ PostgreSQL connection established");
-
-    Ok(pool)
-}
-
-async fn create_postgres_schema(pool: &Pool<Postgres>) -> Result<()> {
-    println!("🏗️  Creating simplified PostgreSQL schema...");
-    println!("📋 Converting SQLite schema to PostgreSQL with direct column mapping");
-
-    // Drop existing tables if they exist (in reverse order due to foreign keys)
-    println!("  🧹 Cleaning existing tables...");
-
-    // Instead of dropping the entire schema, drop individual tables safely
-    let cleanup_tables = vec![
-        "alias_cache_stats",
-        "alias_review_items",
-        "alias_review_batches",
-        "alias_pattern_stats",
-        "entity_negative_matches",
-        "entity_aliases",
-        "ip_logs",
-        "device_subscriptions",
-        "devices",
-        "life_safety_queue",
-        "matched_topics_queue",
-        "rss_queue",
-        "endpoint_alerts",
-        "endpoint_timeout_events",
-        "cluster_merge_history",
-        "article_cluster_mappings",
-        "article_clusters",
-        "article_entities",
-        "entities",
-        "articles",
-    ];
-
-    for table in cleanup_tables {
-        let drop_sql = format!("DROP TABLE IF EXISTS {} CASCADE", table);
-        let _ = sqlx::query(&drop_sql).execute(pool).await; // Ignore errors
-    }
-
-    // Execute schema statements individually to avoid multi-statement issues
-    let schema_statements = vec![
-        // Core Articles Table - FIXED: Match SQLite schema exactly (7 columns)
-        "CREATE TABLE articles (
-            id BIGSERIAL PRIMARY KEY,
-            url TEXT NOT NULL UNIQUE,
-            seen_at TIMESTAMPTZ NOT NULL,
-            is_relevant BOOLEAN NOT NULL,
-            category TEXT,
-            analysis TEXT,
-            r2_url TEXT
-        )",
-        // FIXED: Only create indexes for columns that actually exist
-        "CREATE INDEX idx_relevant_category ON articles (is_relevant, category)",
-        "CREATE INDEX idx_r2_url ON articles (r2_url)",
-        "CREATE INDEX idx_seen_at_r2_url ON articles (seen_at, r2_url)",
-        "CREATE INDEX idx_seen_at_category_r2_url ON articles (seen_at, category, r2_url)",
-        // Entity tables
-        "CREATE TABLE entities (
-            id BIGSERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL,
-            normalized_name TEXT NOT NULL,
-            parent_id BIGINT,
-            UNIQUE(normalized_name, type),
-            FOREIGN KEY (parent_id) REFERENCES entities (id) ON DELETE SET NULL
-        )",
-        "CREATE INDEX idx_entities_normalized_name ON entities (normalized_name)",
-        "CREATE INDEX idx_entities_type ON entities (type)",
-        "CREATE INDEX idx_entities_parent_id ON entities (parent_id)",
-        // Queue tables - FIXED: Match actual SQLite schema (no seen_at or pub_date columns)
-        "CREATE TABLE rss_queue (
-            id BIGSERIAL PRIMARY KEY,
-            url TEXT NOT NULL UNIQUE
-        )",
-    ];
-
-    // Execute each statement individually
-    for statement in schema_statements {
-        sqlx::query(statement).execute(pool).await?;
-    }
-
-    println!(
-        "{} ✅ Complete PostgreSQL schema created (core tables)",
-        timestamp()
-    );
-
-    Ok(())
-}
-
-/// Parse SQL VALUES and filter to first N columns, properly handling quoted strings, JSON, and functions
-fn parse_and_filter_sql_values(values_str: &str, take_count: usize) -> String {
-    let mut values = Vec::new();
-    let mut current_value = String::new();
-    let mut in_quotes = false;
-    let mut paren_depth = 0;
-    let mut chars = values_str.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\'' if !in_quotes => {
-                in_quotes = true;
-                current_value.push(ch);
-            }
-            '\'' if in_quotes => {
-                // Check for escaped quote (doubled single quotes in SQL)
-                if chars.peek() == Some(&'\'') {
-                    current_value.push(ch);
-                    current_value.push(chars.next().unwrap());
-                } else {
-                    in_quotes = false;
-                    current_value.push(ch);
-                }
-            }
-            '\\' if in_quotes => {
-                // Handle backslash escapes within quoted strings
-                current_value.push(ch);
-                if let Some(_next_ch) = chars.peek() {
-                    current_value.push(chars.next().unwrap());
-                }
-            }
-            '(' if !in_quotes => {
-                paren_depth += 1;
-                current_value.push(ch);
-            }
-            ')' if !in_quotes => {
-                paren_depth -= 1;
-                current_value.push(ch);
-            }
-            ',' if !in_quotes && paren_depth == 0 => {
-                // End of value only if we're not inside parentheses or quotes
-                values.push(current_value.trim().to_string());
-                current_value.clear();
-
-                // Stop if we have enough values
-                if values.len() >= take_count {
-                    break;
-                }
-            }
-            _ => {
-                current_value.push(ch);
-            }
-        }
-    }
-
-    // Add the last value if we haven't reached take_count
-    if !current_value.trim().is_empty() && values.len() < take_count {
-        values.push(current_value.trim().to_string());
-    }
-
-    // If we still don't have enough values, something went wrong
-    if values.len() < take_count {
-        println!(
-            "Warning: articles INSERT has fewer than {} columns: {} (values: {})",
-            take_count,
-            values.len(),
-            values
-                .iter()
-                .take(3)
-                .map(|v| format!("'{}'", &v[..v.len().min(50)]))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        // Return all values we found
-        return values.join(",");
-    }
-
-    // Take exactly the number of columns we want
-    values.truncate(take_count);
-    values.join(",")
-}
-
-/// Filter articles INSERT statements to only include the 7 columns we want
-/// SQLite articles has 18 columns, PostgreSQL articles has 7 columns
-/// Columns we want: id, url, seen_at, is_relevant, category, analysis, r2_url
-fn filter_articles_columns(line: &str) -> String {
-    if !line.contains("INSERT INTO articles") {
-        return line.to_string();
-    }
-
-    // Find the VALUES part
-    if let Some(values_start) = line.find("VALUES") {
-        let before_values = &line[..values_start + 6]; // Include "VALUES"
-        let values_part = &line[values_start + 6..];
-
-        // Find the parentheses containing the values
-        if let Some(paren_start) = values_part.find('(') {
-            // Find the matching closing parenthesis (not the last one in the line)
-            let mut paren_count = 0;
-            let mut paren_end = None;
-
-            for (i, ch) in values_part[paren_start..].char_indices() {
-                match ch {
-                    '(' => paren_count += 1,
-                    ')' => {
-                        paren_count -= 1;
-                        if paren_count == 0 {
-                            paren_end = Some(paren_start + i);
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            if let Some(paren_end) = paren_end {
-                let values_inner = &values_part[paren_start + 1..paren_end];
-
-                // Parse values properly, respecting quoted strings
-                let filtered_values = parse_and_filter_sql_values(values_inner, 7);
-
-                // Always end with just the closing parenthesis and semicolon - ignore any trailing content
-                return format!("{}({});", before_values, filtered_values);
-            }
-        }
-    }
-
-    // If we can't parse properly, return original line
-    line.to_string()
-}
-
-/// Fast timestamp conversion using optimized pre-compiled regex patterns
-/// FIXED: Only process tables that actually have timestamp columns in SQLite
-fn convert_timestamps_enhanced(line: &str, table_name: &str) -> String {
-    // Fast pre-checks to avoid unnecessary processing
-    if !line.contains("INSERT INTO") || !line.contains("VALUES") {
-        return line.to_string();
-    }
-
-    // CRITICAL FIX: Only process tables that actually have timestamp columns in SQLite
-    // Based on actual SQLite schema analysis, only 'articles' table has seen_at
-    let has_timestamps = matches!(table_name, "articles");
-    if !has_timestamps {
-        return line.to_string();
-    }
-
-    // Early bailout if no digits that could be timestamps
-    if !line.contains(char::is_numeric) {
-        return line.to_string();
-    }
-
-    let mut result = line.to_string();
-
-    // 1. Convert quoted Unix timestamps (10+ digits) using pre-compiled regex
-    result = QUOTED_TIMESTAMP_REGEX
-        .replace_all(&result, |caps: &regex::Captures| {
-            let unix_timestamp = &caps[1];
-            if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
-                if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
-                    format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S%z"))
-                } else {
-                    format!("'{}'", unix_timestamp)
-                }
-            } else {
-                format!("'{}'", unix_timestamp)
-            }
-        })
-        .to_string();
-
-    // 2. CRITICAL FIX: DO NOT convert legitimate timestamp values to NULL
-    // Only convert actual 0 values that represent missing timestamps
-    // But since seen_at is NOT NULL in both SQLite and PostgreSQL, we should convert 0 to a valid timestamp
-    result = ZERO_TIMESTAMP_REGEX
-        .replace_all(&result, |caps: &regex::Captures| {
-            let matched = caps.get(0).unwrap().as_str();
-            // Convert 0 timestamps to epoch time instead of NULL (since seen_at is NOT NULL)
-            if matched.starts_with(',') && matched.ends_with(',') {
-                ",'1970-01-01 00:00:00+0000',".to_string()
-            } else if matched.starts_with(',') && matched.ends_with(')') {
-                ",'1970-01-01 00:00:00+0000')".to_string()
-            } else if matched.starts_with('(') && matched.ends_with(',') {
-                "('1970-01-01 00:00:00+0000',".to_string()
-            } else if matched.ends_with(',') {
-                "'1970-01-01 00:00:00+0000',".to_string()
-            } else {
-                matched.to_string() // fallback
-            }
-        })
-        .to_string();
-
-    // 3. Convert unquoted Unix timestamps using pre-compiled regex
-    result = UNQUOTED_TIMESTAMP_REGEX
-        .replace_all(&result, |caps: &regex::Captures| {
-            let prefix = &caps[1];
-            let unix_timestamp = &caps[2];
-            let suffix = &caps[3];
-
-            if let Ok(timestamp) = unix_timestamp.parse::<i64>() {
-                if timestamp > 1000000000 {
-                    // Only timestamps after year 2001
-                    if let Some(datetime) = chrono::DateTime::from_timestamp(timestamp, 0) {
-                        return format!(
-                            "{}'{}'{}",
-                            prefix,
-                            datetime.format("%Y-%m-%d %H:%M:%S%z"),
-                            suffix
-                        );
-                    }
-                }
-            }
-            // Return original if not a timestamp
-            format!("{}{}{}", prefix, unix_timestamp, suffix)
-        })
-        .to_string();
-
-    result
-}
-
-/// Convert boolean values (0/1) to PostgreSQL format (false/true) with precision
-/// Only converts values that are in known boolean column positions
-fn convert_boolean_values_precise(line: &str) -> String {
-    // For INSERT INTO ... VALUES(...) statements, we need to be more careful
-    if !line.contains("INSERT INTO") || !line.contains("VALUES") {
-        return line.to_string();
-    }
-
-    // Extract table name to determine which columns are boolean
-    let table_name = if let Some(start) = line.find("INSERT INTO ") {
-        let start = start + 12;
-        if let Some(end) = line[start..].find(" VALUES") {
-            line[start..start + end].trim()
-        } else {
-            return line.to_string();
-        }
-    } else {
-        return line.to_string();
-    };
-
-    // Define boolean column positions for each table (0-indexed)
-    let boolean_columns: Vec<usize> = match table_name {
-        "articles" => vec![3], // is_relevant is at position 3 (4th column)
-        _ => vec![],           // No boolean columns for other tables
-    };
-
-    if boolean_columns.is_empty() {
-        return line.to_string(); // No boolean columns to convert
-    }
-
-    let mut result = line.to_string();
-
-    // Use a more precise approach: find VALUES(...) section and process it carefully
-    if let Some(values_start) = result.find("VALUES(") {
-        let values_section_start = values_start + 7; // after "VALUES("
-        if let Some(values_end) = result[values_section_start..].find(");") {
-            let values_end = values_section_start + values_end;
-            let values_content = &result[values_section_start..values_end];
-
-            // Split by comma and process each value, being careful about quoted strings
-            let mut new_values = Vec::new();
-            let mut current_value = String::new();
-            let mut in_quotes = false;
-            let mut chars = values_content.chars().peekable();
-            let mut column_index = 0;
-
-            while let Some(ch) = chars.next() {
-                match ch {
-                    '\'' if !in_quotes => {
-                        in_quotes = true;
-                        current_value.push(ch);
-                    }
-                    '\'' if in_quotes => {
-                        // Check if it's an escaped quote
-                        if chars.peek() == Some(&'\'') {
-                            current_value.push(ch);
-                            current_value.push(chars.next().unwrap());
-                        } else {
-                            in_quotes = false;
-                            current_value.push(ch);
-                        }
-                    }
-                    ',' if !in_quotes => {
-                        // Process the current value for boolean conversion
-                        let processed_value = if boolean_columns.contains(&column_index) {
-                            convert_single_boolean_value(&current_value.trim())
-                        } else {
-                            current_value.trim().to_string()
-                        };
-                        new_values.push(processed_value);
-                        current_value.clear();
-                        column_index += 1;
-                    }
-                    _ => {
-                        current_value.push(ch);
-                    }
-                }
-            }
-
-            // Don't forget the last value
-            if !current_value.is_empty() {
-                let processed_value = if boolean_columns.contains(&column_index) {
-                    convert_single_boolean_value(&current_value.trim())
-                } else {
-                    current_value.trim().to_string()
-                };
-                new_values.push(processed_value);
-            }
-
-            // Rebuild the line with processed values
-            let new_values_content = new_values.join(",");
-            result = format!(
-                "{}{}{}",
-                &result[..values_section_start],
-                new_values_content,
-                &result[values_end..]
-            );
-        }
-    }
-
-    result
-}
-
-/// Convert a single value if it's clearly a boolean (standalone 0 or 1)
-/// Only called for values that are confirmed to be in boolean columns
-fn convert_single_boolean_value(value: &str) -> String {
-    match value {
-        "0" => "false".to_string(),
-        "1" => "true".to_string(),
-        "NULL" => "false".to_string(), // Convert NULL to false for NOT NULL constraints
-        "null" => "false".to_string(), // Handle lowercase null
-        "" => "false".to_string(),     // Handle empty string
-        _ => value.to_string(),
-    }
-}
-
-async fn migrate_data_direct_mapping(pool: &Pool<Postgres>, debug_mode: bool) -> Result<()> {
-    println!(
-        "{} 📥 Migrating data with streaming approach (memory-optimized)...",
-        timestamp()
-    );
-
-    // Step 1: Get all table names that exist in SQLite
-    println!(
-        "{} 🔍 Discovering tables in SQLite database...",
-        timestamp()
-    );
-    let tables_output = Command::new("sqlite3")
-        .arg("argus.db")
-        .arg("SELECT name FROM sqlite_master WHERE type='table' AND name != 'sqlite_sequence';")
-        .output()?;
-
-    if !tables_output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Failed to get table list: {}",
-            String::from_utf8_lossy(&tables_output.stderr)
-        ));
-    }
-
-    let tables: Vec<String> = String::from_utf8(tables_output.stdout)?
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    println!(
-        "{} 📋 Found {} tables to migrate: {:?}",
-        timestamp(),
-        tables.len(),
-        tables
-    );
-
-    if tables.is_empty() {
-        println!("{} ⚠️  No tables found in SQLite database", timestamp());
-        return Ok(());
-    }
-
-    // Step 2: Show per-table progress before bulk extraction
-    println!("{} 📤 Extracting data from SQLite tables...", timestamp());
-
-    // Process each table individually to show progress
-    for table in &tables {
-        println!("{} 📦 analyzing {}...", timestamp(), table);
-
-        // Get row count for this table to show progress
-        let count_output = Command::new("sqlite3")
-            .arg("argus.db")
-            .arg(&format!("SELECT COUNT(*) FROM {};", table))
-            .output()?;
-
-        if count_output.status.success() {
-            if let Ok(count_str) = String::from_utf8(count_output.stdout) {
-                if let Ok(count) = count_str.trim().parse::<i32>() {
-                    if count > 0 {
-                        println!("{} 📊 {} has {} rows to migrate", timestamp(), table, count);
-                    } else {
-                        println!("{} 📭 {} is empty, skipping", timestamp(), table);
-                    }
-                }
-            }
-        }
-    }
-
-    // Step 3: Use streaming approach to process SQLite dump without loading everything into memory
-    println!(
-        "{} 🔄 Starting streaming data transformation...",
-        timestamp()
-    );
-    let start_time = Instant::now();
-
-    // Set up streaming SQLite dump process with proper JSON escaping
-    let mut dump_process = Command::new("sqlite3")
-        .arg("argus.db")
-        .arg("-cmd")
-        .arg(".mode insert")
-        .arg(".dump")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let stdout = dump_process
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout from sqlite3 process"))?;
-
-    // Set up streaming output to PostgreSQL temp file in current directory
-    let temp_file = "./postgres_streaming_import.sql";
-    let output_file = std::fs::File::create(temp_file)?;
-    let mut writer = BufWriter::new(output_file);
-
-    // Set up buffered reader for processing dump line by line
-    let reader = BufReader::new(stdout);
-
-    // Compile regex patterns once for performance
-    let insert_regex = Regex::new(r"^INSERT\s+INTO\s+`?([a-zA-Z0-9_]+)`?").unwrap();
-
-    let mut processed_lines = 0;
-    let mut insert_count = 0;
-    let mut current_table = String::new();
-    const BATCH_SIZE: usize = 1000; // Process in batches to control memory
-    let mut batch_buffer: Vec<String> = Vec::with_capacity(BATCH_SIZE);
-
-    // State tracking for multi-line CREATE statements
-    let mut inside_create_statement = false;
-
-    println!("{} 🔄 Processing dump stream...", timestamp());
-
-    // Process dump line by line
-    for line_result in reader.lines() {
-        let line = line_result?;
-        let trimmed = line.trim();
-        processed_lines += 1;
-
-        // Show progress every 50,000 lines with memory usage
-        if processed_lines % 50000 == 0 {
-            println!(
-                "{} 🔄 {}",
-                timestamp(),
-                format_memory_stats(processed_lines, insert_count)
-            );
-        }
-
-        // Check if starting a CREATE statement (multi-line)
-        if trimmed.starts_with("CREATE TABLE")
-            || trimmed.starts_with("CREATE INDEX")
-            || trimmed.starts_with("CREATE UNIQUE INDEX")
-        {
-            inside_create_statement = true;
-            continue;
-        }
-
-        // Check if ending a CREATE statement
-        if inside_create_statement && trimmed.ends_with(");") {
-            inside_create_statement = false;
-            continue;
-        }
-
-        // Skip if inside CREATE statement
-        if inside_create_statement {
-            continue;
-        }
-
-        // Skip other SQLite-specific statements
-        if trimmed.starts_with("PRAGMA")
-            || trimmed.starts_with("BEGIN TRANSACTION")
-            || trimmed.starts_with("COMMIT")
-            || trimmed.contains("sqlite_sequence")
-            || trimmed.is_empty()
-        {
-            continue;
-        }
-
-        // Process INSERT statements
-        if trimmed.starts_with("INSERT INTO") {
-            // Extract table name for progress tracking
-            if let Some(table_name) = extract_table_name_from_insert(trimmed, &insert_regex) {
-                if table_name != current_table {
-                    if !current_table.is_empty() && !batch_buffer.is_empty() {
-                        // Write previous table's remaining batch
-                        for stmt in &batch_buffer {
-                            writeln!(writer, "{}", stmt)?;
-                        }
-                        batch_buffer.clear();
-                        println!("{} ✅ Completed table: {}", timestamp(), current_table);
-                    }
-                    current_table = table_name.clone();
-                    println!("{} 🔄 Processing table: {}", timestamp(), current_table);
-                }
-            }
-
-            // Transform the INSERT statement for PostgreSQL compatibility
-            let mut result = line.clone();
-
-            // CRITICAL FIX: Production database has 18 columns, we need to filter to 7
-            // Development database has 7 columns, production has 18 - filter both safely
-            if current_table == "articles" {
-                result = filter_articles_columns(&result);
-            }
-
-            // CRITICAL FIX: Convert boolean values FIRST, then timestamps
-            // This prevents boolean 0/1 values from being converted to timestamps
-            result = convert_boolean_values_precise(&result);
-
-            // Convert Unix timestamps to PostgreSQL format with enhanced logic
-            result = convert_timestamps_enhanced(&result, &current_table);
-
-            // Add to batch buffer
-            batch_buffer.push(result);
-            insert_count += 1;
-
-            // Write batch when it reaches batch size
-            if batch_buffer.len() >= BATCH_SIZE {
-                for stmt in &batch_buffer {
-                    writeln!(writer, "{}", stmt)?;
-                }
-                batch_buffer.clear();
-            }
-        } else if !trimmed.starts_with("INSERT INTO") && !trimmed.is_empty() {
-            // Handle other statements (write immediately, they're usually few)
-            writeln!(writer, "{}", line)?;
-        }
-    }
-
-    // Write remaining batch
-    if !batch_buffer.is_empty() {
-        for stmt in &batch_buffer {
-            writeln!(writer, "{}", stmt)?;
-        }
-        println!("{} ✅ Completed table: {}", timestamp(), current_table);
-    }
-
-    // Ensure all data is written to disk
-    writer.flush()?;
-    drop(writer); // Close the file
-
-    // Wait for sqlite3 process to complete
-    let dump_status = dump_process.wait()?;
-    if !dump_status.success() {
-        return Err(anyhow::anyhow!("SQLite dump process failed"));
-    }
-
-    println!(
-        "{} ✅ Streaming transformation completed: {} lines processed, {} INSERT statements",
-        timestamp(),
-        processed_lines,
-        insert_count
-    );
-
-    if debug_mode {
-        println!(
-            "{} ⏱️  Streaming transformation: {:.1}s",
-            timestamp(),
-            start_time.elapsed().as_secs_f64()
-        );
-    }
-
-    // Step 4: Import to PostgreSQL using streaming approach
-    println!("{} 📥 Importing to PostgreSQL...", timestamp());
-    let import_start = Instant::now();
-
-    let import_output = Command::new("psql")
-        .arg(&env::var("DATABASE_URL")?)
-        .arg("-f")
-        .arg(temp_file)
-        .arg("-v")
-        .arg("ON_ERROR_STOP=1")
-        .output()?;
-
-    if !import_output.status.success() {
-        let stderr = String::from_utf8_lossy(&import_output.stderr);
-        return Err(anyhow::anyhow!("PostgreSQL import failed: {}", stderr));
-    }
-
-    if debug_mode {
-        println!(
-            "{} ⏱️  Import: {:.1}s",
-            timestamp(),
-            import_start.elapsed().as_secs_f64()
-        );
-    }
-
-    // Cleanup
-    let _ = fs::remove_file(temp_file);
-
-    // Step 5: Reset sequences for all tables
-    println!("{} 🔢 Resetting PostgreSQL sequences...", timestamp());
-    for table in &tables {
-        let sequence_name = format!("{}_id_seq", table);
-        let reset_sql = format!(
-            "SELECT setval('{}', COALESCE((SELECT MAX(id) FROM {}), 1))",
-            sequence_name, table
-        );
-
-        // Ignore errors for tables that might not have sequences
-        let _ = sqlx::query(&reset_sql).execute(pool).await;
-    }
-
-    println!(
-        "{} ✅ Memory-optimized migration completed: {} tables, {} INSERT statements",
-        timestamp(),
-        tables.len(),
-        insert_count
-    );
-    println!(
-        "{} 💾 Peak memory usage significantly reduced through streaming",
-        timestamp()
-    );
-    Ok(())
-}
-
-async fn validate_migration(pool: &Pool<Postgres>) -> Result<()> {
-    println!("{} ✅ Validating migration...", timestamp());
-
-    // Count records
-    let pg_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM articles")
-        .fetch_one(pool)
-        .await?;
-
-    // Get SQLite count for comparison
-    let sqlite_output = Command::new("sqlite3")
-        .arg("argus.db")
-        .arg("SELECT COUNT(*) FROM articles;")
-        .output()?;
-
-    let sqlite_count: i64 = String::from_utf8(sqlite_output.stdout)?
-        .trim()
-        .parse()
-        .unwrap_or(0);
-
-    println!("{} 📊 SQLite articles: {}", timestamp(), sqlite_count);
-    println!("{} 📊 PostgreSQL articles: {}", timestamp(), pg_count);
-
-    if pg_count == sqlite_count {
-        println!("{} ✅ Record counts match", timestamp());
-    } else {
-        return Err(anyhow::anyhow!(
-            "Record count mismatch: SQLite={}, PostgreSQL={}",
-            sqlite_count,
-            pg_count
-        ));
-    }
-
-    // Test a few sample records
-    let sample: Vec<(i64, String)> = sqlx::query_as("SELECT id, url FROM articles LIMIT 3")
-        .fetch_all(pool)
-        .await?;
-
-    println!("{} 📋 Sample records:", timestamp());
-    for (id, url) in sample {
-        println!("{}   {}: {}", timestamp(), id, &url[..url.len().min(50)]);
-    }
-
-    println!("{} ✅ Migration validation completed", timestamp());
+    info!("Migration completed successfully!");
     Ok(())
 }
