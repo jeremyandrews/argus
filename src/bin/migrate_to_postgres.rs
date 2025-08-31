@@ -398,6 +398,22 @@ impl MigrationContext {
     async fn migrate_table(&mut self, table_name: &str) -> Result<()> {
         info!("Migrating table: {}", table_name);
 
+        // Check if the table exists in PostgreSQL
+        let pg_table_exists: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public'"
+        )
+        .bind(table_name)
+        .fetch_one(&self.pg_pool)
+        .await?;
+
+        if pg_table_exists == 0 {
+            warn!(
+                "Table {} does not exist in PostgreSQL schema, skipping migration",
+                table_name
+            );
+            return Ok(());
+        }
+
         // Get total count
         let total_count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {}", table_name))
             .fetch_one(&self.sqlite_pool)
@@ -458,7 +474,13 @@ impl MigrationContext {
                 .await?;
             }
 
-            current_id = stats.last_migrated_id.unwrap_or(current_id) + 1;
+            // Safely update current_id, handling tables without ID columns
+            if let Some(last_id) = stats.last_migrated_id {
+                current_id = last_id + 1;
+            } else {
+                // For tables without ID column, we just continue since we use OFFSET
+                break;
+            }
         }
 
         info!(
@@ -466,12 +488,13 @@ impl MigrationContext {
             table_name, stats.migrated_records
         );
 
-        // Reset PostgreSQL sequence
-        let last_id = stats.last_migrated_id;
-        if !self.args.dry_run && last_id.is_some() {
-            let seq_name = format!("{}_id_seq", table_name);
-            let reset_sql = format!("SELECT setval('{}', {})", seq_name, last_id.unwrap());
-            let _ = sqlx::query(&reset_sql).execute(&self.pg_pool).await; // Ignore errors for tables without sequences
+        // Reset PostgreSQL sequence for tables with ID columns
+        if let Some(last_id) = stats.last_migrated_id {
+            if !self.args.dry_run {
+                let seq_name = format!("{}_id_seq", table_name);
+                let reset_sql = format!("SELECT setval('{}', {})", seq_name, last_id);
+                let _ = sqlx::query(&reset_sql).execute(&self.pg_pool).await; // Ignore errors for tables without sequences
+            }
         }
 
         self.stats.insert(table_name.to_string(), stats);
@@ -526,8 +549,11 @@ impl MigrationContext {
 
         if self.args.dry_run {
             if has_id_column {
-                let last_id: i64 = rows.last().unwrap().get("id");
-                stats.last_migrated_id = Some(last_id);
+                if let Some(last_row) = rows.last() {
+                    if let Ok(last_id) = last_row.try_get::<i64, _>("id") {
+                        stats.last_migrated_id = Some(last_id);
+                    }
+                }
             }
             stats.migrated_records += rows.len() as i64;
             debug!(
@@ -583,10 +609,13 @@ impl MigrationContext {
             stats.migrated_records += 1;
         }
 
-        // Update last migrated ID
+        // Update last migrated ID safely
         if let Some(last_row) = rows.last() {
-            let last_id: i64 = last_row.get("id");
-            stats.last_migrated_id = Some(last_id);
+            if has_id_column {
+                if let Ok(last_id) = last_row.try_get::<i64, _>("id") {
+                    stats.last_migrated_id = Some(last_id);
+                }
+            }
         }
 
         Ok(rows.len())
