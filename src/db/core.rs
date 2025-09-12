@@ -5,6 +5,7 @@ use sqlx::{
 };
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::sync::OnceCell;
 use tokio::time::Duration;
 use tracing::{info, instrument};
@@ -604,4 +605,52 @@ impl Database {
         tracing::debug!(target: TARGET_DB, "Marked task '{}' as completed, next run in {} hours", task_name, interval_hours);
         Ok(())
     }
+
+    /// Get queue sizes for dynamic scaling decisions
+    pub async fn get_queue_sizes(&self) -> Result<QueueSizes, sqlx::Error> {
+        let rss_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rss_queue")
+            .fetch_one(self.pool())
+            .await?;
+
+        let life_safety_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM life_safety_queue")
+            .fetch_one(self.pool())
+            .await?;
+
+        let matched_topics_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM matched_topics_queue")
+                .fetch_one(self.pool())
+                .await?;
+
+        Ok(QueueSizes {
+            rss: rss_count as u32,
+            life_safety: life_safety_count as u32,
+            matched_topics: matched_topics_count as u32,
+        })
+    }
+
+    /// Calculate weighted queue pressure for scaling decisions
+    pub async fn get_queue_pressure(&self) -> Result<u32, sqlx::Error> {
+        let sizes = self.get_queue_sizes().await?;
+
+        // Weighted priorities: RSS=1x, Life Safety=3x, Matched Topics=2x
+        let weighted_total = (sizes.rss * 1) + (sizes.life_safety * 3) + (sizes.matched_topics * 2);
+
+        Ok(weighted_total)
+    }
+
+    /// Create a new database instance for the pool manager using proper database abstraction
+    /// This maintains separation of concerns by keeping all database functionality in db/ module
+    pub async fn new_for_pool_manager() -> Result<Arc<Self>, sqlx::Error> {
+        let database_path =
+            std::env::var("DATABASE_PATH").unwrap_or_else(|_| "argus.db".to_string());
+        let db = Database::new(&database_path).await?;
+        Ok(Arc::new(db))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueSizes {
+    pub rss: u32,
+    pub life_safety: u32,
+    pub matched_topics: u32,
 }

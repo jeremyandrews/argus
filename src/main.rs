@@ -20,9 +20,7 @@ const LLM_TOP_P_ENV: &str = "LLM_TOP_P";
 const LLM_TOP_K_ENV: &str = "LLM_TOP_K";
 const LLM_MIN_P_ENV: &str = "LLM_MIN_P";
 
-use argus::analysis_worker;
 use argus::app::api;
-use argus::decision_worker;
 use argus::environment;
 use argus::logging;
 use argus::rate_limiter::OpenAIRateLimiter;
@@ -37,7 +35,6 @@ use environment::get_env_var_as_vec;
 // New: Struct to hold Analysis Worker configuration including optional fallback
 #[derive(Clone, Debug)]
 struct AnalysisWorkerConfig {
-    id: i16,
     llm_client: LLMClient,
     model: String,
     fallback: Option<FallbackConfig>,
@@ -194,7 +191,6 @@ async fn main() -> Result<()> {
             );
 
             workers.push(AnalysisWorkerConfig {
-                id: *count,
                 llm_client: main_llm_client,
                 model,
                 fallback: fallback_config,
@@ -261,7 +257,6 @@ async fn main() -> Result<()> {
                 *count, main_model
             );
             workers.push(AnalysisWorkerConfig {
-                id: *count,
                 llm_client: main_llm_client,
                 model: main_model,
                 fallback,
@@ -306,14 +301,6 @@ async fn main() -> Result<()> {
         "Total analysis workers configured: {}",
         analysis_workers.len()
     );
-
-    // Determine number of decision workers to launch
-    // Use the shared parse functions to determine the count
-    let decision_worker_count = argus::process_ollama_configs(&decision_ollama_configs).len()
-        + decision_openai_configs
-            .split(';')
-            .filter(|c| !c.is_empty())
-            .count();
 
     let urls = get_env_var_as_vec("URLS", ';');
     let topics = get_env_var_as_vec("TOPICS", ';');
@@ -410,124 +397,117 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Launch DECISION workers
-    let mut decision_handles = Vec::new();
-    for (decision_id, llm_client, decision_model, no_think) in
-        decision_workers.into_iter().take(decision_worker_count)
-    {
-        let decision_worker_topics = topics.clone();
-        let decision_worker_slack_token = slack_token.clone();
-        let decision_worker_slack_channel = slack_channel.clone();
-        let worker_notify = Arc::clone(&panic_notify);
-        let thread_name = format!("Decision Worker {}", decision_id);
-        let worker_rate_limiter = shared_openai_rate_limiter.clone();
+    // Initialize Dynamic Pool Manager for intelligent cost optimization
+    info!("[MODEL_SCALING] Initializing Dynamic Pool Manager with intelligent cost optimization");
+    info!("[MODEL_SCALING] Converting configurations to PoolManager format");
 
-        let decision_worker_handle = tokio::spawn(async move {
-            info!(target: TARGET_LLM_REQUEST, "{}: Starting Decision Worker with model '{}' (decision_loop)", thread_name, decision_model);
+    // Convert existing configurations to WorkerConfig format for PoolManager
+    let mut decision_ollama_worker_configs = Vec::new();
+    let mut decision_openai_worker_configs = Vec::new();
+    let mut analysis_ollama_worker_configs = Vec::new();
+    let mut analysis_openai_worker_configs = Vec::new();
 
-            // Create model config based on thinking vs non-thinking mode with environment overrides
-            let worker_model_config = Some(create_model_config(
-                no_think, env_top_p, env_top_k, env_min_p,
-            ));
-            let worker_temperature = get_temperature(no_think, env_temperature);
+    // Process Decision workers
+    for (_, llm_client, model, no_think) in decision_workers {
+        let temperature = get_temperature(no_think, env_temperature);
+        let model_config = Some(create_model_config(
+            no_think, env_top_p, env_top_k, env_min_p,
+        ));
 
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "{}: Using {} mode with temp={}, top_p={}, top_k={}, min_p={}",
-                thread_name,
-                if no_think { "non-thinking" } else { "thinking" },
-                worker_temperature,
-                worker_model_config.as_ref().unwrap().top_p,
-                worker_model_config.as_ref().unwrap().top_k,
-                worker_model_config.as_ref().unwrap().min_p
-            );
+        let worker_config = workers::pool_manager::WorkerConfig {
+            worker_type: workers::pool_manager::WorkerType::Decision,
+            llm_client,
+            model,
+            no_think,
+            fallback: None,
+            temperature,
+            model_config,
+            shared_rate_limiter: shared_openai_rate_limiter.clone(),
+        };
 
-            match decision_worker::decision_loop(
-                decision_id,
-                &decision_worker_topics,
-                &llm_client,
-                &decision_model,
-                worker_temperature,
-                &decision_worker_slack_token,
-                &decision_worker_slack_channel,
-                no_think,
-                worker_model_config,
-                worker_rate_limiter,
-            )
-            .await
-            {
-                Ok(_) => {
-                    info!(target: TARGET_LLM_REQUEST, "{}: decision_loop completed successfully.", thread_name)
-                }
-                Err(e) => {
-                    error!(target: TARGET_LLM_REQUEST, "{}: decision_loop failed: {}", thread_name, e);
-                    worker_notify.notify_one();
-                }
-            }
-        });
-        decision_handles.push(decision_worker_handle);
+        match worker_config.llm_client {
+            LLMClient::Ollama(_) => decision_ollama_worker_configs.push(worker_config),
+            LLMClient::OpenAI(_) => decision_openai_worker_configs.push(worker_config),
+        }
     }
 
-    // Launch ANALYSIS workers with optional fallback
-    let mut analysis_handles = Vec::new();
-    for worker_config in analysis_workers.into_iter() {
-        let decision_worker_topics = topics.clone();
-        let analysis_worker_slack_token = slack_token.clone();
-        let analysis_worker_slack_channel = slack_channel.clone();
-        let worker_notify = Arc::clone(&panic_notify);
-        let thread_name = format!("Analysis Worker {}", worker_config.id);
+    // Process Analysis workers
+    for worker_config in analysis_workers {
+        let temperature = get_temperature(worker_config.no_think, env_temperature);
+        let model_config = Some(create_model_config(
+            worker_config.no_think,
+            env_top_p,
+            env_top_k,
+            env_min_p,
+        ));
 
-        // Use the worker's configured model
-        let worker_model = worker_config.model.clone();
+        let pool_worker_config = workers::pool_manager::WorkerConfig {
+            worker_type: workers::pool_manager::WorkerType::Analysis,
+            llm_client: worker_config.llm_client,
+            model: worker_config.model,
+            no_think: worker_config.no_think,
+            fallback: worker_config.fallback,
+            temperature,
+            model_config,
+            shared_rate_limiter: shared_openai_rate_limiter.clone(),
+        };
 
-        let analysis_handle = tokio::spawn(async move {
-            info!(target: TARGET_LLM_REQUEST, "{}: Starting Analysis Worker with model '{}' (analysis_loop)", thread_name, worker_model);
-
-            // Create model config based on thinking vs non-thinking mode with environment overrides
-            let worker_model_config = Some(create_model_config(
-                worker_config.no_think,
-                env_top_p,
-                env_top_k,
-                env_min_p,
-            ));
-            let worker_temperature = get_temperature(worker_config.no_think, env_temperature);
-
-            info!(
-                target: TARGET_LLM_REQUEST,
-                "{}: Using {} mode with temp={}, top_p={}, top_k={}, min_p={}",
-                thread_name,
-                if worker_config.no_think { "non-thinking" } else { "thinking" },
-                worker_temperature,
-                worker_model_config.as_ref().unwrap().top_p,
-                worker_model_config.as_ref().unwrap().top_k,
-                worker_model_config.as_ref().unwrap().min_p
-            );
-
-            match analysis_worker::analysis_loop(
-                worker_config.id,
-                &decision_worker_topics,
-                &worker_config.llm_client,
-                &worker_model,
-                &analysis_worker_slack_token,
-                &analysis_worker_slack_channel,
-                worker_temperature,
-                worker_config.fallback,
-                worker_model_config,
-                worker_config.no_think,
-            )
-            .await
-            {
-                Ok(_) => {
-                    info!(target: TARGET_LLM_REQUEST, "{}: analysis_loop completed successfully.", thread_name)
-                }
-                Err(e) => {
-                    error!(target: TARGET_LLM_REQUEST, "{}: analysis_loop failed: {}", thread_name, e);
-                    worker_notify.notify_one();
-                }
-            }
-        });
-        analysis_handles.push(analysis_handle);
+        match pool_worker_config.llm_client {
+            LLMClient::Ollama(_) => analysis_ollama_worker_configs.push(pool_worker_config),
+            LLMClient::OpenAI(_) => analysis_openai_worker_configs.push(pool_worker_config),
+        }
     }
+
+    info!(
+        "[MODEL_SCALING] Free Ollama models: {} Decision + {} Analysis - will run continuously",
+        decision_ollama_worker_configs.len(),
+        analysis_ollama_worker_configs.len()
+    );
+    info!("[MODEL_SCALING] Paid OpenAI models: {} Decision + {} Analysis - will scale based on queue pressure", 
+          decision_openai_worker_configs.len(), analysis_openai_worker_configs.len());
+
+    // Create database connection for PoolManager using proper db/ module abstraction
+    let db = argus::db::core::Database::new_for_pool_manager().await?;
+
+    // Create scaling configuration
+    let scaling_config = workers::pool_manager::ScalingConfig::default(); // Uses scale_up: 10, scale_down: 2
+
+    // Initialize PoolManager
+    let pool_manager = workers::pool_manager::PoolManager::new(
+        decision_ollama_worker_configs,
+        analysis_ollama_worker_configs,
+        decision_openai_worker_configs,
+        analysis_openai_worker_configs,
+        scaling_config,
+        db,
+        topics,
+        slack_token,
+        slack_channel,
+    );
+
+    // Start the pool manager (launches Ollama workers immediately, manages OpenAI workers dynamically)
+    info!("[MODEL_SCALING] Starting PoolManager with intelligent cost optimization");
+    if let Err(e) = pool_manager.start().await {
+        error!("[MODEL_SCALING] Failed to start PoolManager: {}", e);
+        return Err(e);
+    }
+
+    info!("[MODEL_SCALING] Dynamic pool management active - queue pressure monitoring enabled");
+    info!("[MODEL_SCALING] Scale up threshold: >10 articles, Scale down threshold: <2 articles");
+    info!("[MODEL_SCALING] Decision workers monitor RSS queue, Analysis workers monitor Life Safety + Matched Topics queues");
+
+    // Keep the pool manager running - it manages its own worker lifecycle
+    let pool_manager_handle = tokio::spawn(async move {
+        // PoolManager runs continuously managing workers
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for ctrl+c");
+        info!("[MODEL_SCALING] Shutting down pool manager");
+        pool_manager.shutdown().await;
+    });
+
+    let decision_handles = vec![pool_manager_handle];
+    let analysis_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
     // Spawn a watcher for any thread failures
     let panic_notify_clone = Arc::clone(&panic_notify);

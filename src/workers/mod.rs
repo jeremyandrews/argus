@@ -2,6 +2,7 @@ pub mod analysis;
 pub mod common;
 pub mod decision;
 pub mod maintenance;
+pub mod pool_manager;
 
 // Common re-exports
 pub use common::{

@@ -142,7 +142,7 @@ fn next_midnight() -> SystemTime {
 }
 
 /// Main rate limiter for OpenAI API calls
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OpenAIRateLimiter {
     rpm_bucket: Arc<Mutex<TokenBucket>>,
     rpd_counter: Arc<Mutex<DailyCounter>>,

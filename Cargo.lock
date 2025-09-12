@@ -141,10 +141,11 @@ dependencies = [
 
 [[package]]
 name = "argus"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "anyhow",
  "async-openai",
+ "async-trait",
  "aws-config",
  "aws-sdk-s3",
  "axum 0.8.1",
